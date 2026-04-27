@@ -198,5 +198,3 @@ Feel free to open issues and submit pull requests. Any contributions are welcome
 This project is licensed under the **MIT License**.
 
 ---
-
-Would you like to improve anything else? Let me know! 🚀

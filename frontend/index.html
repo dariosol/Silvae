@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,16 +8,87 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 </head>
-
 <body class="container mt-4">
 
     <h1 class="text-center">🌳 Tree Management System</h1>
+
+    <!-- Auth Section -->
+    <div id="authSection" class="row mb-3">
+        <div class="col-md-3">
+            <input id="loginUsername" class="form-control" placeholder="Username">
+        </div>
+        <div class="col-md-3">
+            <input id="loginPassword" type="password" class="form-control" placeholder="Password">
+        </div>
+        <div class="col-md-3">
+            <button id="loginBtn" class="btn btn-primary w-100">Login</button>
+        </div>
+        <div class="col-md-3">
+            <button id="refreshCitiesBtn" class="btn btn-outline-secondary w-100">Refresh Cities</button>
+        </div>
+    </div>
+
+    <div id="loggedInSection" class="row mb-3" style="display:none;">
+        <div class="col-md-8">
+            <span id="loggedInUser" class="fw-bold"></span>
+        </div>
+        <div class="col-md-4">
+            <button id="logoutBtn" class="btn btn-danger w-100">Logout</button>
+        </div>
+    </div>
+
+    <!-- Role-specific management -->
+    <div id="userManagement" class="card mb-3" style="display:none;">
+        <div class="card-body">
+            <h5 class="card-title">User Management (superuser / city)</h5>
+            <div class="row g-2">
+                <div class="col-md-3">
+                    <input id="newUsername" class="form-control" placeholder="username">
+                </div>
+                <div class="col-md-3">
+                    <input id="newPassword" type="password" class="form-control" placeholder="password">
+                </div>
+                <div class="col-md-2">
+                    <select id="newRole" class="form-control">
+                        <option value="user">user</option>
+                        <option value="city">city</option>
+                        <option value="superuser">superuser</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <input id="newCity" list="newCityDatalist" class="form-control" placeholder="city (optional)">
+                    <datalist id="newCityDatalist"></datalist>
+                </div>
+                <div class="col-md-2">
+                    <button id="createUserBtn" class="btn btn-success w-100">Create User</button>
+                </div>
+            </div>
+
+            <hr>
+            <h6>Existing users</h6>
+            <ul id="userList" class="list-group list-group-flush"></ul>
+        </div>
+    </div>
+
+    <div id="cityManagement" class="card mb-3" style="display:none;">
+        <div class="card-body">
+            <h5 class="card-title">City Management (superuser)</h5>
+            <div class="row">
+                <div class="col-md-8">
+                    <input id="cityName" class="form-control" placeholder="City name">
+                </div>
+                <div class="col-md-4">
+                    <button id="createCityBtn" class="btn btn-primary w-100">Create City</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Filters: Select City & Address -->
     <div class="row mb-3">
         <div class="col-md-4">
             <label for="citySelect">Select City:</label>
-            <select id="citySelect" class="form-control" onchange="fetchStreets()">
+            <select id="citySelect" class="form-control" onchange="fetchTrees()">
                 <option value="">-- Choose a city --</option>
             </select>
         </div>
@@ -39,10 +109,10 @@
             <input type="text" id="treeIdInput" class="form-control" placeholder="Enter Custom Tree ID">
         </div>
         <div class="col-md-3">
-            <button class="btn btn-secondary w-100" onclick="fetchTreeById()">Search by ID</button>
+            <button class="btn btn-secondary w-100" onclick="fetchTreeByCustomInput()">Search by ID</button>
         </div>
         <div class="col-md-3">
-            <button class="btn btn-danger w-100" onclick="deleteTreeById()">Delete Tree</button>
+            <button class="btn btn-danger w-100" onclick="deleteTreeByCustomInput()">Delete Tree</button>
         </div>
     </div>
 
@@ -67,7 +137,7 @@
     <h3 id="formTitle">🌿 Add a New Tree</h3>
     <form id="addTreeForm">
         <input type="hidden" id="editTreeId">
-    
+
         <div class="row mb-3">
             <div class="col-md-4">
                 <label for="custom_id">Custom ID:</label>
@@ -82,7 +152,7 @@
                 <input type="text" id="address" class="form-control">
             </div>
         </div>
-    
+
         <div class="row mb-3">
             <div class="col-md-4">
                 <label for="latitude">Latitude:</label>
@@ -96,7 +166,7 @@
                 <button type="button" class="btn btn-info w-100" onclick="getLocation()">📍 Use GPS Location</button>
             </div>
         </div>
-    
+
         <div class="row mb-3">
             <div class="col-md-4">
                 <label for="species">Species:</label>
@@ -111,7 +181,7 @@
                 <textarea id="comments" class="form-control"></textarea>
             </div>
         </div>
-    
+
         <!-- Additional Details -->
         <h4>🌱 Additional Details</h4>
         <div class="row mb-3">
@@ -128,7 +198,7 @@
                 <input type="number" id="crown_diameter_m" class="form-control">
             </div>
         </div>
-    
+
         <div class="row mb-3">
             <div class="col-md-4">
                 <label for="age">Age:</label>
@@ -143,7 +213,7 @@
                 <input type="text" id="location" class="form-control">
             </div>
         </div>
-    
+
         <div class="row mb-3">
             <div class="col-md-4">
                 <label for="cpc">CPC Code:</label>
@@ -154,20 +224,64 @@
                 <input type="date" id="next_check" class="form-control">
             </div>
         </div>
-    
-        <!-- Buttons: Dynamic based on mode -->
+
         <button type="submit" class="btn btn-success" id="formSubmitButton">🌳 Add Tree</button>
         <button type="button" class="btn btn-secondary" onclick="resetForm()">Cancel Edit</button>
     </form>
-        
+
     <p id="status" class="mt-2"></p>
 
     <!-- Map (Hidden by Default) -->
     <button class="btn btn-success mt-3" onclick="toggleMap()">Show in Map</button>
-    <div id="map" style="height: 400px; display: none;"></div>
+    <div id="map" style="height: 400px; display: none;" class="mt-3"></div>
 
     <script src="app.js"></script>
+    <script>
+        // helpers for the small custom search buttons (search/delete by custom id)
+        function fetchTreeByCustomInput() {
+            const id = document.getElementById('treeIdInput').value.trim();
+            if (!id) return;
+            fetchTreeCustom(id);
+        }
+        function deleteTreeByCustomInput() {
+            const id = document.getElementById('treeIdInput').value.trim();
+            if (!id) return;
+            // find by custom_id -> need to call server to get tree then delete
+            fetch(`${location.origin}/tree/custom/${encodeURIComponent(id)}`, {
+                headers: (localStorage.getItem('token') ? { 'Authorization': 'Bearer ' + localStorage.getItem('token') } : {})
+            }).then(r => r.json().then(d => {
+                if (!r.ok) return alert(d.message || 'Not found');
+                if (confirm('Delete this tree?')) {
+                    fetch(`${location.origin}/tree/${d.id}`, { method: 'DELETE', headers: (localStorage.getItem('token') ? { 'Authorization': 'Bearer ' + localStorage.getItem('token') } : {}) })
+                        .then(rr => rr.json().then(dd => {
+                            if (rr.ok) {
+                                alert('Deleted');
+                                location.reload();
+                            } else alert(dd.message || 'Error');
+                        }));
+                }
+            }));
+        }
 
+        function fetchTreeCustom(custom_id) {
+            fetch(`${location.origin}/tree/custom/${encodeURIComponent(custom_id)}`, {
+                headers: (localStorage.getItem('token') ? { 'Authorization': 'Bearer ' + localStorage.getItem('token') } : {})
+            }).then(r => r.json().then(d => {
+                if (!r.ok) return alert(d.message || 'Not found');
+                // Fill edit form
+                document.getElementById('editTreeId').value = d.id;
+                document.getElementById('custom_id').value = d.custom_id;
+                document.getElementById('city').value = d.city;
+                document.getElementById('address').value = d.address;
+                document.getElementById('latitude').value = d.latitude;
+                document.getElementById('longitude').value = d.longitude;
+                document.getElementById('species').value = d.species;
+                document.getElementById('condition').value = d.condition;
+                document.getElementById('comments').value = d.comments || '';
+                document.getElementById('formTitle').textContent = `🌿 Edit Tree #${d.id}`;
+                document.getElementById('formSubmitButton').textContent = 'Save Changes';
+            }));
+        }
+    </script>
 </body>
-
 </html>
