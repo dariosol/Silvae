@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from geoalchemy2 import Geometry
 from geopy.geocoders import Nominatim
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from sqlalchemy.exc import IntegrityError
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 from functools import wraps
 import os
+import io
+import json
+import openpyxl
 
 # -----------------------
 # Configuration
@@ -50,8 +54,11 @@ class City(db.Model):
 
 class Tree(db.Model):
     __tablename__ = 'tree'
+    __table_args__ = (
+        db.UniqueConstraint('custom_id', 'city', name='uq_tree_custom_id_city'),
+    )
     id = db.Column(db.Integer, primary_key=True)
-    custom_id = db.Column(db.String(50), unique=True, nullable=False)
+    custom_id = db.Column(db.String(50), nullable=False)
     latitude = db.Column(db.Float)
     longitude = db.Column(db.Float)
     address = db.Column(db.String(255))
@@ -70,6 +77,19 @@ class Tree(db.Model):
     geom = db.Column(Geometry('POINT', srid=4326))
     owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
 
+class Inspection(db.Model):
+    __tablename__ = 'inspection'
+    id            = db.Column(db.Integer, primary_key=True)
+    tree_id       = db.Column(db.Integer, db.ForeignKey('tree.id', ondelete='CASCADE'), nullable=False)
+    date          = db.Column(db.Date, nullable=False)
+    condition     = db.Column(db.String(50))
+    comments      = db.Column(db.Text)
+    actions       = db.Column(db.Text)
+    inspector_id  = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    inspector_name= db.Column(db.String(80))
+    created_at    = db.Column(db.DateTime(timezone=True),
+                              default=lambda: datetime.now(timezone.utc))
+
 # -----------------------
 # Create tables (dev)
 # -----------------------
@@ -85,7 +105,7 @@ def generate_token(user, expires_minutes=60*24):
         "username": user.username,
         "role": user.role,
         "city": user.city,
-        "exp": datetime.utcnow() + timedelta(minutes=expires_minutes)
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=expires_minutes)
     }
     token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
     # pyjwt returns str for v2+, keep consistent
@@ -238,16 +258,10 @@ def add_city():
 
 @app.route('/cities', methods=['GET'])
 def get_cities():
-    """
-    Returns a list of cities. Prefer canonical City table, but fall back to
-    distinct cities found in trees if City table is empty (for compatibility).
-    """
-    cities = City.query.all()
-    if not cities:
-        # fallback to distinct tree cities
-        distinct = db.session.query(Tree.city.distinct()).all()
-        return jsonify([c[0] for c in distinct])
-    return jsonify([c.name for c in cities])
+    """Union of canonical City table and any city values already on trees."""
+    from_table = {c.name for c in City.query.all()}
+    from_trees = {row[0] for row in db.session.query(Tree.city).distinct() if row[0]}
+    return jsonify(sorted(from_table | from_trees))
 
 # -----------------------
 # Tree endpoints (updated with owner & role checks)
@@ -305,7 +319,7 @@ def get_trees():
 @app.route('/tree/<int:tree_id>', methods=['GET'])
 @auth_required
 def get_tree_by_id(tree_id):
-    tree = Tree.query.get(tree_id)
+    tree = db.session.get(Tree, tree_id)
     if not tree:
         return jsonify({'message': 'Tree not found'}), 404
 
@@ -343,7 +357,7 @@ def get_tree_by_id(tree_id):
 @app.route('/tree/<int:tree_id>', methods=['PATCH'])
 @auth_required
 def update_tree(tree_id):
-    tree = Tree.query.get(tree_id)
+    tree = db.session.get(Tree, tree_id)
     if not tree:
         return jsonify({'message': 'Tree not found'}), 404
 
@@ -358,8 +372,8 @@ def update_tree(tree_id):
         return jsonify({'message': 'Forbidden'}), 403
 
     data = request.json or {}
-    for field in ['condition', 'comments', 'actions', 'height', 'trunk_diameter_cm',
-                  'crown_diameter_m', 'age', 'location', 'cpc']:
+    for field in ['species', 'condition', 'comments', 'actions', 'height',
+                  'trunk_diameter_cm', 'crown_diameter_m', 'age', 'location', 'cpc', 'address']:
         if field in data:
             setattr(tree, field, data[field])
 
@@ -369,13 +383,36 @@ def update_tree(tree_id):
         except ValueError:
             return jsonify({'message': 'Invalid date format for next_check. Use YYYY-MM-DD'}), 400
 
+    if data.get('latitude') and data.get('longitude'):
+        try:
+            tree.latitude = float(data['latitude'])
+            tree.longitude = float(data['longitude'])
+            tree.geom = f'SRID=4326;POINT({float(data["longitude"])} {float(data["latitude"])})'
+        except (ValueError, TypeError):
+            return jsonify({'message': 'Invalid latitude/longitude values'}), 400
+
     db.session.commit()
+
+    # Auto-log inspection whenever any inspection-relevant field was touched
+    inspection_fields = {'condition', 'comments', 'actions'}
+    if inspection_fields & set(data.keys()):
+        db.session.add(Inspection(
+            tree_id=tree_id,
+            date=datetime.now(timezone.utc).date(),
+            condition=tree.condition,
+            comments=tree.comments or '',
+            actions=tree.actions or '',
+            inspector_id=request.user.get('user_id'),
+            inspector_name=request.user.get('username')
+        ))
+        db.session.commit()
+
     return jsonify({'message': f'Tree {tree_id} updated successfully!'}), 200
 
 @app.route('/tree/<int:tree_id>', methods=['DELETE'])
 @auth_required
 def delete_tree(tree_id):
-    tree = Tree.query.get(tree_id)
+    tree = db.session.get(Tree, tree_id)
     if not tree:
         return jsonify({'message': 'Tree not found'}), 404
 
@@ -450,24 +487,48 @@ def add_tree():
     )
 
     db.session.add(new_tree)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({'message': f"Custom ID '{data['custom_id']}' already exists in {data['city']}"}), 409
+
+    # Record initial inspection
+    db.session.add(Inspection(
+        tree_id=new_tree.id,
+        date=datetime.now(timezone.utc).date(),
+        condition=new_tree.condition,
+        comments=new_tree.comments or '',
+        actions=new_tree.actions or '',
+        inspector_id=user_id,
+        inspector_name=request.user.get('username')
+    ))
     db.session.commit()
     return jsonify({'message': 'Tree added successfully!', 'tree_id': new_tree.id}), 201
 
 @app.route('/tree/custom/<string:custom_id>', methods=['GET'])
 @auth_required
 def get_tree_by_custom_id(custom_id):
-    tree = Tree.query.filter_by(custom_id=custom_id).first()
-    if not tree:
-        return jsonify({'message': 'Tree not found'}), 404
-
     role = request.user.get('role')
     user_city = request.user.get('city')
     user_id = request.user.get('user_id')
 
-    if role == 'user' and tree.owner_id != user_id:
-        return jsonify({'message': 'Forbidden'}), 403
-    if role == 'city' and tree.city != user_city:
-        return jsonify({'message': 'Forbidden'}), 403
+    query = Tree.query.filter_by(custom_id=custom_id)
+
+    # Scope automatically by role so the same custom_id in different cities is unambiguous
+    if role == 'user':
+        query = query.filter(Tree.owner_id == user_id)
+    elif role == 'city':
+        query = query.filter(Tree.city == user_city)
+    else:
+        # superuser: optional ?city= filter to disambiguate across cities
+        city_param = request.args.get('city')
+        if city_param:
+            query = query.filter(Tree.city == city_param)
+
+    tree = query.first()
+    if not tree:
+        return jsonify({'message': 'Tree not found'}), 404
 
     return jsonify({
         'id': tree.id,
@@ -490,6 +551,70 @@ def get_tree_by_custom_id(custom_id):
         'owner_id': tree.owner_id
     })
 
+@app.route('/tree/<int:tree_id>/inspections', methods=['GET'])
+@auth_required
+def get_inspections(tree_id):
+    tree = db.session.get(Tree, tree_id)
+    if not tree:
+        return jsonify({'message': 'Tree not found'}), 404
+
+    role = request.user.get('role')
+    user_city = request.user.get('city')
+    user_id = request.user.get('user_id')
+    if role == 'user' and tree.owner_id != user_id:
+        return jsonify({'message': 'Forbidden'}), 403
+    if role == 'city' and tree.city != user_city:
+        return jsonify({'message': 'Forbidden'}), 403
+
+    rows = (Inspection.query
+            .filter_by(tree_id=tree_id)
+            .order_by(Inspection.date.desc(), Inspection.created_at.desc())
+            .all())
+    return jsonify([{
+        'id': i.id,
+        'date': i.date.strftime('%Y-%m-%d'),
+        'condition': i.condition,
+        'comments': i.comments,
+        'actions': i.actions,
+        'inspector_name': i.inspector_name,
+        'created_at': i.created_at.strftime('%Y-%m-%d %H:%M') if i.created_at else None
+    } for i in rows])
+
+@app.route('/tree/<int:tree_id>/inspections', methods=['POST'])
+@auth_required
+def add_inspection(tree_id):
+    tree = db.session.get(Tree, tree_id)
+    if not tree:
+        return jsonify({'message': 'Tree not found'}), 404
+
+    role = request.user.get('role')
+    user_city = request.user.get('city')
+    user_id = request.user.get('user_id')
+    if role == 'user' and tree.owner_id != user_id:
+        return jsonify({'message': 'Forbidden'}), 403
+    if role == 'city' and tree.city != user_city:
+        return jsonify({'message': 'Forbidden'}), 403
+
+    data = request.json or {}
+    date_str = data.get('date') or datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    try:
+        insp_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({'message': 'Invalid date format, use YYYY-MM-DD'}), 400
+
+    insp = Inspection(
+        tree_id=tree_id,
+        date=insp_date,
+        condition=data.get('condition') or tree.condition,
+        comments=data.get('comments', ''),
+        actions=data.get('actions', ''),
+        inspector_id=user_id,
+        inspector_name=request.user.get('username')
+    )
+    db.session.add(insp)
+    db.session.commit()
+    return jsonify({'message': 'Inspection logged', 'id': insp.id}), 201
+
 @app.route('/test_geocode', methods=['POST'])
 def test_geocode():
     address = request.json.get('address')
@@ -497,6 +622,101 @@ def test_geocode():
     if location:
         return jsonify({'latitude': location.latitude, 'longitude': location.longitude})
     return jsonify({'error': 'Address not found'}), 404
+
+@app.route('/reverse_geocode', methods=['POST'])
+@auth_required
+def reverse_geocode():
+    data = request.json or {}
+    lat = data.get('latitude')
+    lon = data.get('longitude')
+    if lat is None or lon is None:
+        return jsonify({'message': 'latitude and longitude required'}), 400
+    try:
+        location = geolocator.reverse(f"{lat}, {lon}", language='en')
+        if location:
+            addr = location.raw.get('address', {})
+            city = (addr.get('city') or addr.get('town') or
+                    addr.get('village') or addr.get('municipality') or '')
+            return jsonify({'address': location.address, 'city': city})
+    except Exception:
+        pass
+    return jsonify({'address': '', 'city': ''})
+
+@app.route('/export/excel', methods=['GET'])
+@auth_required
+def export_excel():
+    role = request.user.get('role')
+    user_city = request.user.get('city')
+    user_id = request.user.get('user_id')
+
+    query = Tree.query
+    if role == 'user':
+        query = query.filter(Tree.owner_id == user_id)
+    elif role == 'city':
+        query = query.filter(Tree.city == user_city)
+    trees = query.all()
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'Trees'
+    ws.append(['ID', 'Custom ID', 'City', 'Address', 'Latitude', 'Longitude',
+               'Species', 'Condition', 'Height (m)', 'Trunk Diameter (cm)',
+               'Crown Diameter (m)', 'Age', 'Location', 'CPC Code',
+               'Comments', 'Actions', 'Next Check', 'Owner ID'])
+    for t in trees:
+        ws.append([
+            t.id, t.custom_id, t.city, t.address, t.latitude, t.longitude,
+            t.species, t.condition, t.height, t.trunk_diameter_cm,
+            t.crown_diameter_m, t.age, t.location, t.cpc,
+            t.comments, t.actions,
+            t.next_check.strftime("%Y-%m-%d") if t.next_check else None,
+            t.owner_id
+        ])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return send_file(buf, download_name='trees.xlsx', as_attachment=True,
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+@app.route('/export/geojson', methods=['GET'])
+@auth_required
+def export_geojson():
+    role = request.user.get('role')
+    user_city = request.user.get('city')
+    user_id = request.user.get('user_id')
+
+    query = Tree.query
+    if role == 'user':
+        query = query.filter(Tree.owner_id == user_id)
+    elif role == 'city':
+        query = query.filter(Tree.city == user_city)
+    trees = query.all()
+
+    features = []
+    for t in trees:
+        if t.latitude is None or t.longitude is None:
+            continue
+        features.append({
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [t.longitude, t.latitude]},
+            "properties": {
+                "id": t.id, "custom_id": t.custom_id, "city": t.city,
+                "address": t.address, "species": t.species, "condition": t.condition,
+                "height": t.height, "trunk_diameter_cm": t.trunk_diameter_cm,
+                "crown_diameter_m": t.crown_diameter_m, "age": t.age,
+                "location": t.location, "cpc": t.cpc, "comments": t.comments,
+                "actions": t.actions,
+                "next_check": t.next_check.strftime("%Y-%m-%d") if t.next_check else None,
+                "owner_id": t.owner_id
+            }
+        })
+
+    geojson = {"type": "FeatureCollection", "features": features}
+    buf = io.BytesIO(json.dumps(geojson, ensure_ascii=False).encode('utf-8'))
+    buf.seek(0)
+    return send_file(buf, download_name='trees.geojson', as_attachment=True,
+                     mimetype='application/geo+json')
 
 # -----------------------
 # Bootstrap: create initial superuser if none exists (dev convenience)

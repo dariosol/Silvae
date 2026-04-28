@@ -1,287 +1,457 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tree Database</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Silvae Pro</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="style.css">
 </head>
-<body class="container mt-4">
+<body>
 
-    <h1 class="text-center">🌳 Tree Management System</h1>
-
-    <!-- Auth Section -->
-    <div id="authSection" class="row mb-3">
-        <div class="col-md-3">
-            <input id="loginUsername" class="form-control" placeholder="Username">
-        </div>
-        <div class="col-md-3">
-            <input id="loginPassword" type="password" class="form-control" placeholder="Password">
-        </div>
-        <div class="col-md-3">
-            <button id="loginBtn" class="btn btn-primary w-100">Login</button>
-        </div>
-        <div class="col-md-3">
-            <button id="refreshCitiesBtn" class="btn btn-outline-secondary w-100">Refresh Cities</button>
-        </div>
+<!-- ══════════════════════════════════════════════════════
+     LOGIN PAGE
+     ══════════════════════════════════════════════════════ -->
+<div id="loginPage">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="login-logo-ring"><i class="fa-solid fa-tree"></i></div>
+      <div class="login-app-name">Silvae Pro</div>
+      <div class="login-tagline">Field Tree Management System</div>
     </div>
 
-    <div id="loggedInSection" class="row mb-3" style="display:none;">
-        <div class="col-md-8">
-            <span id="loggedInUser" class="fw-bold"></span>
-        </div>
-        <div class="col-md-4">
-            <button id="logoutBtn" class="btn btn-danger w-100">Logout</button>
-        </div>
+    <div class="login-field">
+      <label for="loginUsername">Username</label>
+      <div class="login-field-wrap">
+        <i class="ico fa-regular fa-user"></i>
+        <input id="loginUsername" class="login-input" type="text"
+               placeholder="Enter your username" autocomplete="username">
+      </div>
     </div>
 
-    <!-- Role-specific management -->
-    <div id="userManagement" class="card mb-3" style="display:none;">
-        <div class="card-body">
-            <h5 class="card-title">User Management (superuser / city)</h5>
-            <div class="row g-2">
-                <div class="col-md-3">
-                    <input id="newUsername" class="form-control" placeholder="username">
-                </div>
-                <div class="col-md-3">
-                    <input id="newPassword" type="password" class="form-control" placeholder="password">
-                </div>
-                <div class="col-md-2">
-                    <select id="newRole" class="form-control">
-                        <option value="user">user</option>
-                        <option value="city">city</option>
-                        <option value="superuser">superuser</option>
-                    </select>
-                </div>
-                <div class="col-md-2">
-                    <input id="newCity" list="newCityDatalist" class="form-control" placeholder="city (optional)">
-                    <datalist id="newCityDatalist"></datalist>
-                </div>
-                <div class="col-md-2">
-                    <button id="createUserBtn" class="btn btn-success w-100">Create User</button>
-                </div>
+    <div class="login-field">
+      <label for="loginPassword">Password</label>
+      <div class="login-field-wrap">
+        <i class="ico fa-solid fa-lock"></i>
+        <input id="loginPassword" class="login-input" type="password"
+               placeholder="Enter your password" autocomplete="current-password">
+      </div>
+    </div>
+
+    <button id="loginBtn" class="btn-login">
+      <i class="fa-solid fa-right-to-bracket"></i>&nbsp; Sign In
+    </button>
+    <div class="login-footer">Silvae Pro &nbsp;·&nbsp; Field Edition</div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════
+     APP PAGE  (fills the viewport, no page scroll)
+     ══════════════════════════════════════════════════════ -->
+<div id="appPage">
+
+  <!-- ── Navbar ───────────────────────────────────────── -->
+  <nav class="navbar">
+    <a href="#" class="nav-brand">
+      <div class="nav-brand-icon"><i class="fa-solid fa-tree"></i></div>
+      <div class="nav-brand-name">Silvae <small>Pro</small></div>
+    </a>
+
+    <div class="nav-filters">
+      <select id="citySelect" class="nav-select" onchange="fetchTrees()">
+        <option value="">All cities</option>
+      </select>
+      <input id="streetSearch" class="nav-search" type="text" placeholder="Search by address…">
+      <button class="btn-logout" style="padding:7px 10px;" onclick="fetchTrees()" title="Search">
+        <i class="fa-solid fa-magnifying-glass"></i>
+      </button>
+    </div>
+
+    <div class="nav-user">
+      <div class="nav-user-badge">
+        <i class="fa-solid fa-circle-user"></i>
+        <span id="loggedInUser"></span>
+      </div>
+      <button id="logoutBtn" class="btn-logout">
+        <i class="fa-solid fa-right-from-bracket"></i> Logout
+      </button>
+    </div>
+  </nav>
+
+  <!-- ── Tab bar ──────────────────────────────────────── -->
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="trees">
+      <i class="fa-solid fa-seedling"></i><span>Trees</span>
+    </button>
+    <button class="tab-btn" data-tab="map">
+      <i class="fa-solid fa-map-location-dot"></i><span>Map</span>
+    </button>
+    <button class="tab-btn" data-tab="manage" id="tabManageBtn" style="display:none">
+      <i class="fa-solid fa-users-gear"></i><span>Manage</span>
+    </button>
+    <button class="tab-btn" data-tab="export">
+      <i class="fa-solid fa-download"></i><span>Export</span>
+    </button>
+  </div>
+
+  <!-- ── Tab content ──────────────────────────────────── -->
+  <div class="tab-content">
+
+    <!-- ─ TREES tab ─────────────────────────────────── -->
+    <section id="tab-trees" class="tab-section active">
+
+      <!-- ── LIST VIEW ──────────────────────────────── -->
+      <div id="view-list" class="tab-view active">
+
+        <div class="section-toolbar">
+          <div class="toolbar-left">
+            <div class="filter-wrap">
+              <i class="fa-solid fa-magnifying-glass filter-ico"></i>
+              <input id="idFilter" class="inp" type="text"
+                     style="padding-left:32px;min-width:180px;"
+                     placeholder="Filter by ID…">
             </div>
-
-            <hr>
-            <h6>Existing users</h6>
-            <ul id="userList" class="list-group list-group-flush"></ul>
-        </div>
-    </div>
-
-    <div id="cityManagement" class="card mb-3" style="display:none;">
-        <div class="card-body">
-            <h5 class="card-title">City Management (superuser)</h5>
-            <div class="row">
-                <div class="col-md-8">
-                    <input id="cityName" class="form-control" placeholder="City name">
-                </div>
-                <div class="col-md-4">
-                    <button id="createCityBtn" class="btn btn-primary w-100">Create City</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Filters: Select City & Address -->
-    <div class="row mb-3">
-        <div class="col-md-4">
-            <label for="citySelect">Select City:</label>
-            <select id="citySelect" class="form-control" onchange="fetchTrees()">
-                <option value="">-- Choose a city --</option>
+            <span id="inventoryLabel" class="section-label">Tree Inventory</span>
+            <span class="count-badge" id="treeCount">0</span>
+          </div>
+          <div class="toolbar-right">
+            <select id="pageSizeSelect" class="inp" style="width:80px;" title="Rows per page">
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
             </select>
+            <button class="btn btn-primary" id="openFormBtn">
+              <i class="fa-solid fa-plus"></i> Add Tree
+            </button>
+          </div>
         </div>
 
-        <div class="col-md-4">
-            <label for="streetSearch">Street Contains:</label>
-            <input type="text" id="streetSearch" class="form-control" placeholder="Enter part of the address">
+        <div class="section-card">
+          <div class="card-head" style="flex-shrink:0;">
+            <span class="card-title" style="font-size:12px;color:var(--text-muted);">
+              <i class="fa-solid fa-circle-info"></i>
+              Select a city in the top bar, then use the ID filter to find a specific tree.
+            </span>
+          </div>
+          <div class="tbl-wrap">
+            <table class="tbl">
+              <thead>
+                <tr>
+                  <th class="sortable" data-sort="custom_id">Custom ID <i class="sort-ico fa-solid fa-sort"></i></th>
+                  <th>Species</th>
+                  <th class="sortable" data-sort="condition">Condition <i class="sort-ico fa-solid fa-sort"></i></th>
+                  <th class="sortable" data-sort="address">Location <i class="sort-ico fa-solid fa-sort"></i></th>
+                  <th class="sortable" data-sort="latitude">Coords <i class="sort-ico fa-solid fa-sort"></i></th>
+                  <th class="sortable" data-sort="next_check">Next Check <i class="sort-ico fa-solid fa-sort"></i></th>
+                  <th style="text-align:right">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="treeList"></tbody>
+            </table>
+          </div>
+          <div id="paginationBar" style="display:none;align-items:center;justify-content:space-between;padding:10px 18px;border-top:1px solid var(--border);background:var(--g50);flex-shrink:0;">
+            <span id="pagingInfo" style="font-size:13px;color:var(--text-muted);"></span>
+            <div id="pagination" style="display:flex;gap:4px;align-items:center;"></div>
+          </div>
         </div>
 
-        <div class="col-md-4 d-flex align-items-end">
-            <button class="btn btn-primary w-100" onclick="fetchTrees()">Search Trees</button>
-        </div>
-    </div>
+      </div><!-- /view-list -->
 
-    <!-- Search by Tree ID -->
-    <div class="row mb-3">
-        <div class="col-md-6">
-            <input type="text" id="treeIdInput" class="form-control" placeholder="Enter Custom Tree ID">
-        </div>
-        <div class="col-md-3">
-            <button class="btn btn-secondary w-100" onclick="fetchTreeByCustomInput()">Search by ID</button>
-        </div>
-        <div class="col-md-3">
-            <button class="btn btn-danger w-100" onclick="deleteTreeByCustomInput()">Delete Tree</button>
-        </div>
-    </div>
 
-    <!-- Tree List -->
-    <h3>🌲 Tree List</h3>
-    <table class="table table-bordered">
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>Custom ID</th>
-                <th>Species</th>
-                <th>Condition</th>
-                <th>Address</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody id="treeList">
-            <!-- Trees will be inserted here -->
-        </tbody>
-    </table>
+      <!-- ── EDIT / ADD VIEW ─────────────────────────── -->
+      <div id="view-edit" class="tab-view">
 
-    <h3 id="formTitle">🌿 Add a New Tree</h3>
-    <form id="addTreeForm">
-        <input type="hidden" id="editTreeId">
-
-        <div class="row mb-3">
-            <div class="col-md-4">
-                <label for="custom_id">Custom ID:</label>
-                <input type="text" id="custom_id" class="form-control" required>
-            </div>
-            <div class="col-md-4">
-                <label for="city">City:</label>
-                <input type="text" id="city" class="form-control" required>
-            </div>
-            <div class="col-md-4">
-                <label for="address">Address (optional):</label>
-                <input type="text" id="address" class="form-control">
-            </div>
+        <div class="view-bar">
+          <button class="btn btn-outline btn-sm" onclick="showTreeView('list')">
+            <i class="fa-solid fa-arrow-left"></i> Back to Trees
+          </button>
+          <span class="view-title" id="formTitle">
+            <i class="fa-solid fa-seedling"></i> Add New Tree
+          </span>
         </div>
 
-        <div class="row mb-3">
-            <div class="col-md-4">
-                <label for="latitude">Latitude:</label>
-                <input type="text" id="latitude" class="form-control" required>
-            </div>
-            <div class="col-md-4">
-                <label for="longitude">Longitude:</label>
-                <input type="text" id="longitude" class="form-control" required>
-            </div>
-            <div class="col-md-4 d-flex align-items-end">
-                <button type="button" class="btn btn-info w-100" onclick="getLocation()">📍 Use GPS Location</button>
-            </div>
+        <div class="view-body">
+          <form id="addTreeForm">
+            <input type="hidden" id="editTreeId">
+            <div class="form-grid">
+
+              <div class="fs">
+                <div class="fs-title"><i class="fa-solid fa-tag"></i> Identification</div>
+                <div class="fgrp">
+                  <label class="flabel" for="custom_id">Custom ID *</label>
+                  <input id="custom_id" class="fc" type="text" required placeholder="e.g. TOR-001">
+                </div>
+                <div class="fc-grid2">
+                  <div class="fgrp">
+                    <label class="flabel" for="city">City *</label>
+                    <input id="city" class="fc" type="text" required>
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="cpc">CPC Code</label>
+                    <input id="cpc" class="fc" type="text">
+                  </div>
+                </div>
+              </div>
+
+              <div class="fs">
+                <div class="fs-title"><i class="fa-solid fa-ruler-combined"></i> Measurements</div>
+                <div class="fc-grid3">
+                  <div class="fgrp">
+                    <label class="flabel" for="height">Height (m)</label>
+                    <input id="height" class="fc" type="text">
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="trunk_diameter_cm">Trunk Ø (cm)</label>
+                    <input id="trunk_diameter_cm" class="fc" type="number" step="0.1">
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="crown_diameter_m">Crown Ø (m)</label>
+                    <input id="crown_diameter_m" class="fc" type="number" step="0.1">
+                  </div>
+                </div>
+                <div class="fc-grid2">
+                  <div class="fgrp">
+                    <label class="flabel" for="age">Age / Est. Age</label>
+                    <input id="age" class="fc" type="text" placeholder="e.g. 40 years">
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="location">Location Detail</label>
+                    <input id="location" class="fc" type="text" placeholder="e.g. Park entrance">
+                  </div>
+                </div>
+              </div>
+
+              <div class="fs">
+                <div class="fs-title"><i class="fa-solid fa-location-dot"></i> Location</div>
+                <div class="fgrp">
+                  <label class="flabel" for="address">Address</label>
+                  <input id="address" class="fc" type="text"
+                         placeholder="Auto-filled from GPS or used for geocoding">
+                </div>
+                <div class="fc-grid2" style="margin-bottom:10px;">
+                  <div class="fgrp">
+                    <label class="flabel" for="latitude">Latitude</label>
+                    <input id="latitude" class="fc" type="text" placeholder="e.g. 45.4642">
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="longitude">Longitude</label>
+                    <input id="longitude" class="fc" type="text" placeholder="e.g. 9.1900">
+                  </div>
+                </div>
+                <button type="button" class="btn btn-outline" style="width:100%;" onclick="getLocation()">
+                  <i class="fa-solid fa-location-crosshairs"></i> Use GPS Location
+                </button>
+                <div id="gpsStatus" style="font-size:12px;color:var(--text-muted);margin-top:6px;text-align:center;"></div>
+              </div>
+
+              <div class="fs">
+                <div class="fs-title"><i class="fa-solid fa-leaf"></i> Tree Details &amp; Schedule</div>
+                <div class="fc-grid2">
+                  <div class="fgrp">
+                    <label class="flabel" for="species">Species *</label>
+                    <input id="species" class="fc" type="text" required placeholder="e.g. Quercus robur">
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="condition">Condition *</label>
+                    <input id="condition" class="fc" type="text" required placeholder="Good / Fair / Poor">
+                  </div>
+                </div>
+                <div class="fgrp">
+                  <label class="flabel" for="comments">Comments</label>
+                  <textarea id="comments" class="fc" rows="3" placeholder="Observations…"></textarea>
+                </div>
+                <div class="fgrp">
+                  <label class="flabel" for="actions">Actions Taken</label>
+                  <input id="actions" class="fc" type="text" placeholder="Pruning, treatment…">
+                </div>
+                <div class="fgrp">
+                  <label class="flabel" for="next_check">Next Inspection Date</label>
+                  <input id="next_check" class="fc" type="date">
+                </div>
+              </div>
+
+            </div><!-- /form-grid -->
+          </form>
+
+          <div class="view-footer">
+            <button type="submit" form="addTreeForm" class="btn btn-primary" id="formSubmitButton">
+              <i class="fa-solid fa-floppy-disk"></i> Save Tree
+            </button>
+            <button type="button" class="btn btn-outline" onclick="resetForm(); showTreeView('list')">
+              <i class="fa-solid fa-xmark"></i> Cancel
+            </button>
+          </div>
         </div>
 
-        <div class="row mb-3">
-            <div class="col-md-4">
-                <label for="species">Species:</label>
-                <input type="text" id="species" class="form-control" required>
-            </div>
-            <div class="col-md-4">
-                <label for="condition">Condition:</label>
-                <input type="text" id="condition" class="form-control" required>
-            </div>
-            <div class="col-md-4">
-                <label for="comments">Comments:</label>
-                <textarea id="comments" class="form-control"></textarea>
-            </div>
+      </div><!-- /view-edit -->
+
+
+      <!-- ── HISTORY VIEW ───────────────────────────── -->
+      <div id="view-history" class="tab-view">
+
+        <div class="view-bar">
+          <button class="btn btn-outline btn-sm" onclick="showTreeView('list')">
+            <i class="fa-solid fa-arrow-left"></i> Back to Trees
+          </button>
+          <span class="view-title" id="historyTitle">
+            <i class="fa-solid fa-clock-rotate-left"></i> Inspection History
+          </span>
         </div>
 
-        <!-- Additional Details -->
-        <h4>🌱 Additional Details</h4>
-        <div class="row mb-3">
-            <div class="col-md-4">
-                <label for="height">Height (m):</label>
-                <input type="text" id="height" class="form-control">
+        <div class="history-layout">
+          <div class="history-timeline">
+            <div id="timelineContent" class="timeline-wrap"></div>
+          </div>
+          <div class="history-form">
+            <div class="fs-title" style="padding:0 0 14px;">
+              <i class="fa-solid fa-plus"></i> Log New Inspection
             </div>
-            <div class="col-md-4">
-                <label for="trunk_diameter_cm">Trunk Diameter (cm):</label>
-                <input type="number" id="trunk_diameter_cm" class="form-control">
+            <input type="hidden" id="inspTreeId">
+            <div class="fc-grid2">
+              <div class="fgrp">
+                <label class="flabel">Date</label>
+                <input id="inspDate" class="fc" type="date">
+              </div>
+              <div class="fgrp">
+                <label class="flabel">Condition</label>
+                <input id="inspCondition" class="fc" type="text" placeholder="Good / Fair / Poor">
+              </div>
             </div>
-            <div class="col-md-4">
-                <label for="crown_diameter_m">Crown Diameter (m):</label>
-                <input type="number" id="crown_diameter_m" class="form-control">
+            <div class="fgrp">
+              <label class="flabel">Comments / Observations</label>
+              <textarea id="inspComments" class="fc" rows="4" placeholder="What did you observe?"></textarea>
             </div>
+            <div class="fgrp">
+              <label class="flabel">Actions Taken</label>
+              <input id="inspActions" class="fc" type="text" placeholder="Pruning, treatment…">
+            </div>
+            <button class="btn btn-primary" style="width:100%;margin-top:6px;"
+                    onclick="submitInspection()">
+              <i class="fa-solid fa-floppy-disk"></i> Log Inspection
+            </button>
+          </div>
         </div>
 
-        <div class="row mb-3">
-            <div class="col-md-4">
-                <label for="age">Age:</label>
-                <input type="text" id="age" class="form-control">
+      </div><!-- /view-history -->
+
+    </section><!-- /tab-trees -->
+
+
+    <!-- ─ MAP tab ───────────────────────────────────── -->
+    <section id="tab-map" class="tab-section">
+      <div id="map"></div>
+    </section>
+
+
+    <!-- ─ MANAGE tab ────────────────────────────────── -->
+    <section id="tab-manage" class="tab-section">
+      <div class="scroll-area">
+
+        <!-- User management -->
+        <div id="userManagement" class="panel mb">
+          <div class="panel-head">
+            <i class="fa-solid fa-users"></i> User Management
+          </div>
+          <div class="panel-body">
+            <div class="form-row mb-sm">
+              <input id="newUsername" class="inp" placeholder="Username">
+              <input id="newPassword" type="password" class="inp" placeholder="Password">
+              <select id="newRole" class="inp" style="max-width:110px;">
+                <option value="user">user</option>
+                <option value="city">city</option>
+                <option value="superuser">superuser</option>
+              </select>
+              <input id="newCity" list="newCityDatalist" class="inp"
+                     placeholder="City (optional)" style="max-width:160px;">
+              <datalist id="newCityDatalist"></datalist>
+              <button id="createUserBtn" class="btn btn-primary btn-sm" style="flex:0 0 auto;">
+                <i class="fa-solid fa-plus"></i> Add User
+              </button>
             </div>
-            <div class="col-md-4">
-                <label for="actions">Actions Taken:</label>
-                <input type="text" id="actions" class="form-control">
-            </div>
-            <div class="col-md-4">
-                <label for="location">Location:</label>
-                <input type="text" id="location" class="form-control">
-            </div>
+            <div class="user-list" id="userList"></div>
+          </div>
         </div>
 
-        <div class="row mb-3">
-            <div class="col-md-4">
-                <label for="cpc">CPC Code:</label>
-                <input type="text" id="cpc" class="form-control">
+        <!-- City management -->
+        <div id="cityManagement" class="panel mb">
+          <div class="panel-head">
+            <i class="fa-solid fa-city"></i> City Management
+          </div>
+          <div class="panel-body">
+            <div class="form-row">
+              <input id="cityName" class="inp" placeholder="New city name">
+              <button id="createCityBtn" class="btn btn-primary btn-sm" style="flex:0 0 auto;">
+                <i class="fa-solid fa-plus"></i> Add City
+              </button>
+              <button id="refreshCitiesBtn" class="btn btn-outline btn-sm" style="flex:0 0 auto;">
+                <i class="fa-solid fa-rotate"></i> Refresh
+              </button>
             </div>
-            <div class="col-md-4">
-                <label for="next_check">Next Check Date:</label>
-                <input type="date" id="next_check" class="form-control">
-            </div>
+          </div>
         </div>
 
-        <button type="submit" class="btn btn-success" id="formSubmitButton">🌳 Add Tree</button>
-        <button type="button" class="btn btn-secondary" onclick="resetForm()">Cancel Edit</button>
-    </form>
+      </div>
+    </section><!-- /tab-manage -->
 
-    <p id="status" class="mt-2"></p>
 
-    <!-- Map (Hidden by Default) -->
-    <button class="btn btn-success mt-3" onclick="toggleMap()">Show in Map</button>
-    <div id="map" style="height: 400px; display: none;" class="mt-3"></div>
+    <!-- ─ EXPORT tab ────────────────────────────────── -->
+    <section id="tab-export" class="tab-section">
+      <div class="scroll-area">
+        <h2 class="section-heading">
+          <i class="fa-solid fa-download"></i> Export Data
+        </h2>
+        <p class="section-sub">
+          Exports include all trees visible to your account for the currently selected city.
+        </p>
 
-    <script src="app.js"></script>
-    <script>
-        // helpers for the small custom search buttons (search/delete by custom id)
-        function fetchTreeByCustomInput() {
-            const id = document.getElementById('treeIdInput').value.trim();
-            if (!id) return;
-            fetchTreeCustom(id);
-        }
-        function deleteTreeByCustomInput() {
-            const id = document.getElementById('treeIdInput').value.trim();
-            if (!id) return;
-            // find by custom_id -> need to call server to get tree then delete
-            fetch(`${location.origin}/tree/custom/${encodeURIComponent(id)}`, {
-                headers: (localStorage.getItem('token') ? { 'Authorization': 'Bearer ' + localStorage.getItem('token') } : {})
-            }).then(r => r.json().then(d => {
-                if (!r.ok) return alert(d.message || 'Not found');
-                if (confirm('Delete this tree?')) {
-                    fetch(`${location.origin}/tree/${d.id}`, { method: 'DELETE', headers: (localStorage.getItem('token') ? { 'Authorization': 'Bearer ' + localStorage.getItem('token') } : {}) })
-                        .then(rr => rr.json().then(dd => {
-                            if (rr.ok) {
-                                alert('Deleted');
-                                location.reload();
-                            } else alert(dd.message || 'Error');
-                        }));
-                }
-            }));
-        }
+        <div class="export-grid">
 
-        function fetchTreeCustom(custom_id) {
-            fetch(`${location.origin}/tree/custom/${encodeURIComponent(custom_id)}`, {
-                headers: (localStorage.getItem('token') ? { 'Authorization': 'Bearer ' + localStorage.getItem('token') } : {})
-            }).then(r => r.json().then(d => {
-                if (!r.ok) return alert(d.message || 'Not found');
-                // Fill edit form
-                document.getElementById('editTreeId').value = d.id;
-                document.getElementById('custom_id').value = d.custom_id;
-                document.getElementById('city').value = d.city;
-                document.getElementById('address').value = d.address;
-                document.getElementById('latitude').value = d.latitude;
-                document.getElementById('longitude').value = d.longitude;
-                document.getElementById('species').value = d.species;
-                document.getElementById('condition').value = d.condition;
-                document.getElementById('comments').value = d.comments || '';
-                document.getElementById('formTitle').textContent = `🌿 Edit Tree #${d.id}`;
-                document.getElementById('formSubmitButton').textContent = 'Save Changes';
-            }));
-        }
-    </script>
+          <div class="export-card">
+            <div class="export-card-icon" style="background:#1d6f42;">
+              <i class="fa-solid fa-file-excel"></i>
+            </div>
+            <div class="export-card-body">
+              <h3>Excel Spreadsheet</h3>
+              <p>Full attribute table in <code>.xlsx</code> format. Open in Excel,
+                 LibreOffice Calc, or any spreadsheet tool.</p>
+              <button id="exportExcelBtn" class="btn btn-excel">
+                <i class="fa-solid fa-file-arrow-down"></i> Download .xlsx
+              </button>
+            </div>
+          </div>
+
+          <div class="export-card">
+            <div class="export-card-icon" style="background:#589632;">
+              <i class="fa-solid fa-globe"></i>
+            </div>
+            <div class="export-card-body">
+              <h3>GeoJSON — QGIS</h3>
+              <p>Geographic feature collection in <code>.geojson</code> format.
+                 Drag the file directly into QGIS to create a point layer.</p>
+              <button id="exportGeoJSONBtn" class="btn btn-qgis">
+                <i class="fa-solid fa-file-arrow-down"></i> Download .geojson
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section><!-- /tab-export -->
+
+  </div><!-- /tab-content -->
+
+</div><!-- /appPage -->
+
+
+
+
+<!-- Status toast -->
+<div id="status"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="app.js"></script>
 </body>
 </html>
