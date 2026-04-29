@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="it">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,12 +7,29 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="style.css">
+  <style>
+    .diag-row{display:flex;gap:6px;align-items:center;margin-bottom:4px;}
+    .diag-row select{flex:1;min-width:0;}
+    .diag-row .sel-giu{width:80px;flex:none;}
+    .diag-row .btn-rm{flex:none;padding:4px 8px;font-size:12px;}
+    details.fs-detail{margin-bottom:12px;}
+    details.fs-detail summary{cursor:pointer;font-weight:600;padding:8px 0;color:var(--g800);list-style:none;}
+    details.fs-detail summary::before{content:'▶ ';font-size:10px;}
+    details.fs-detail[open] summary::before{content:'▼ ';}
+    .risk-box{background:var(--g50);border:1px solid var(--border);border-radius:var(--r);padding:12px;margin-top:8px;}
+    .risk-row{display:flex;justify-content:space-between;font-size:13px;padding:3px 0;border-bottom:1px solid var(--border);}
+    .risk-row:last-child{border:none;}
+    .risk-label{color:var(--text-muted);}
+    .risk-val{font-weight:600;color:var(--g800);}
+    select[multiple]{width:100%;height:110px;font-size:13px;}
+    .pericolo-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+    .bersaglio-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+    .post-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+  </style>
 </head>
 <body>
 
-<!-- ══════════════════════════════════════════════════════
-     LOGIN PAGE
-     ══════════════════════════════════════════════════════ -->
+<!-- LOGIN PAGE -->
 <div id="loginPage">
   <div class="login-card">
     <div class="login-logo">
@@ -20,45 +37,34 @@
       <div class="login-app-name">Silvae Pro</div>
       <div class="login-tagline">Field Tree Management System</div>
     </div>
-
     <div class="login-field">
       <label for="loginUsername">Username</label>
       <div class="login-field-wrap">
         <i class="ico fa-regular fa-user"></i>
-        <input id="loginUsername" class="login-input" type="text"
-               placeholder="Enter your username" autocomplete="username">
+        <input id="loginUsername" class="login-input" type="text" placeholder="Enter your username" autocomplete="username">
       </div>
     </div>
-
     <div class="login-field">
       <label for="loginPassword">Password</label>
       <div class="login-field-wrap">
         <i class="ico fa-solid fa-lock"></i>
-        <input id="loginPassword" class="login-input" type="password"
-               placeholder="Enter your password" autocomplete="current-password">
+        <input id="loginPassword" class="login-input" type="password" placeholder="Enter your password" autocomplete="current-password">
       </div>
     </div>
-
-    <button id="loginBtn" class="btn-login">
-      <i class="fa-solid fa-right-to-bracket"></i>&nbsp; Sign In
-    </button>
+    <button id="loginBtn" class="btn-login"><i class="fa-solid fa-right-to-bracket"></i>&nbsp; Sign In</button>
     <div class="login-footer">Silvae Pro &nbsp;·&nbsp; Field Edition</div>
   </div>
 </div>
 
-
-<!-- ══════════════════════════════════════════════════════
-     APP PAGE  (fills the viewport, no page scroll)
-     ══════════════════════════════════════════════════════ -->
+<!-- APP PAGE -->
 <div id="appPage">
 
-  <!-- ── Navbar ───────────────────────────────────────── -->
+  <!-- Navbar -->
   <nav class="navbar">
     <a href="#" class="nav-brand">
       <div class="nav-brand-icon"><i class="fa-solid fa-tree"></i></div>
       <div class="nav-brand-name">Silvae <small>Pro</small></div>
     </a>
-
     <div class="nav-filters">
       <select id="citySelect" class="nav-select" onchange="fetchTrees()">
         <option value="">All cities</option>
@@ -68,66 +74,47 @@
         <i class="fa-solid fa-magnifying-glass"></i>
       </button>
     </div>
-
     <div class="nav-user">
       <div class="nav-user-badge">
         <i class="fa-solid fa-circle-user"></i>
         <span id="loggedInUser"></span>
       </div>
-      <button id="logoutBtn" class="btn-logout">
-        <i class="fa-solid fa-right-from-bracket"></i> Logout
-      </button>
+      <button id="logoutBtn" class="btn-logout"><i class="fa-solid fa-right-from-bracket"></i> Logout</button>
     </div>
   </nav>
 
-  <!-- ── Tab bar ──────────────────────────────────────── -->
+  <!-- Tab bar -->
   <div class="tab-bar">
-    <button class="tab-btn active" data-tab="trees">
-      <i class="fa-solid fa-seedling"></i><span>Trees</span>
-    </button>
-    <button class="tab-btn" data-tab="map">
-      <i class="fa-solid fa-map-location-dot"></i><span>Map</span>
-    </button>
-    <button class="tab-btn" data-tab="manage" id="tabManageBtn" style="display:none">
-      <i class="fa-solid fa-users-gear"></i><span>Manage</span>
-    </button>
-    <button class="tab-btn" data-tab="export">
-      <i class="fa-solid fa-download"></i><span>Export</span>
-    </button>
+    <button class="tab-btn active" data-tab="trees"><i class="fa-solid fa-seedling"></i><span>Trees</span></button>
+    <button class="tab-btn" data-tab="map"><i class="fa-solid fa-map-location-dot"></i><span>Map</span></button>
+    <button class="tab-btn" data-tab="manage" id="tabManageBtn" style="display:none"><i class="fa-solid fa-users-gear"></i><span>Manage</span></button>
+    <button class="tab-btn" data-tab="export"><i class="fa-solid fa-download"></i><span>Export</span></button>
   </div>
 
-  <!-- ── Tab content ──────────────────────────────────── -->
+  <!-- Tab content -->
   <div class="tab-content">
 
-    <!-- ─ TREES tab ─────────────────────────────────── -->
+    <!-- TREES tab -->
     <section id="tab-trees" class="tab-section active">
 
-      <!-- ── LIST VIEW ──────────────────────────────── -->
+      <!-- LIST VIEW -->
       <div id="view-list" class="tab-view active">
-
         <div class="section-toolbar">
           <div class="toolbar-left">
             <div class="filter-wrap">
               <i class="fa-solid fa-magnifying-glass filter-ico"></i>
-              <input id="idFilter" class="inp" type="text"
-                     style="padding-left:32px;min-width:180px;"
-                     placeholder="Filter by ID…">
+              <input id="idFilter" class="inp" type="text" style="padding-left:32px;min-width:180px;" placeholder="Filter by ID…">
             </div>
             <span id="inventoryLabel" class="section-label">Tree Inventory</span>
             <span class="count-badge" id="treeCount">0</span>
           </div>
           <div class="toolbar-right">
             <select id="pageSizeSelect" class="inp" style="width:80px;" title="Rows per page">
-              <option value="25">25</option>
-              <option value="50">50</option>
-              <option value="100">100</option>
+              <option value="25">25</option><option value="50">50</option><option value="100">100</option>
             </select>
-            <button class="btn btn-primary" id="openFormBtn">
-              <i class="fa-solid fa-plus"></i> Add Tree
-            </button>
+            <button class="btn btn-primary" id="openFormBtn"><i class="fa-solid fa-plus"></i> Add Tree</button>
           </div>
         </div>
-
         <div class="section-card">
           <div class="card-head" style="flex-shrink:0;">
             <span class="card-title" style="font-size:12px;color:var(--text-muted);">
@@ -156,20 +143,16 @@
             <div id="pagination" style="display:flex;gap:4px;align-items:center;"></div>
           </div>
         </div>
-
       </div><!-- /view-list -->
 
 
-      <!-- ── EDIT / ADD VIEW ─────────────────────────── -->
+      <!-- EDIT / ADD VIEW -->
       <div id="view-edit" class="tab-view">
-
         <div class="view-bar">
           <button class="btn btn-outline btn-sm" onclick="showTreeView('list')">
             <i class="fa-solid fa-arrow-left"></i> Back to Trees
           </button>
-          <span class="view-title" id="formTitle">
-            <i class="fa-solid fa-seedling"></i> Add New Tree
-          </span>
+          <span class="view-title" id="formTitle"><i class="fa-solid fa-seedling"></i> Add New Tree</span>
         </div>
 
         <div class="view-body">
@@ -177,98 +160,380 @@
             <input type="hidden" id="editTreeId">
             <div class="form-grid">
 
+              <!-- 1. IDENTIFICAZIONE -->
               <div class="fs">
-                <div class="fs-title"><i class="fa-solid fa-tag"></i> Identification</div>
+                <div class="fs-title"><i class="fa-solid fa-tag"></i> Identificazione</div>
                 <div class="fgrp">
-                  <label class="flabel" for="custom_id">Custom ID *</label>
-                  <input id="custom_id" class="fc" type="text" required placeholder="e.g. TOR-001">
+                  <label class="flabel" for="custom_id">ID Albero *</label>
+                  <input id="custom_id" class="fc" type="text" required placeholder="es. TOR-001">
                 </div>
                 <div class="fc-grid2">
                   <div class="fgrp">
-                    <label class="flabel" for="city">City *</label>
+                    <label class="flabel" for="city">Comune *</label>
                     <input id="city" class="fc" type="text" required>
                   </div>
                   <div class="fgrp">
-                    <label class="flabel" for="cpc">CPC Code</label>
+                    <label class="flabel" for="cpc">Codice CPC</label>
                     <input id="cpc" class="fc" type="text">
                   </div>
                 </div>
               </div>
 
+              <!-- 2. LOCALIZZAZIONE GPS -->
               <div class="fs">
-                <div class="fs-title"><i class="fa-solid fa-ruler-combined"></i> Measurements</div>
-                <div class="fc-grid3">
-                  <div class="fgrp">
-                    <label class="flabel" for="height">Height (m)</label>
-                    <input id="height" class="fc" type="text">
-                  </div>
-                  <div class="fgrp">
-                    <label class="flabel" for="trunk_diameter_cm">Trunk Ø (cm)</label>
-                    <input id="trunk_diameter_cm" class="fc" type="number" step="0.1">
-                  </div>
-                  <div class="fgrp">
-                    <label class="flabel" for="crown_diameter_m">Crown Ø (m)</label>
-                    <input id="crown_diameter_m" class="fc" type="number" step="0.1">
-                  </div>
-                </div>
-                <div class="fc-grid2">
-                  <div class="fgrp">
-                    <label class="flabel" for="age">Age / Est. Age</label>
-                    <input id="age" class="fc" type="text" placeholder="e.g. 40 years">
-                  </div>
-                  <div class="fgrp">
-                    <label class="flabel" for="location">Location Detail</label>
-                    <input id="location" class="fc" type="text" placeholder="e.g. Park entrance">
-                  </div>
-                </div>
-              </div>
-
-              <div class="fs">
-                <div class="fs-title"><i class="fa-solid fa-location-dot"></i> Location</div>
+                <div class="fs-title"><i class="fa-solid fa-location-dot"></i> Localizzazione</div>
                 <div class="fgrp">
-                  <label class="flabel" for="address">Address</label>
-                  <input id="address" class="fc" type="text"
-                         placeholder="Auto-filled from GPS or used for geocoding">
+                  <label class="flabel" for="address">Indirizzo</label>
+                  <input id="address" class="fc" type="text" placeholder="Auto-compilato da GPS o usato per geocoding">
                 </div>
                 <div class="fc-grid2" style="margin-bottom:10px;">
                   <div class="fgrp">
-                    <label class="flabel" for="latitude">Latitude</label>
-                    <input id="latitude" class="fc" type="text" placeholder="e.g. 45.4642">
+                    <label class="flabel" for="latitude">Latitudine</label>
+                    <input id="latitude" class="fc" type="text" placeholder="es. 45.4642">
                   </div>
                   <div class="fgrp">
-                    <label class="flabel" for="longitude">Longitude</label>
-                    <input id="longitude" class="fc" type="text" placeholder="e.g. 9.1900">
+                    <label class="flabel" for="longitude">Longitudine</label>
+                    <input id="longitude" class="fc" type="text" placeholder="es. 9.1900">
                   </div>
                 </div>
                 <button type="button" class="btn btn-outline" style="width:100%;" onclick="getLocation()">
-                  <i class="fa-solid fa-location-crosshairs"></i> Use GPS Location
+                  <i class="fa-solid fa-location-crosshairs"></i> Usa posizione GPS
                 </button>
                 <div id="gpsStatus" style="font-size:12px;color:var(--text-muted);margin-top:6px;text-align:center;"></div>
               </div>
 
+              <!-- 3. DATI GENERALI ARETE -->
               <div class="fs">
-                <div class="fs-title"><i class="fa-solid fa-leaf"></i> Tree Details &amp; Schedule</div>
+                <div class="fs-title"><i class="fa-solid fa-leaf"></i> Dati Generali</div>
+                <div class="fgrp">
+                  <label class="flabel" for="species">Specie *</label>
+                  <select id="species" class="fc" required>
+                    <option value="">— seleziona specie —</option>
+                  </select>
+                </div>
                 <div class="fc-grid2">
                   <div class="fgrp">
-                    <label class="flabel" for="species">Species *</label>
-                    <input id="species" class="fc" type="text" required placeholder="e.g. Quercus robur">
+                    <label class="flabel" for="dimora">Dimora</label>
+                    <select id="dimora" class="fc">
+                      <option value="">—</option>
+                    </select>
                   </div>
                   <div class="fgrp">
-                    <label class="flabel" for="condition">Condition *</label>
-                    <input id="condition" class="fc" type="text" required placeholder="Good / Fair / Poor">
+                    <label class="flabel" for="stadio_sviluppo">Stadio di sviluppo</label>
+                    <select id="stadio_sviluppo" class="fc">
+                      <option value="">—</option>
+                    </select>
                   </div>
                 </div>
-                <div class="fgrp">
-                  <label class="flabel" for="comments">Comments</label>
-                  <textarea id="comments" class="fc" rows="3" placeholder="Observations…"></textarea>
+                <div class="fc-grid2">
+                  <div class="fgrp">
+                    <label class="flabel" for="posizione_sociale">Posizione sociale</label>
+                    <select id="posizione_sociale" class="fc">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="localizzazione">Localizzazione</label>
+                    <select id="localizzazione" class="fc">
+                      <option value="">—</option>
+                    </select>
+                  </div>
                 </div>
-                <div class="fgrp">
-                  <label class="flabel" for="actions">Actions Taken</label>
-                  <input id="actions" class="fc" type="text" placeholder="Pruning, treatment…">
+                <div class="fc-grid2">
+                  <div class="fgrp">
+                    <label class="flabel" for="vincoli">Vincoli</label>
+                    <select id="vincoli" class="fc">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="age">Età / Stima età</label>
+                    <input id="age" class="fc" type="text" placeholder="es. 40 anni">
+                  </div>
                 </div>
+              </div>
+
+              <!-- 4. MISURE ORD -->
+              <div class="fs">
+                <div class="fs-title"><i class="fa-solid fa-ruler-combined"></i> Misure (ORD)</div>
+                <div class="fc-grid3">
+                  <div class="fgrp">
+                    <label class="flabel" for="tree_height_m">H albero (m)</label>
+                    <input id="tree_height_m" class="fc" type="number" step="0.1" placeholder="0.0">
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="circonferenza_cm">Circ. 1.3m (cm)</label>
+                    <input id="circonferenza_cm" class="fc" type="number" step="0.1" placeholder="0.0">
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="crown_diameter_m">Ø chioma (m)</label>
+                    <input id="crown_diameter_m" class="fc" type="number" step="0.1" placeholder="0.0">
+                  </div>
+                </div>
+                <div class="fc-grid3">
+                  <div class="fgrp">
+                    <label class="flabel" for="branch_diam_cm">Ø ramo (cm)</label>
+                    <input id="branch_diam_cm" class="fc" type="number" step="0.1" placeholder="0.0">
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="branch_length_m">L ramo (m)</label>
+                    <input id="branch_length_m" class="fc" type="number" step="0.1" placeholder="0.0">
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="branch_height_m">H ramo (m)</label>
+                    <input id="branch_height_m" class="fc" type="number" step="0.1" placeholder="0.0">
+                  </div>
+                </div>
+                <div class="fc-grid2">
+                  <div class="fgrp">
+                    <label class="flabel" for="target_height_m">H bersaglio (m)</label>
+                    <input id="target_height_m" class="fc" type="number" step="0.1" placeholder="1.8" value="1.8">
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="trunk_diameter_cm">Ø tronco (cm)</label>
+                    <input id="trunk_diameter_cm" class="fc" type="number" step="0.1" placeholder="0.0">
+                  </div>
+                </div>
+              </div>
+
+              <!-- 5. DIAGNOSI -->
+              <div class="fs">
+                <div class="fs-title"><i class="fa-solid fa-stethoscope"></i> Diagnosi — Caratteri</div>
+                <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">
+                  Per ogni parte anatomica seleziona i caratteri osservati e il giudizio (ps/s/ms).
+                </p>
+
+                <!-- Zolla radicale -->
+                <details class="fs-detail" open>
+                  <summary>Zolla radicale / Stazione</summary>
+                  <div id="diag-rows-zolla"></div>
+                  <button type="button" class="btn btn-outline btn-sm" style="margin-top:4px;"
+                          onclick="addDiagRow('zolla')">
+                    <i class="fa-solid fa-plus"></i> Aggiungi
+                  </button>
+                </details>
+
+                <!-- Colletto -->
+                <details class="fs-detail">
+                  <summary>Colletto</summary>
+                  <div id="diag-rows-colletto"></div>
+                  <button type="button" class="btn btn-outline btn-sm" style="margin-top:4px;"
+                          onclick="addDiagRow('colletto')">
+                    <i class="fa-solid fa-plus"></i> Aggiungi
+                  </button>
+                </details>
+
+                <!-- Fusto -->
+                <details class="fs-detail">
+                  <summary>Fusto</summary>
+                  <div id="diag-rows-fusto"></div>
+                  <button type="button" class="btn btn-outline btn-sm" style="margin-top:4px;"
+                          onclick="addDiagRow('fusto')">
+                    <i class="fa-solid fa-plus"></i> Aggiungi
+                  </button>
+                </details>
+
+                <!-- Castello -->
+                <details class="fs-detail">
+                  <summary>Castello</summary>
+                  <div id="diag-rows-castello"></div>
+                  <button type="button" class="btn btn-outline btn-sm" style="margin-top:4px;"
+                          onclick="addDiagRow('castello')">
+                    <i class="fa-solid fa-plus"></i> Aggiungi
+                  </button>
+                </details>
+
+                <!-- Ramificazione -->
+                <details class="fs-detail">
+                  <summary>Ramificazione / Rami</summary>
+                  <div id="diag-rows-ramificazione"></div>
+                  <button type="button" class="btn btn-outline btn-sm" style="margin-top:4px;"
+                          onclick="addDiagRow('ramificazione')">
+                    <i class="fa-solid fa-plus"></i> Aggiungi
+                  </button>
+                </details>
+
+                <!-- Chioma -->
+                <details class="fs-detail">
+                  <summary>Chioma</summary>
+                  <div id="diag-rows-chioma"></div>
+                  <button type="button" class="btn btn-outline btn-sm" style="margin-top:4px;"
+                          onclick="addDiagRow('chioma')">
+                    <i class="fa-solid fa-plus"></i> Aggiungi
+                  </button>
+                </details>
+              </div>
+
+              <!-- 6. PERICOLO -->
+              <div class="fs">
+                <div class="fs-title"><i class="fa-solid fa-triangle-exclamation"></i> Grado di Pericolo (1=massimo, 7=minimo)</div>
+                <div class="pericolo-grid">
+                  <div class="fgrp">
+                    <label class="flabel" for="pericolo_rami">P — Rami/Branche</label>
+                    <select id="pericolo_rami" class="fc">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="pericolo_tronco">P — Tronco/Castello</label>
+                    <select id="pericolo_tronco" class="fc">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="pericolo_colletto">P — Colletto</label>
+                    <select id="pericolo_colletto" class="fc">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="pericolo_zolla">P — Zolla (ribalt.)</label>
+                    <select id="pericolo_zolla" class="fc">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 7. BERSAGLIO -->
+              <div class="fs">
+                <div class="fs-title"><i class="fa-solid fa-person"></i> Bersaglio (1=massimo, 7=minimo)</div>
+                <div class="bersaglio-grid">
+                  <div class="fgrp">
+                    <label class="flabel" for="bersaglio_chioma">B — Chioma/Tronco</label>
+                    <select id="bersaglio_chioma" class="fc">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="bersaglio_ramo">B — Ramo</label>
+                    <select id="bersaglio_ramo" class="fc">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                </div>
+                <button type="button" class="btn btn-outline" style="width:100%;margin-top:10px;"
+                        onclick="calculateRisk()">
+                  <i class="fa-solid fa-calculator"></i> Calcola rischio ORD
+                </button>
+                <div id="riskResults" style="display:none;"></div>
+              </div>
+
+              <!-- 8. POST INTERVENTO -->
+              <div class="fs">
+                <details class="fs-detail">
+                  <summary><i class="fa-solid fa-scissors"></i> Misure Post-Intervento (Rischio Residuo)</summary>
+                  <p style="font-size:12px;color:var(--text-muted);margin:4px 0 8px;">
+                    Lascia vuoto per usare le misure attuali.
+                  </p>
+                  <div class="post-grid">
+                    <div class="fgrp">
+                      <label class="flabel" for="post_tree_height_m">H albero (m)</label>
+                      <input id="post_tree_height_m" class="fc" type="number" step="0.1" placeholder="—">
+                    </div>
+                    <div class="fgrp">
+                      <label class="flabel" for="post_circonferenza_cm">Circ. (cm)</label>
+                      <input id="post_circonferenza_cm" class="fc" type="number" step="0.1" placeholder="—">
+                    </div>
+                    <div class="fgrp">
+                      <label class="flabel" for="post_branch_diam_cm">Ø ramo (cm)</label>
+                      <input id="post_branch_diam_cm" class="fc" type="number" step="0.1" placeholder="—">
+                    </div>
+                    <div class="fgrp">
+                      <label class="flabel" for="post_branch_length_m">L ramo (m)</label>
+                      <input id="post_branch_length_m" class="fc" type="number" step="0.1" placeholder="—">
+                    </div>
+                    <div class="fgrp">
+                      <label class="flabel" for="post_branch_height_m">H ramo (m)</label>
+                      <input id="post_branch_height_m" class="fc" type="number" step="0.1" placeholder="—">
+                    </div>
+                    <div class="fgrp">
+                      <label class="flabel" for="post_target_height_m">H bersaglio (m)</label>
+                      <input id="post_target_height_m" class="fc" type="number" step="0.1" placeholder="—">
+                    </div>
+                  </div>
+                </details>
+              </div>
+
+              <!-- 9. PATOLOGIE -->
+              <div class="fs">
+                <div class="fs-title"><i class="fa-solid fa-virus"></i> Patologie &amp; Conflitti</div>
+                <div class="fc-grid2">
+                  <div class="fgrp">
+                    <label class="flabel" for="agenti_carie">Agenti di carie <small>(Ctrl+click per multipli)</small></label>
+                    <select id="agenti_carie" class="fc" multiple></select>
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="altri_patogeni">Altri patogeni</label>
+                    <select id="altri_patogeni" class="fc" multiple></select>
+                  </div>
+                </div>
+                <div class="fgrp" style="margin-top:8px;">
+                  <label class="flabel" for="conflitti_list">Conflitti</label>
+                  <select id="conflitti_list" class="fc" multiple style="height:90px;"></select>
+                </div>
+              </div>
+
+              <!-- 10. PRESCRIZIONI -->
+              <div class="fs">
+                <div class="fs-title"><i class="fa-solid fa-clipboard-list"></i> Prescrizioni</div>
                 <div class="fgrp">
-                  <label class="flabel" for="next_check">Next Inspection Date</label>
+                  <label class="flabel" for="prescrizioni_val">Prescrizioni valutative</label>
+                  <select id="prescrizioni_val" class="fc" multiple></select>
+                </div>
+                <div class="fgrp" style="margin-top:8px;">
+                  <label class="flabel" for="prescrizioni_mit">Prescrizioni di mitigazione</label>
+                  <select id="prescrizioni_mit" class="fc" multiple></select>
+                </div>
+                <div class="fgrp" style="margin-top:8px;">
+                  <label class="flabel" for="prescrizioni_col">Prescrizioni colturali</label>
+                  <select id="prescrizioni_col" class="fc" multiple style="height:130px;"></select>
+                </div>
+              </div>
+
+              <!-- 11. MONITORAGGIO & URGENZA -->
+              <div class="fs">
+                <div class="fs-title"><i class="fa-solid fa-calendar-check"></i> Monitoraggio &amp; Urgenza</div>
+                <div class="fc-grid2">
+                  <div class="fgrp">
+                    <label class="flabel" for="monitoraggio">Monitoraggio</label>
+                    <select id="monitoraggio" class="fc">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="urgenza">Urgenza</label>
+                    <select id="urgenza" class="fc">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="fgrp" style="margin-top:8px;">
+                  <label class="flabel" for="next_check">Prossima ispezione</label>
                   <input id="next_check" class="fc" type="date">
+                </div>
+              </div>
+
+              <!-- 12. NOTE -->
+              <div class="fs">
+                <div class="fs-title"><i class="fa-solid fa-note-sticky"></i> Note &amp; Azioni</div>
+                <div class="fgrp">
+                  <label class="flabel" for="comments">Osservazioni</label>
+                  <textarea id="comments" class="fc" rows="3" placeholder="Osservazioni…"></textarea>
+                </div>
+                <div class="fgrp">
+                  <label class="flabel" for="actions">Azioni effettuate</label>
+                  <input id="actions" class="fc" type="text" placeholder="Potatura, trattamento…">
+                </div>
+                <div class="fc-grid2">
+                  <div class="fgrp">
+                    <label class="flabel" for="height">Altezza (testo)</label>
+                    <input id="height" class="fc" type="text" placeholder="es. 15 m">
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="location">Dettaglio posizione</label>
+                    <input id="location" class="fc" type="text" placeholder="es. ingresso parco">
+                  </div>
                 </div>
               </div>
 
@@ -277,20 +542,18 @@
 
           <div class="view-footer">
             <button type="submit" form="addTreeForm" class="btn btn-primary" id="formSubmitButton">
-              <i class="fa-solid fa-floppy-disk"></i> Save Tree
+              <i class="fa-solid fa-floppy-disk"></i> Salva albero
             </button>
             <button type="button" class="btn btn-outline" onclick="resetForm(); showTreeView('list')">
-              <i class="fa-solid fa-xmark"></i> Cancel
+              <i class="fa-solid fa-xmark"></i> Annulla
             </button>
           </div>
         </div>
-
       </div><!-- /view-edit -->
 
 
-      <!-- ── HISTORY VIEW ───────────────────────────── -->
+      <!-- HISTORY VIEW -->
       <div id="view-history" class="tab-view">
-
         <div class="view-bar">
           <button class="btn btn-outline btn-sm" onclick="showTreeView('list')">
             <i class="fa-solid fa-arrow-left"></i> Back to Trees
@@ -299,25 +562,16 @@
             <i class="fa-solid fa-clock-rotate-left"></i> Inspection History
           </span>
         </div>
-
         <div class="history-layout">
           <div class="history-timeline">
             <div id="timelineContent" class="timeline-wrap"></div>
           </div>
           <div class="history-form">
-            <div class="fs-title" style="padding:0 0 14px;">
-              <i class="fa-solid fa-plus"></i> Log New Inspection
-            </div>
+            <div class="fs-title" style="padding:0 0 14px;"><i class="fa-solid fa-plus"></i> Log New Inspection</div>
             <input type="hidden" id="inspTreeId">
             <div class="fc-grid2">
-              <div class="fgrp">
-                <label class="flabel">Date</label>
-                <input id="inspDate" class="fc" type="date">
-              </div>
-              <div class="fgrp">
-                <label class="flabel">Condition</label>
-                <input id="inspCondition" class="fc" type="text" placeholder="Good / Fair / Poor">
-              </div>
+              <div class="fgrp"><label class="flabel">Date</label><input id="inspDate" class="fc" type="date"></div>
+              <div class="fgrp"><label class="flabel">Condition</label><input id="inspCondition" class="fc" type="text" placeholder="Good / Fair / Poor"></div>
             </div>
             <div class="fgrp">
               <label class="flabel">Comments / Observations</label>
@@ -327,33 +581,27 @@
               <label class="flabel">Actions Taken</label>
               <input id="inspActions" class="fc" type="text" placeholder="Pruning, treatment…">
             </div>
-            <button class="btn btn-primary" style="width:100%;margin-top:6px;"
-                    onclick="submitInspection()">
+            <button class="btn btn-primary" style="width:100%;margin-top:6px;" onclick="submitInspection()">
               <i class="fa-solid fa-floppy-disk"></i> Log Inspection
             </button>
           </div>
         </div>
-
       </div><!-- /view-history -->
 
     </section><!-- /tab-trees -->
 
 
-    <!-- ─ MAP tab ───────────────────────────────────── -->
+    <!-- MAP tab -->
     <section id="tab-map" class="tab-section">
       <div id="map"></div>
     </section>
 
 
-    <!-- ─ MANAGE tab ────────────────────────────────── -->
+    <!-- MANAGE tab -->
     <section id="tab-manage" class="tab-section">
       <div class="scroll-area">
-
-        <!-- User management -->
         <div id="userManagement" class="panel mb">
-          <div class="panel-head">
-            <i class="fa-solid fa-users"></i> User Management
-          </div>
+          <div class="panel-head"><i class="fa-solid fa-users"></i> User Management</div>
           <div class="panel-body">
             <div class="form-row mb-sm">
               <input id="newUsername" class="inp" placeholder="Username">
@@ -363,8 +611,7 @@
                 <option value="city">city</option>
                 <option value="superuser">superuser</option>
               </select>
-              <input id="newCity" list="newCityDatalist" class="inp"
-                     placeholder="City (optional)" style="max-width:160px;">
+              <input id="newCity" list="newCityDatalist" class="inp" placeholder="City (optional)" style="max-width:160px;">
               <datalist id="newCityDatalist"></datalist>
               <button id="createUserBtn" class="btn btn-primary btn-sm" style="flex:0 0 auto;">
                 <i class="fa-solid fa-plus"></i> Add User
@@ -373,12 +620,8 @@
             <div class="user-list" id="userList"></div>
           </div>
         </div>
-
-        <!-- City management -->
         <div id="cityManagement" class="panel mb">
-          <div class="panel-head">
-            <i class="fa-solid fa-city"></i> City Management
-          </div>
+          <div class="panel-head"><i class="fa-solid fa-city"></i> City Management</div>
           <div class="panel-body">
             <div class="form-row">
               <input id="cityName" class="inp" placeholder="New city name">
@@ -391,63 +634,39 @@
             </div>
           </div>
         </div>
-
       </div>
-    </section><!-- /tab-manage -->
+    </section>
 
 
-    <!-- ─ EXPORT tab ────────────────────────────────── -->
+    <!-- EXPORT tab -->
     <section id="tab-export" class="tab-section">
       <div class="scroll-area">
-        <h2 class="section-heading">
-          <i class="fa-solid fa-download"></i> Export Data
-        </h2>
-        <p class="section-sub">
-          Exports include all trees visible to your account for the currently selected city.
-        </p>
-
+        <h2 class="section-heading"><i class="fa-solid fa-download"></i> Export Data</h2>
+        <p class="section-sub">Exports include all trees visible to your account for the currently selected city.</p>
         <div class="export-grid">
-
           <div class="export-card">
-            <div class="export-card-icon" style="background:#1d6f42;">
-              <i class="fa-solid fa-file-excel"></i>
-            </div>
+            <div class="export-card-icon" style="background:#1d6f42;"><i class="fa-solid fa-file-excel"></i></div>
             <div class="export-card-body">
               <h3>Excel Spreadsheet</h3>
-              <p>Full attribute table in <code>.xlsx</code> format. Open in Excel,
-                 LibreOffice Calc, or any spreadsheet tool.</p>
-              <button id="exportExcelBtn" class="btn btn-excel">
-                <i class="fa-solid fa-file-arrow-down"></i> Download .xlsx
-              </button>
+              <p>Full attribute table in <code>.xlsx</code> format.</p>
+              <button id="exportExcelBtn" class="btn btn-excel"><i class="fa-solid fa-file-arrow-down"></i> Download .xlsx</button>
             </div>
           </div>
-
           <div class="export-card">
-            <div class="export-card-icon" style="background:#589632;">
-              <i class="fa-solid fa-globe"></i>
-            </div>
+            <div class="export-card-icon" style="background:#589632;"><i class="fa-solid fa-globe"></i></div>
             <div class="export-card-body">
               <h3>GeoJSON — QGIS</h3>
-              <p>Geographic feature collection in <code>.geojson</code> format.
-                 Drag the file directly into QGIS to create a point layer.</p>
-              <button id="exportGeoJSONBtn" class="btn btn-qgis">
-                <i class="fa-solid fa-file-arrow-down"></i> Download .geojson
-              </button>
+              <p>Geographic feature collection in <code>.geojson</code> format.</p>
+              <button id="exportGeoJSONBtn" class="btn btn-qgis"><i class="fa-solid fa-file-arrow-down"></i> Download .geojson</button>
             </div>
           </div>
-
         </div>
       </div>
-    </section><!-- /tab-export -->
+    </section>
 
   </div><!-- /tab-content -->
-
 </div><!-- /appPage -->
 
-
-
-
-<!-- Status toast -->
 <div id="status"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
