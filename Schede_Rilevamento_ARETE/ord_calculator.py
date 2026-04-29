@@ -1,0 +1,454 @@
+"""
+ARETE ORD sheet calculator - replicates the risk calculations from sheet 4 (ORD).
+
+Sheet structure recap
+---------------------
+The ORD sheet computes two risk assessments for a tree:
+  1. RISCHIO ATTUALE  – current risk, using the tree's measured dimensions
+  2. RISCHIO RESIDUO  – residual risk after a prescribed intervention, using
+                        potentially modified dimensions
+
+Each assessment covers four failure modes:
+  • Rottura branche/rami     (branch failure)
+  • Rottura tronco/castello  (trunk/scaffold failure)
+  • Rottura colletto         (collar failure)
+  • Ribaltamento zolla       (root-plate sliding/tipping)
+
+For every failure mode the sheet combines three independent 1-7 classes:
+  P – Pericolo  (failure probability, user-assessed field observation, 1=highest)
+  B – Bersaglio (target/exposure class, derived from occupancy, 1=highest)
+  I – Impulso   (momentum class, computed from tree geometry, 1=highest)
+
+The risk key is the 3-digit string str(B)+str(I)+str(P) which is looked up in
+the risk matrix (from sheet A) to obtain the risk ratio string (e.g. "1:20k").
+
+Class scale (same for all three):
+  1 = worst / most exposed / highest energy
+  7 = best  / least exposed / lowest energy
+"""
+
+import math
+
+
+# ---------------------------------------------------------------------------
+# RISK MATRIX  (sheet A, AM4:AN346)
+# Key = str(bersaglio_class) + str(impulso_class) + str(pericolo_class)
+# Value = risk ratio string
+# ---------------------------------------------------------------------------
+RISK_MATRIX: dict[str, str] = {
+    '111': '1:3',    '112': '1:20',   '113': '1:200',  '114': '1:2k',
+    '115': '1:20k',  '116': '1:200k', '117': '1:1M',
+    '121': '1:20',   '122': '1:100',  '123': '1:1k',   '124': '1:12k',
+    '125': '1:130k', '126': '1:1M',   '127': '<1:1M',
+    '131': '1:200',  '132': '1:1k',   '133': '1:12k',  '134': '1:120k',
+    '135': '1:1M',   '136': '<1:1M',  '137': '<1:1M',
+    '141': '1:2k',   '142': '1:12k',  '143': '1:120k', '144': '1:1M',
+    '145': '<1:1M',  '146': '<1:1M',  '147': '<1:1M',
+    '151': '1:20k',  '152': '1:120k', '153': '1:1M',   '154': '<1:1M',
+    '155': '<1:1M',  '156': '<1:1M',  '157': '<1:1M',
+    '161': '1:200k', '162': '1:1M',   '163': '<1:1M',  '164': '<1:1M',
+    '165': '<1:1M',  '166': '<1:1M',  '167': '<1:1M',
+    '171': '1:1M',   '172': '<1:1M',  '173': '<1:1M',  '174': '<1:1M',
+    '175': '<1:1M',  '176': '<1:1M',  '177': '<1:1M',
+
+    '211': '1:20',   '212': '1:100',  '213': '1:1k',   '214': '1:10k',
+    '215': '1:120k', '216': '1:1M',   '217': '<1:1M',
+    '221': '1:100',  '222': '1:800',  '223': '1:8k',   '224': '1:80k',
+    '225': '1:800k', '226': '<1:1M',  '227': '<1:1M',
+    '231': '1:1k',   '232': '1:8k',   '233': '1:80k',  '234': '1:800k',
+    '235': '<1:1M',  '236': '<1:1M',  '237': '<1:1M',
+    '241': '1:12k',  '242': '1:80k',  '243': '1:800k', '244': '<1:1M',
+    '245': '<1:1M',  '246': '<1:1M',  '247': '<1:1M',
+    '251': '1:130k', '252': '1:800k', '253': '<1:1M',  '254': '<1:1M',
+    '255': '<1:1M',  '256': '<1:1M',  '257': '<1:1M',
+    '261': '1:1M',   '262': '<1:1M',  '263': '<1:1M',  '264': '<1:1M',
+    '265': '<1:1M',  '266': '<1:1M',  '267': '<1:1M',
+    '271': '<1:1M',  '272': '<1:1M',  '273': '<1:1M',  '274': '<1:1M',
+    '275': '<1:1M',  '276': '<1:1M',  '277': '<1:1M',
+
+    '311': '1:200',  '312': '1:1k',   '313': '1:12k',  '314': '1:120k',
+    '315': '1:1M',   '316': '<1:1M',  '317': '<1:1M',
+    '321': '1:1k',   '322': '1:8k',   '323': '1:80k',  '324': '1:800k',
+    '325': '<1:1M',  '326': '<1:1M',  '327': '<1:1M',
+    '331': '1:12k',  '332': '1:80k',  '333': '1:800k', '334': '<1:1M',
+    '335': '<1:1M',  '336': '<1:1M',  '337': '<1:1M',
+    '341': '1:120k', '342': '1:800k', '343': '<1:1M',  '344': '<1:1M',
+    '345': '<1:1M',  '346': '<1:1M',  '347': '<1:1M',
+    '351': '1:1M',   '352': '<1:1M',  '353': '<1:1M',  '354': '<1:1M',
+    '355': '<1:1M',  '356': '<1:1M',  '357': '<1:1M',
+    '361': '<1:1M',  '362': '<1:1M',  '363': '<1:1M',  '364': '<1:1M',
+    '365': '<1:1M',  '366': '<1:1M',  '367': '<1:1M',
+    '371': '<1:1M',  '372': '<1:1M',  '373': '<1:1M',  '374': '<1:1M',
+    '375': '<1:1M',  '376': '<1:1M',  '377': '<1:1M',
+
+    '411': '1:2k',   '412': '1:12k',  '413': '1:130k', '414': '1:1M',
+    '415': '<1:1M',  '416': '<1:1M',  '417': '<1:1M',
+    '421': '1:12k',  '422': '1:80k',  '423': '1:800k', '424': '<1:1M',
+    '425': '<1:1M',  '426': '<1:1M',  '427': '<1:1M',
+    '431': '1:120k', '432': '1:800k', '433': '<1:1M',  '434': '<1:1M',
+    '435': '<1:1M',  '436': '<1:1M',  '437': '<1:1M',
+    '441': '1:1M',   '442': '<1:1M',  '443': '<1:1M',  '444': '<1:1M',
+    '445': '<1:1M',  '446': '<1:1M',  '447': '<1:1M',
+    '451': '<1:1M',  '452': '<1:1M',  '453': '<1:1M',  '454': '<1:1M',
+    '455': '<1:1M',  '456': '<1:1M',  '457': '<1:1M',
+    '461': '<1:1M',  '462': '<1:1M',  '463': '<1:1M',  '464': '<1:1M',
+    '465': '<1:1M',  '466': '<1:1M',  '467': '<1:1M',
+    '471': '<1:1M',  '472': '<1:1M',  '473': '<1:1M',  '474': '<1:1M',
+    '475': '<1:1M',  '476': '<1:1M',  '477': '<1:1M',
+
+    '511': '1:20k',  '512': '1:120k', '513': '1:1M',   '514': '<1:1M',
+    '515': '<1:1M',  '516': '<1:1M',  '517': '<1:1M',
+    '521': '1:130k', '522': '1:800k', '523': '<1:1M',  '524': '<1:1M',
+    '525': '<1:1M',  '526': '<1:1M',  '527': '<1:1M',
+    '531': '1:1M',   '532': '<1:1M',  '533': '<1:1M',  '534': '<1:1M',
+    '535': '<1:1M',  '536': '<1:1M',  '537': '<1:1M',
+    '541': '<1:1M',  '542': '<1:1M',  '543': '<1:1M',  '544': '<1:1M',
+    '545': '<1:1M',  '546': '<1:1M',  '547': '<1:1M',
+    '551': '<1:1M',  '552': '<1:1M',  '553': '<1:1M',  '554': '<1:1M',
+    '555': '<1:1M',  '556': '<1:1M',  '557': '<1:1M',
+    '561': '<1:1M',  '562': '<1:1M',  '563': '<1:1M',  '564': '<1:1M',
+    '565': '<1:1M',  '566': '<1:1M',  '567': '<1:1M',
+    '571': '<1:1M',  '572': '<1:1M',  '573': '<1:1M',  '574': '<1:1M',
+    '575': '<1:1M',  '576': '<1:1M',  '577': '<1:1M',
+
+    '611': '1:200k', '612': '1:1M',   '613': '<1:1M',  '614': '<1:1M',
+    '615': '<1:1M',  '616': '<1:1M',  '617': '<1:1M',
+    '621': '1:1M',   '622': '<1:1M',  '623': '<1:1M',  '624': '<1:1M',
+    '625': '<1:1M',  '626': '<1:1M',  '627': '<1:1M',
+    '631': '<1:1M',  '632': '<1:1M',  '633': '<1:1M',  '634': '<1:1M',
+    '635': '<1:1M',  '636': '<1:1M',  '637': '<1:1M',
+    '641': '<1:1M',  '642': '<1:1M',  '643': '<1:1M',  '644': '<1:1M',
+    '645': '<1:1M',  '646': '<1:1M',  '647': '<1:1M',
+    '651': '<1:1M',  '652': '<1:1M',  '653': '<1:1M',  '654': '<1:1M',
+    '655': '<1:1M',  '656': '<1:1M',  '657': '<1:1M',
+    '661': '<1:1M',  '662': '<1:1M',  '663': '<1:1M',  '664': '<1:1M',
+    '665': '<1:1M',  '666': '<1:1M',  '667': '<1:1M',
+    '671': '<1:1M',  '672': '<1:1M',  '673': '<1:1M',  '674': '<1:1M',
+    '675': '<1:1M',  '676': '<1:1M',  '677': '<1:1M',
+
+    '711': '1:1M',   '712': '<1:1M',  '713': '<1:1M',  '714': '<1:1M',
+    '715': '<1:1M',  '716': '<1:1M',  '717': '<1:1M',
+    '721': '<1:1M',  '722': '<1:1M',  '723': '<1:1M',  '724': '<1:1M',
+    '725': '<1:1M',  '726': '<1:1M',  '727': '<1:1M',
+    '731': '<1:1M',  '732': '<1:1M',  '733': '<1:1M',  '734': '<1:1M',
+    '735': '<1:1M',  '736': '<1:1M',  '737': '<1:1M',
+    '741': '<1:1M',  '742': '<1:1M',  '743': '<1:1M',  '744': '<1:1M',
+    '745': '<1:1M',  '746': '<1:1M',  '747': '<1:1M',
+    '751': '<1:1M',  '752': '<1:1M',  '753': '<1:1M',  '754': '<1:1M',
+    '755': '<1:1M',  '756': '<1:1M',  '757': '<1:1M',
+    '761': '<1:1M',  '762': '<1:1M',  '763': '<1:1M',  '764': '<1:1M',
+    '765': '<1:1M',  '766': '<1:1M',  '767': '<1:1M',
+    '771': '<1:1M',  '772': '<1:1M',  '773': '<1:1M',  '774': '<1:1M',
+    '775': '<1:1M',  '776': '<1:1M',  '777': '<1:1M',
+}
+
+# ---------------------------------------------------------------------------
+# RISK LEVEL DESCRIPTIONS  (sheet A, AP4:AQ21)
+# ---------------------------------------------------------------------------
+RISK_LEVEL: dict[str, str] = {
+    '1:3':    'rischio inaccettabile - abbattimento o eliminazione del rischio',
+    '1:20':   'rischio inaccettabile - abbattimento o eliminazione del rischio',
+    '1:100':  'rischio inaccettabile - abbattimento o eliminazione del rischio',
+    '1:200':  'rischio inaccettabile - abbattimento o eliminazione del rischio',
+    '1:800':  'rischio inaccettabile - abbattimento o eliminazione del rischio',
+    '1:1k':   'rischio inaccettabile - abbattimento o eliminazione del rischio',
+    '1:2k':   'rischio tollerabile per accordo se il valore è molto elevato',
+    '1:8k':   'rischio tollerabile per accordo se il valore è molto elevato',
+    '1:10k':  'rischio tollerabile per accordo ma inaccettabile se imposto a terzi',
+    '1:12k':  'rischio tollerabile per accordo ma inaccettabile se imposto a terzi',
+    '1:20k':  'rischio tollerabile se ALARP - valutare costi/benefici del controllo',
+    '1:80k':  'rischio tollerabile se ALARP - valutare costi/benefici del controllo',
+    '1:120k': 'rischio tollerabile se ALARP - valutare costi/benefici del controllo',
+    '1:130k': 'rischio tollerabile se ALARP - valutare costi/benefici del controllo',
+    '1:200k': 'rischio tollerabile - individuare interventi affinché rimanga ALARP',
+    '1:800k': 'rischio tollerabile - individuare interventi affinché rimanga ALARP',
+    '1:1M':   'rischio tollerabile - individuare interventi affinché rimanga ALARP',
+    '<1:1M':  'rischio largamente accettabile',
+}
+
+# Risk ratio → approximate annual probability (for sorting/comparison)
+RISK_PROBABILITY: dict[str, float] = {
+    '1:3':    1/3,     '1:20':   1/20,    '1:100':  1/100,   '1:200':  1/200,
+    '1:800':  1/800,   '1:1k':   1/1000,  '1:2k':   1/2000,  '1:8k':   1/8000,
+    '1:10k':  1/10000, '1:12k':  1/12000, '1:20k':  1/20000, '1:80k':  1/80000,
+    '1:120k': 1/120000,'1:130k': 1/130000,'1:200k': 1/200000,'1:800k': 1/800000,
+    '1:1M':   1/1e6,   '<1:1M':  1e-11,
+}
+
+
+# ---------------------------------------------------------------------------
+# PERICOLO (danger/failure probability) descriptions  (sheet A, B4:C14)
+# ---------------------------------------------------------------------------
+PERICOLO_DESCRIPTION: dict = {
+    1: "Segni, sintomi e difetti gravissimi - Probabilità di cedimento nell'anno 1/1-1/5",
+    2: "Segni, sintomi e difetti gravi - Probabilità di cedimento nell'anno 1/5-1/50",
+    3: "Segni, sintomi e difetti significativi - Probabilità di cedimento nell'anno 1/50-1/500",
+    4: "Segni, sintomi e difetti incerti - Probabilità di cedimento nell'anno 1/500-1/5K",
+    5: "Segni, sintomi e difetti moderati - Probabilità di cedimento nell'anno 1/5K-1/50K",
+    6: "Segni, sintomi e difetti bassi - Probabilità di cedimento nell'anno 1/50K-1/500k",
+    7: "Segni, sintomi e difetti trascurabili - Probabilità di cedimento nell'anno 1/500K-1/1M",
+    0: "Valutazione sospesa - necessario approfondimento",
+}
+
+# Bersaglio (exposure/target) class descriptions for guidance
+BERSAGLIO_DESCRIPTION: dict[int, str] = {
+    1: "Esposizione massima (es. >100 pedoni/ora, traffico intenso continuo)",
+    2: "Esposizione molto alta",
+    3: "Esposizione alta",
+    4: "Esposizione media",
+    5: "Esposizione bassa",
+    6: "Esposizione molto bassa",
+    7: "Esposizione minima (es. <1 passaggio/anno)",
+}
+
+# Impulso (momentum) class thresholds in kg⋅m/s
+IMPULSO_THRESHOLDS = [
+    (5,     7),   # < 5      kg⋅m/s  → class 7
+    (10,    6),   # < 10     kg⋅m/s  → class 6
+    (50,    5),   # < 50     kg⋅m/s  → class 5
+    (100,   4),   # < 100    kg⋅m/s  → class 4
+    (1000,  3),   # < 1000   kg⋅m/s  → class 3
+    (10000, 2),   # < 10000  kg⋅m/s  → class 2
+    (None,  1),   # ≥ 10000  kg⋅m/s  → class 1
+]
+
+
+# ---------------------------------------------------------------------------
+# CORE FUNCTIONS
+# ---------------------------------------------------------------------------
+
+def impulso_to_class(momentum_kgms: float) -> int:
+    """Convert momentum (kg·m/s) to impulso class 1-7 (1=highest energy)."""
+    for threshold, cls in IMPULSO_THRESHOLDS:
+        if threshold is None or momentum_kgms < threshold:
+            return cls
+    return 1
+
+
+def calc_crown_momentum(
+    circumference_cm: float,
+    tree_height_m: float,
+    target_height_m: float,
+) -> float:
+    """
+    Compute the momentum (kg·m/s) for a falling tree crown.
+
+    Replicates cell J33:
+      (PI/4 * (circ_cm/100/PI)^2 * height * 0.75 * 900) * sqrt(3 * g * (height - target_h))
+
+    The first term approximates the trunk/crown mass from trunk cross-section;
+    the second term uses sqrt(3·g·h) for a pivoting fall (rigid-body rotation).
+    """
+    if tree_height_m <= target_height_m:
+        return 0.0
+    diam_m = circumference_cm / 100.0 / math.pi
+    area_m2 = math.pi / 4.0 * diam_m ** 2
+    mass_kg = area_m2 * tree_height_m * 0.75 * 900.0
+    velocity = math.sqrt(3.0 * 9.8 * (tree_height_m - target_height_m))
+    return mass_kg * velocity
+
+
+def calc_branch_momentum(
+    branch_diam_cm: float,
+    branch_length_m: float,
+    branch_height_m: float,
+    target_height_m: float,
+) -> float:
+    """
+    Compute the momentum (kg·m/s) for a falling branch.
+
+    Replicates cell S33:
+      (PI/4 * (diam_cm/100)^2 * length * 0.75 * 900) * sqrt(2 * g * (branch_h - target_h))
+
+    Uses free-fall velocity sqrt(2·g·h).
+    """
+    if branch_height_m <= target_height_m:
+        return 0.0
+    diam_m = branch_diam_cm / 100.0
+    area_m2 = math.pi / 4.0 * diam_m ** 2
+    mass_kg = area_m2 * branch_length_m * 0.75 * 900.0
+    velocity = math.sqrt(2.0 * 9.8 * (branch_height_m - target_height_m))
+    return mass_kg * velocity
+
+
+def calc_risk(
+    bersaglio_class: int,
+    impulso_class: int,
+    pericolo_class: int,
+) -> str:
+    """
+    Look up the risk ratio string from the 3-class combination.
+
+    The key is str(B)+str(I)+str(P) (bersaglio + impulso + pericolo),
+    each an integer 1-7 (lower = more dangerous).
+    Returns a risk ratio string like "1:20k" or "<1:1M".
+    Returns "SOSPESO" when pericolo_class == 0 (assessment suspended).
+    """
+    if pericolo_class == 0:
+        return "SOSPESO"
+    key = f"{bersaglio_class}{impulso_class}{pericolo_class}"
+    return RISK_MATRIX.get(key, '<1:1M')
+
+
+def risk_description(ratio: str) -> str:
+    """Return the human-readable risk level description for a ratio string."""
+    return RISK_LEVEL.get(ratio, 'non determinato')
+
+
+# ---------------------------------------------------------------------------
+# HIGH-LEVEL ASSESSMENT
+# ---------------------------------------------------------------------------
+
+def assess_tree(
+    # --- General dimensions ---
+    tree_height_m: float,       # H  (C9)
+    circumference_cm: float,    # Circ at 1.3m, used as proxy for mass  (G9 → H9 = circ = diam*PI)
+    crown_diam_m: float,        # D ch  (I9)
+    branch_diam_cm: float,      # D br  (L9)
+    branch_length_m: float,     # L br  (N9)
+    branch_height_m: float,     # H br  (Q9)
+    target_height_m: float,     # H bers – height of the exposed target above ground (S9)
+
+    # --- Pericolo classes (1-7 or 0) – user-assessed field observation ---
+    pericolo_rami: int,         # failure prob. for branches/limbs   (E35 ← E26)
+    pericolo_tronco: int,       # failure prob. for trunk/scaffold   (E36 ← E27)
+    pericolo_colletto: int,     # failure prob. for collar           (E37 ← E28)
+    pericolo_zolla: int,        # failure prob. for root-plate       (E38 ← E29)
+
+    # --- Bersaglio classes (1-7) – derived from target occupancy ---
+    bersaglio_chioma: int,      # exposure class for crown fall target  (G32)
+    bersaglio_ramo: int,        # exposure class for branch fall target (R32)
+
+    # --- Post-intervention dimensions (default = same as current) ---
+    post_tree_height_m: float | None = None,
+    post_circumference_cm: float | None = None,
+    post_branch_diam_cm: float | None = None,
+    post_branch_length_m: float | None = None,
+    post_branch_height_m: float | None = None,
+    post_target_height_m: float | None = None,
+) -> dict:
+    """
+    Compute RISCHIO ATTUALE and RISCHIO RESIDUO for all four failure modes.
+
+    Returns a dict with keys:
+      attuale / residuo → each a dict with keys:
+        crown_momentum_kgms, crown_impulso_class,
+        branch_momentum_kgms, branch_impulso_class,
+        rami, tronco, colletto, zolla  → each a dict with:
+          pericolo_class, bersaglio_class, impulso_class,
+          risk_key, risk_ratio, risk_description
+    """
+
+    def _assess(
+        h_m, circ_cm, br_diam, br_len, br_h, tgt_h,
+        p_rami, p_tronco, p_colletto, p_zolla,
+        b_chioma, b_ramo,
+    ):
+        crown_mom = calc_crown_momentum(circ_cm, h_m, tgt_h)
+        branch_mom = calc_branch_momentum(br_diam, br_len, br_h, tgt_h)
+        crown_imp_cls = impulso_to_class(crown_mom)
+        branch_imp_cls = impulso_to_class(branch_mom)
+
+        def _risk_entry(pericolo, bersaglio, imp_cls):
+            ratio = calc_risk(bersaglio, imp_cls, pericolo)
+            return {
+                'pericolo_class': pericolo,
+                'bersaglio_class': bersaglio,
+                'impulso_class': imp_cls,
+                'risk_key': f"{bersaglio}{imp_cls}{pericolo}",
+                'risk_ratio': ratio,
+                'risk_description': risk_description(ratio),
+            }
+
+        return {
+            'crown_momentum_kgms': round(crown_mom, 2),
+            'crown_impulso_class': crown_imp_cls,
+            'branch_momentum_kgms': round(branch_mom, 2),
+            'branch_impulso_class': branch_imp_cls,
+            # Branches/rami use the BRANCH impulso and RAMO bersaglio
+            'rami': _risk_entry(p_rami, b_ramo, branch_imp_cls),
+            # Trunk, collar, root-plate use CROWN impulso and CHIOMA bersaglio
+            'tronco':  _risk_entry(p_tronco,   b_chioma, crown_imp_cls),
+            'colletto': _risk_entry(p_colletto, b_chioma, crown_imp_cls),
+            'zolla':   _risk_entry(p_zolla,    b_chioma, crown_imp_cls),
+        }
+
+    # --- current assessment ---
+    attuale = _assess(
+        tree_height_m, circumference_cm,
+        branch_diam_cm, branch_length_m, branch_height_m, target_height_m,
+        pericolo_rami, pericolo_tronco, pericolo_colletto, pericolo_zolla,
+        bersaglio_chioma, bersaglio_ramo,
+    )
+
+    # --- post-intervention (residual) assessment ---
+    residuo = _assess(
+        post_tree_height_m   if post_tree_height_m   is not None else tree_height_m,
+        post_circumference_cm if post_circumference_cm is not None else circumference_cm,
+        post_branch_diam_cm  if post_branch_diam_cm  is not None else branch_diam_cm,
+        post_branch_length_m if post_branch_length_m is not None else branch_length_m,
+        post_branch_height_m if post_branch_height_m is not None else branch_height_m,
+        post_target_height_m if post_target_height_m is not None else target_height_m,
+        pericolo_rami, pericolo_tronco, pericolo_colletto, pericolo_zolla,
+        bersaglio_chioma, bersaglio_ramo,
+    )
+
+    return {'attuale': attuale, 'residuo': residuo}
+
+
+def print_report(result: dict) -> None:
+    """Print a human-readable assessment report."""
+    labels = {
+        'rami':     'Rottura branche/rami',
+        'tronco':   'Rottura tronco/castello',
+        'colletto': 'Rottura colletto',
+        'zolla':    'Ribaltamento zolla radicale',
+    }
+    for phase in ('attuale', 'residuo'):
+        title = 'RISCHIO ATTUALE' if phase == 'attuale' else 'RISCHIO RESIDUO'
+        d = result[phase]
+        print(f"\n{'='*70}")
+        print(f"  {title}")
+        print(f"{'='*70}")
+        print(f"  Chioma → impulso: {d['crown_momentum_kgms']:.1f} kg·m/s  (class {d['crown_impulso_class']})")
+        print(f"  Ramo   → impulso: {d['branch_momentum_kgms']:.1f} kg·m/s  (class {d['branch_impulso_class']})")
+        for key, label in labels.items():
+            e = d[key]
+            p, b, i = e['pericolo_class'], e['bersaglio_class'], e['impulso_class']
+            ratio = e['risk_ratio']
+            desc  = e['risk_description']
+            print(f"\n  {label}")
+            print(f"    Pericolo {p}  ×  Bersaglio {b}  ×  Impulso {i}  →  {ratio}")
+            print(f"    {desc}")
+
+
+# ---------------------------------------------------------------------------
+# EXAMPLE
+# ---------------------------------------------------------------------------
+if __name__ == '__main__':
+    result = assess_tree(
+        # Current dimensions
+        tree_height_m=15.0,
+        circumference_cm=120.0,   # trunk circumference at 1.3 m
+        crown_diam_m=8.0,
+        branch_diam_cm=12.0,
+        branch_length_m=4.0,
+        branch_height_m=8.0,
+        target_height_m=1.8,      # standing person
+
+        # Pericolo (1=worst … 7=best, 0=suspended)
+        pericolo_rami=4,
+        pericolo_tronco=5,
+        pericolo_colletto=6,
+        pericolo_zolla=6,
+
+        # Bersaglio (1=most exposed … 7=least exposed)
+        bersaglio_chioma=3,
+        bersaglio_ramo=3,
+
+        # Post-intervention: branches pruned → reduced branch length
+        post_branch_length_m=2.5,
+        post_branch_height_m=8.0,
+    )
+
+    print_report(result)
