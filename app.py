@@ -139,6 +139,7 @@ class Tree(db.Model):
     prescrizioni_col = db.Column(db.Text)
     monitoraggio     = db.Column(db.String(50))
     urgenza          = db.Column(db.String(50))
+    rischio          = db.Column(db.Text)   # JSON: latest assess_tree result
 
 class Inspection(db.Model):
     __tablename__ = 'inspection'
@@ -181,6 +182,7 @@ with app.app_context():
         ('conflitti_list','TEXT'), ('agenti_carie','TEXT'), ('altri_patogeni','TEXT'),
         ('prescrizioni_val','TEXT'), ('prescrizioni_mit','TEXT'), ('prescrizioni_col','TEXT'),
         ('monitoraggio','VARCHAR(50)'), ('urgenza','VARCHAR(50)'),
+        ('rischio','TEXT'),
     ]
     with db.engine.connect() as conn:
         for col_name, col_type in new_cols:
@@ -244,6 +246,7 @@ def tree_to_dict(t):
         'prescrizioni_mit': parse_json_field(t.prescrizioni_mit),
         'prescrizioni_col': parse_json_field(t.prescrizioni_col),
         'monitoraggio': t.monitoraggio, 'urgenza': t.urgenza,
+        'rischio': json.loads(t.rischio) if t.rischio else None,
     }
 
 def apply_tree_fields(tree_obj, data):
@@ -273,6 +276,60 @@ def apply_tree_fields(tree_obj, data):
         if f in data:
             v = data[f]
             setattr(tree_obj, f, json.dumps(v) if isinstance(v, (list, dict)) else v)
+
+def _calc_rischio(tree_obj):
+    """Return assess_tree dict for tree_obj, or None if ORD fields are incomplete."""
+    def _f(v):
+        try: return float(v) if v not in (None, '') else None
+        except: return None
+    def _i(v):
+        try: return int(v) if v not in (None, '') else None
+        except: return None
+    rq = {
+        'tree_height_m':   _f(tree_obj.tree_height_m),
+        'circumference_cm':_f(tree_obj.circonferenza_cm),
+        'branch_diam_cm':  _f(tree_obj.branch_diam_cm),
+        'branch_length_m': _f(tree_obj.branch_length_m),
+        'branch_height_m': _f(tree_obj.branch_height_m),
+        'target_height_m': _f(tree_obj.target_height_m),
+        'pericolo_rami':   _i(tree_obj.pericolo_rami),
+        'pericolo_tronco': _i(tree_obj.pericolo_tronco),
+        'pericolo_colletto':_i(tree_obj.pericolo_colletto),
+        'pericolo_zolla':  _i(tree_obj.pericolo_zolla),
+        'bersaglio_chioma':_i(tree_obj.bersaglio_chioma),
+        'bersaglio_ramo':  _i(tree_obj.bersaglio_ramo),
+    }
+    if any(v is None for v in rq.values()):
+        return None
+    try:
+        return assess_tree(
+            crown_diam_m=_f(tree_obj.crown_diameter_m) or 0,
+            post_tree_height_m=_f(tree_obj.post_tree_height_m),
+            post_circumference_cm=_f(tree_obj.post_circonferenza_cm),
+            post_branch_diam_cm=_f(tree_obj.post_branch_diam_cm),
+            post_branch_length_m=_f(tree_obj.post_branch_length_m),
+            post_branch_height_m=_f(tree_obj.post_branch_height_m),
+            post_target_height_m=_f(tree_obj.post_target_height_m),
+            **rq
+        )
+    except Exception:
+        return None
+
+def _make_inspection(tree_obj, user_id, username):
+    """Build an Inspection with snapshot + rischio for the current tree state."""
+    rischio_val = _calc_rischio(tree_obj)
+    snap = tree_to_dict(tree_obj)
+    return Inspection(
+        tree_id=tree_obj.id,
+        date=datetime.now(timezone.utc).date(),
+        condition=tree_obj.condition,
+        comments=tree_obj.comments or '',
+        actions=tree_obj.actions or '',
+        inspector_id=user_id,
+        inspector_name=username,
+        snapshot=json.dumps(snap),
+        rischio=json.dumps(rischio_val) if rischio_val else None,
+    )
 
 def generate_token(user, expires_minutes=60*24):
     payload = {
@@ -525,16 +582,11 @@ def update_tree(tree_id):
         except (ValueError, TypeError):
             return jsonify({'message': 'Invalid lat/lon'}), 400
 
+    tree.rischio = json.dumps(r) if (r := _calc_rischio(tree)) else None
     db.session.commit()
 
     if {'condition','comments','actions'} & set(data.keys()):
-        db.session.add(Inspection(
-            tree_id=tree_id, date=datetime.now(timezone.utc).date(),
-            condition=tree.condition, comments=tree.comments or '',
-            actions=tree.actions or '',
-            inspector_id=request.user.get('user_id'),
-            inspector_name=request.user.get('username')
-        ))
+        db.session.add(_make_inspection(tree, request.user.get('user_id'), request.user.get('username')))
         db.session.commit()
     return jsonify({'message': f'Tree {tree_id} updated successfully!'}), 200
 
@@ -589,6 +641,7 @@ def add_tree():
         owner_id=user_id
     )
     apply_tree_fields(new_tree, data)
+    new_tree.rischio = json.dumps(r) if (r := _calc_rischio(new_tree)) else None
     db.session.add(new_tree)
     try:
         db.session.commit()
@@ -596,12 +649,7 @@ def add_tree():
         db.session.rollback()
         return jsonify({'message': f"Custom ID '{data['custom_id']}' already exists in {data['city']}"}), 409
 
-    db.session.add(Inspection(
-        tree_id=new_tree.id, date=datetime.now(timezone.utc).date(),
-        condition=new_tree.condition, comments=new_tree.comments or '',
-        actions=new_tree.actions or '',
-        inspector_id=user_id, inspector_name=request.user.get('username')
-    ))
+    db.session.add(_make_inspection(new_tree, user_id, request.user.get('username')))
     db.session.commit()
     return jsonify({'message': 'Tree added successfully!', 'tree_id': new_tree.id}), 201
 
@@ -651,47 +699,9 @@ def add_inspection(tree_id):
     try: insp_date = datetime.strptime(date_str, '%Y-%m-%d').date()
     except ValueError: return jsonify({'message': 'Invalid date format'}), 400
     condition = data.get('condition') or tree.condition
-
-    # Snapshot of all tree fields at this moment
+    rischio_val = _calc_rischio(tree)
     snap = tree_to_dict(tree)
     snap['condition'] = condition
-
-    # Calculate rischio from current ORD fields if all present
-    rischio_val = None
-    try:
-        def _f(v):
-            try: return float(v) if v not in (None,'') else None
-            except: return None
-        def _i(v):
-            try: return int(v) if v not in (None,'') else None
-            except: return None
-        rq = {
-            'tree_height_m': _f(tree.tree_height_m),
-            'circumference_cm': _f(tree.circonferenza_cm),
-            'branch_diam_cm': _f(tree.branch_diam_cm),
-            'branch_length_m': _f(tree.branch_length_m),
-            'branch_height_m': _f(tree.branch_height_m),
-            'target_height_m': _f(tree.target_height_m),
-            'pericolo_rami': _i(tree.pericolo_rami),
-            'pericolo_tronco': _i(tree.pericolo_tronco),
-            'pericolo_colletto': _i(tree.pericolo_colletto),
-            'pericolo_zolla': _i(tree.pericolo_zolla),
-            'bersaglio_chioma': _i(tree.bersaglio_chioma),
-            'bersaglio_ramo': _i(tree.bersaglio_ramo),
-        }
-        if all(v is not None for v in rq.values()):
-            rischio_val = assess_tree(
-                crown_diam_m=_f(tree.crown_diameter_m) or 0,
-                post_tree_height_m=_f(tree.post_tree_height_m),
-                post_circumference_cm=_f(tree.post_circonferenza_cm),
-                post_branch_diam_cm=_f(tree.post_branch_diam_cm),
-                post_branch_length_m=_f(tree.post_branch_length_m),
-                post_branch_height_m=_f(tree.post_branch_height_m),
-                post_target_height_m=_f(tree.post_target_height_m),
-                **rq
-            )
-    except Exception:
-        pass
 
     insp = Inspection(
         tree_id=tree_id, date=insp_date,
