@@ -302,7 +302,7 @@ function switchTab(name) {
 async function login() {
     const username = document.getElementById('loginUsername').value.trim();
     const password = document.getElementById('loginPassword').value;
-    if (!username || !password) return showStatus('Enter username and password', 'warning');
+    if (!username || !password) return showStatus('Inserisci nome utente e password', 'warning');
     const res  = await fetch(`${API_BASE}/login`, {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
@@ -314,9 +314,9 @@ async function login() {
         localStorage.setItem('token', state.token);
         localStorage.setItem('user', JSON.stringify(state.user));
         setupAuthUI(); fetchTrees();
-        showStatus(`Welcome, ${data.user.username}`, 'success');
+        showStatus(`Benvenuto, ${data.user.username}`, 'success');
     } else {
-        showStatus(data.message || 'Login failed', 'danger');
+        showStatus(data.message || 'Accesso fallito', 'danger');
         document.getElementById('loginPassword').value = '';
     }
 }
@@ -334,7 +334,7 @@ function logout() {
 
 async function populateCities() {
     const sel = document.getElementById('citySelect');
-    sel.innerHTML = '<option value="">All cities</option>';
+    sel.innerHTML = '<option value="">Tutti i comuni</option>';
     const res = await fetch(`${API_BASE}/cities`);
     if (!res.ok) return;
     const cities = await res.json();
@@ -348,15 +348,15 @@ async function populateCities() {
 
 async function createCity() {
     const name = document.getElementById('cityName').value.trim();
-    if (!name) return showStatus('City name required', 'warning');
+    if (!name) return showStatus('Nome comune obbligatorio', 'warning');
     const res  = await fetch(`${API_BASE}/admin/cities`, {
         method: 'POST',
         headers: Object.assign({'Content-Type':'application/json'}, authHeader()),
         body: JSON.stringify({name})
     });
     const data = await res.json();
-    if (res.ok) { showStatus('City created: ' + name, 'success'); document.getElementById('cityName').value = ''; await populateCities(); }
-    else showStatus(data.message || 'Error', 'danger');
+    if (res.ok) { showStatus('Comune creato: ' + name, 'success'); document.getElementById('cityName').value = ''; await populateCities(); }
+    else showStatus(data.message || 'Errore', 'danger');
 }
 
 // ─── Users ────────────────────────────────────────────────
@@ -372,8 +372,8 @@ async function createUser() {
         body: JSON.stringify({username, password, role, city})
     });
     const data = await res.json();
-    if (res.ok) { showStatus('User created: ' + username, 'success'); document.getElementById('newUsername').value = ''; document.getElementById('newPassword').value = ''; await populateUsers(); }
-    else showStatus(data.message || 'Error creating user', 'danger');
+    if (res.ok) { showStatus('Utente creato: ' + username, 'success'); document.getElementById('newUsername').value = ''; document.getElementById('newPassword').value = ''; await populateUsers(); }
+    else showStatus(data.message || 'Errore nella creazione utente', 'danger');
 }
 
 async function populateUsers() {
@@ -402,9 +402,9 @@ async function fetchTrees() {
     const params  = new URLSearchParams();
     if (city)    params.append('city', city);
     if (address) params.append('address', address);
-    document.getElementById('inventoryLabel').textContent = city ? `Trees — ${city}` : 'Tree Inventory';
+    document.getElementById('inventoryLabel').textContent = city ? `Alberi — ${city}` : 'Inventario Alberi';
     const res = await fetch(`${API_BASE}/trees?${params}`, {headers: authHeader()});
-    if (!res.ok) { const d = await res.json().catch(()=>({})); showStatus(d.message||'Error fetching trees','danger'); return; }
+    if (!res.ok) { const d = await res.json().catch(()=>({})); showStatus(d.message||'Errore nel caricamento alberi','danger'); return; }
     state.allTrees    = await res.json();
     state.currentPage = 1;
     document.getElementById('idFilter').value = '';
@@ -479,7 +479,7 @@ function renderPagination() {
     const bar = document.getElementById('paginationBar');
     bar.style.display = total > 0 ? 'flex' : 'none';
     document.getElementById('pagingInfo').textContent =
-        total === 0 ? '' : `Showing ${start}–${end} of ${total} tree${total!==1?'s':''}`;
+        total === 0 ? '' : `Visualizzando ${start}–${end} di ${total} alber${total!==1?'i':'o'}`;
     const pag = document.getElementById('pagination'); pag.innerHTML = '';
     if (totalPages <= 1) return;
     const mkBtn = (label, page, active=false, disabled=false) => {
@@ -527,7 +527,7 @@ function renderTreeList(trees) {
     if (trees.length === 0) {
         const q = document.getElementById('idFilter').value.trim();
         tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><i class="fa-solid fa-tree"></i>
-            <p>${q ? `No trees match ID "<strong>${q}</strong>".` : 'No trees found. Select a city above, then use <strong>Add Tree</strong> to add the first one.'}</p>
+            <p>${q ? `Nessun albero corrisponde all'ID "<strong>${q}</strong>".` : 'Nessun albero trovato. Seleziona un comune in alto, poi usa <strong>Aggiungi Albero</strong> per aggiungere il primo.'}</p>
         </div></td></tr>`;
         return;
     }
@@ -546,9 +546,9 @@ function renderTreeList(trees) {
             <td>${coords}</td>
             <td style="font-size:13px;color:var(--text-mid)">${t.next_check||'—'}</td>
             <td><div class="act-cell">
-                <button class="btn btn-edit btn-sm" onclick="openHistory(${t.id},'${t.custom_id}')" title="History"><i class="fa-solid fa-clock-rotate-left"></i></button>
-                <button class="btn btn-edit btn-sm" onclick="openEditForm(${t.id})" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>
-                <button class="btn btn-danger btn-sm" onclick="deleteTreeById(${t.id})" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                <button class="btn btn-edit btn-sm" onclick="openHistory(${t.id},'${t.custom_id}')" title="Storico"><i class="fa-solid fa-clock-rotate-left"></i></button>
+                <button class="btn btn-edit btn-sm" onclick="openEditForm(${t.id})" title="Modifica"><i class="fa-solid fa-pen-to-square"></i></button>
+                <button class="btn btn-danger btn-sm" onclick="deleteTreeById(${t.id})" title="Elimina"><i class="fa-solid fa-trash"></i></button>
             </div></td>`;
         tbody.appendChild(tr);
     });
@@ -559,13 +559,13 @@ function renderTreeList(trees) {
 async function fetchTreeById(id) {
     const res  = await fetch(`${API_BASE}/tree/${id}`, {headers: authHeader()});
     const data = await res.json();
-    if (!res.ok) { showStatus(data.message||'Tree not found','danger'); return null; }
+    if (!res.ok) { showStatus(data.message||'Albero non trovato','danger'); return null; }
     return data;
 }
 
 function fillForm(data) {
     document.getElementById('formTitle').innerHTML =
-        `<i class="fa-solid fa-pen-to-square"></i> Edit — ${data.custom_id}`;
+        `<i class="fa-solid fa-pen-to-square"></i> Modifica — ${data.custom_id}`;
     document.getElementById('editTreeId').value = data.id;
 
     // Simple fields
@@ -609,7 +609,7 @@ function fillForm(data) {
 
     document.getElementById('riskResults').style.display = 'none';
     document.getElementById('formSubmitButton').innerHTML =
-        '<i class="fa-solid fa-floppy-disk"></i> Save Changes';
+        '<i class="fa-solid fa-floppy-disk"></i> Salva modifiche';
 }
 
 async function openEditForm(id) {
@@ -620,15 +620,15 @@ async function openEditForm(id) {
 }
 
 async function deleteTreeById(id) {
-    if (!confirm('Delete this tree from the database?')) return;
+    if (!confirm('Eliminare questo albero dal database?')) return;
     const res  = await fetch(`${API_BASE}/tree/${id}`, {method:'DELETE', headers: authHeader()});
     const data = await res.json();
     if (res.ok) {
         state.allTrees      = state.allTrees.filter(t => t.id !== id);
         state.filteredTrees = state.filteredTrees.filter(t => t.id !== id);
-        showStatus('Tree deleted', 'success'); renderPage();
+        showStatus('Albero eliminato', 'success'); renderPage();
         if (state.activeTab === 'map') showOnMap(state.allTrees);
-    } else showStatus(data.message||'Error deleting','danger');
+    } else showStatus(data.message||'Errore durante l\'eliminazione','danger');
 }
 
 async function submitTreeForm(e) {
@@ -692,7 +692,7 @@ async function submitTreeForm(e) {
     });
     const data = await res.json();
     if (res.ok) {
-        showStatus(editId ? 'Tree updated' : 'Tree added', 'success');
+        showStatus(editId ? 'Albero aggiornato' : 'Albero aggiunto', 'success');
         resetForm(); showTreeView('list'); fetchTrees();
     } else showStatus(data.message || JSON.stringify(data), 'danger');
 }
@@ -700,7 +700,7 @@ async function submitTreeForm(e) {
 function resetForm() {
     document.getElementById('addTreeForm').reset();
     document.getElementById('editTreeId').value = '';
-    document.getElementById('formTitle').innerHTML = '<i class="fa-solid fa-seedling"></i> Add New Tree';
+    document.getElementById('formTitle').innerHTML = '<i class="fa-solid fa-seedling"></i> Nuovo Albero';
     document.getElementById('formSubmitButton').innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Salva albero';
     document.getElementById('gpsStatus').textContent = '';
     const rr = document.getElementById('riskResults');
@@ -716,13 +716,13 @@ function resetForm() {
 // ─── GPS ──────────────────────────────────────────────────
 
 function getLocation() {
-    if (!navigator.geolocation) return showStatus('Geolocation not supported', 'danger');
-    document.getElementById('gpsStatus').textContent = 'Acquiring GPS signal…';
+    if (!navigator.geolocation) return showStatus('Geolocalizzazione non supportata', 'danger');
+    document.getElementById('gpsStatus').textContent = 'Acquisizione segnale GPS…';
     navigator.geolocation.getCurrentPosition(async pos => {
         const lat = pos.coords.latitude, lon = pos.coords.longitude;
         document.getElementById('latitude').value  = lat;
         document.getElementById('longitude').value = lon;
-        document.getElementById('gpsStatus').textContent = 'Resolving address…';
+        document.getElementById('gpsStatus').textContent = 'Ricerca indirizzo…';
         if (state.token) {
             const res = await fetch(`${API_BASE}/reverse_geocode`, {
                 method: 'POST',
@@ -739,7 +739,7 @@ function getLocation() {
         document.getElementById('gpsStatus').textContent = `GPS: ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
     }, err => {
         document.getElementById('gpsStatus').textContent = '';
-        showStatus('GPS error: ' + err.message, 'danger');
+        showStatus('Errore GPS: ' + err.message, 'danger');
     });
 }
 
@@ -772,9 +772,9 @@ function openHistory(treeId, customId) {
     document.getElementById('inspComments').value  = '';
     document.getElementById('inspActions').value   = '';
     document.getElementById('historyTitle').innerHTML =
-        `<i class="fa-solid fa-clock-rotate-left"></i> ${customId} — History`;
+        `<i class="fa-solid fa-clock-rotate-left"></i> ${customId} — Storico`;
     document.getElementById('timelineContent').innerHTML =
-        `<div class="tl-empty"><i class="fa-solid fa-spinner fa-spin"></i><p>Loading…</p></div>`;
+        `<div class="tl-empty"><i class="fa-solid fa-spinner fa-spin"></i><p>Caricamento…</p></div>`;
     switchTab('trees'); showTreeView('history'); loadHistory(treeId);
 }
 
@@ -782,7 +782,7 @@ async function loadHistory(treeId) {
     const res = await fetch(`${API_BASE}/tree/${treeId}/inspections`, {headers: authHeader()});
     if (!res.ok) {
         document.getElementById('timelineContent').innerHTML =
-            `<div class="tl-empty"><i class="fa-solid fa-circle-exclamation"></i><p>Could not load history.</p></div>`;
+            `<div class="tl-empty"><i class="fa-solid fa-circle-exclamation"></i><p>Impossibile caricare lo storico.</p></div>`;
         return;
     }
     renderTimeline(await res.json());
@@ -801,24 +801,128 @@ function tlDotClass(cond) {
     return 'tl-dot-other';
 }
 
+function rischioBadge(rischio) {
+    if (!rischio) return '';
+    const phases = ['attuale','residuo'];
+    const parts = [];
+    for (const phase of phases) {
+        const d = rischio[phase];
+        if (!d) continue;
+        // pick the worst risk among rami/tronco/colletto/zolla
+        const keys = ['rami','tronco','colletto','zolla'];
+        const descs = keys.map(k => d[k]?.risk_description).filter(Boolean);
+        if (!descs.length) continue;
+        const worst = descs.sort((a,b) => rischioSeverity(b) - rischioSeverity(a))[0];
+        const cls = rischioClass(worst);
+        parts.push(`<span class="tl-risk-badge ${cls}" title="${phase === 'attuale' ? 'Rischio attuale' : 'Rischio residuo'}">`+
+            `<i class="fa-solid fa-triangle-exclamation"></i> ${phase === 'attuale' ? 'att.' : 'res.'} ${worst}</span>`);
+    }
+    return parts.join('');
+}
+
+function rischioSeverity(desc) {
+    if (!desc) return 0;
+    if (desc.includes('inaccettabile')) return 5;
+    if (desc.includes('imposto a terzi')) return 4;
+    if (desc.includes('per accordo')) return 3;
+    if (desc.includes('ALARP')) return 2;
+    if (desc.includes('tollerabile')) return 1;
+    return 0;
+}
+
+function rischioClass(desc) {
+    if (!desc) return 'risk-unknown';
+    if (desc.includes('inaccettabile')) return 'risk-high';
+    if (desc.includes('imposto a terzi')) return 'risk-high';
+    if (desc.includes('per accordo') || desc.includes('ALARP')) return 'risk-medium';
+    if (desc.includes('tollerabile')) return 'risk-low';
+    return 'risk-unknown';
+}
+
+function renderSnapshotDetails(snap) {
+    if (!snap) return '<em style="color:var(--text-muted);font-size:12px;">Nessun dato disponibile</em>';
+    const rows = [];
+    const add = (label, val) => { if (val !== null && val !== undefined && val !== '') rows.push(`<div class="tl-snap-row"><span class="tl-snap-label">${label}</span><span class="tl-snap-val">${val}</span></div>`); };
+    add('Specie', snap.species);
+    add('Altezza', snap.height);
+    add('Ø tronco', snap.trunk_diameter_cm ? snap.trunk_diameter_cm + ' cm' : null);
+    add('Ø chioma', snap.crown_diameter_m ? snap.crown_diameter_m + ' m' : null);
+    add('Dimora', snap.dimora);
+    add('Stadio sviluppo', snap.stadio_sviluppo);
+    add('Pos. sociale', snap.posizione_sociale);
+    add('Localizzazione', snap.localizzazione);
+    add('Vincoli', snap.vincoli);
+    add('H albero', snap.tree_height_m ? snap.tree_height_m + ' m' : null);
+    add('Circ.', snap.circonferenza_cm ? snap.circonferenza_cm + ' cm' : null);
+    add('Ø ramo', snap.branch_diam_cm ? snap.branch_diam_cm + ' cm' : null);
+    add('L ramo', snap.branch_length_m ? snap.branch_length_m + ' m' : null);
+    add('H ramo', snap.branch_height_m ? snap.branch_height_m + ' m' : null);
+    add('H bersaglio', snap.target_height_m ? snap.target_height_m + ' m' : null);
+    add('Pericolo rami', snap.pericolo_rami);
+    add('Pericolo tronco', snap.pericolo_tronco);
+    add('Pericolo colletto', snap.pericolo_colletto);
+    add('Pericolo zolla', snap.pericolo_zolla);
+    add('Bersaglio chioma', snap.bersaglio_chioma);
+    add('Bersaglio ramo', snap.bersaglio_ramo);
+    add('Monitoraggio', snap.monitoraggio);
+    add('Urgenza', snap.urgenza);
+    const prescrMit = Array.isArray(snap.prescrizioni_mit) ? snap.prescrizioni_mit.join(', ') : snap.prescrizioni_mit;
+    add('Prescrizioni mit.', prescrMit);
+    const prescrVal = Array.isArray(snap.prescrizioni_val) ? snap.prescrizioni_val.join(', ') : snap.prescrizioni_val;
+    add('Prescrizioni val.', prescrVal);
+    const prescrCol = Array.isArray(snap.prescrizioni_col) ? snap.prescrizioni_col.join(', ') : snap.prescrizioni_col;
+    add('Prescrizioni col.', prescrCol);
+    if (!rows.length) return '<em style="color:var(--text-muted);font-size:12px;">Nessun dettaglio registrato</em>';
+    return `<div class="tl-snap-grid">${rows.join('')}</div>`;
+}
+
 function renderTimeline(inspections) {
     const wrap = document.getElementById('timelineContent');
     if (!inspections.length) {
-        wrap.innerHTML = `<div class="tl-empty"><i class="fa-regular fa-clock"></i><p>No inspections recorded yet.</p></div>`;
+        wrap.innerHTML = `<div class="tl-empty"><i class="fa-regular fa-clock"></i><p>Nessuna ispezione registrata.</p></div>`;
         return;
     }
-    wrap.innerHTML = '<div class="tl-divider">Most recent first</div>' +
-        inspections.map((insp, idx) => `
+    wrap.innerHTML = '<div class="tl-divider">Più recenti prima</div>' +
+        inspections.map((insp, idx) => {
+            const snapHtml = renderSnapshotDetails(insp.snapshot);
+            const uid = `snap-${insp.id || idx}`;
+            const treatment = (() => {
+                const mit = insp.snapshot?.prescrizioni_mit;
+                const arr = Array.isArray(mit) ? mit : (mit ? [mit] : []);
+                const txt = arr.filter(Boolean).join(', ') || insp.actions || '';
+                return txt ? `<div class="tl-actions"><i class="fa-solid fa-scissors"></i>${txt}</div>` : '';
+            })();
+            return `
         <div class="tl-item">
             <div class="tl-dot ${tlDotClass(insp.condition)}"></div>
             <div class="tl-card">
-                <div class="tl-header"><span class="tl-date">${formatDate(insp.date)}</span>
-                    ${condBadge(insp.condition)}${idx===0?'<span class="tl-latest-tag">Latest</span>':''}</div>
+                <div class="tl-header">
+                    <span class="tl-date">${formatDate(insp.date)}</span>
+                    ${condBadge(insp.condition)}
+                    ${idx===0?'<span class="tl-latest-tag">Ultima</span>':''}
+                </div>
+                ${rischioBadge(insp.rischio)}
+                ${treatment}
                 ${insp.comments?`<div class="tl-body">${insp.comments}</div>`:''}
-                ${insp.actions?`<div class="tl-actions"><i class="fa-solid fa-scissors"></i>${insp.actions}</div>`:''}
-                <div class="tl-inspector"><i class="fa-regular fa-user"></i>${insp.inspector_name||'Unknown'}</div>
+                <div class="tl-footer-row">
+                    <div class="tl-inspector"><i class="fa-regular fa-user"></i>${insp.inspector_name||'Sconosciuto'}</div>
+                    <button class="btn-tl-expand" onclick="toggleSnap('${uid}',this)">
+                        <i class="fa-solid fa-chevron-down"></i> Dettagli
+                    </button>
+                </div>
+                <div id="${uid}" class="tl-snap-panel" style="display:none;">${snapHtml}</div>
             </div>
-        </div>`).join('');
+        </div>`;
+        }).join('');
+}
+
+function toggleSnap(id, btn) {
+    const panel = document.getElementById(id);
+    const open = panel.style.display !== 'none';
+    panel.style.display = open ? 'none' : 'block';
+    btn.innerHTML = open
+        ? '<i class="fa-solid fa-chevron-down"></i> Dettagli'
+        : '<i class="fa-solid fa-chevron-up"></i> Nascondi';
 }
 
 async function submitInspection() {
@@ -837,34 +941,34 @@ async function submitInspection() {
     });
     const data = await res.json();
     if (res.ok) {
-        showStatus('Inspection logged', 'success');
+        showStatus('Ispezione registrata', 'success');
         document.getElementById('inspCondition').value = '';
         document.getElementById('inspComments').value  = '';
         document.getElementById('inspActions').value   = '';
         loadHistory(parseInt(treeId));
-    } else showStatus(data.message||'Error logging inspection','danger');
+    } else showStatus(data.message||'Errore nel registrare l\'ispezione','danger');
 }
 
 // ─── Export ───────────────────────────────────────────────
 
 async function exportExcel() {
-    if (!state.token) return showStatus('Please log in first','danger');
-    showStatus('Preparing Excel…','info');
+    if (!state.token) return showStatus('Effettua prima il login','danger');
+    showStatus('Preparazione Excel…','info');
     const res = await fetch(`${API_BASE}/export/excel`, {headers: authHeader()});
-    if (!res.ok) return showStatus('Export failed','danger');
+    if (!res.ok) return showStatus('Esportazione fallita','danger');
     const a = document.createElement('a');
     a.href = URL.createObjectURL(await res.blob()); a.download = 'trees.xlsx'; a.click();
-    URL.revokeObjectURL(a.href); showStatus('Excel file downloaded','success');
+    URL.revokeObjectURL(a.href); showStatus('File Excel scaricato','success');
 }
 
 async function exportGeoJSON() {
-    if (!state.token) return showStatus('Please log in first','danger');
-    showStatus('Preparing GeoJSON…','info');
+    if (!state.token) return showStatus('Effettua prima il login','danger');
+    showStatus('Preparazione GeoJSON…','info');
     const res = await fetch(`${API_BASE}/export/geojson`, {headers: authHeader()});
-    if (!res.ok) return showStatus('Export failed','danger');
+    if (!res.ok) return showStatus('Esportazione fallita','danger');
     const a = document.createElement('a');
     a.href = URL.createObjectURL(await res.blob()); a.download = 'trees.geojson'; a.click();
-    URL.revokeObjectURL(a.href); showStatus('GeoJSON downloaded','success');
+    URL.revokeObjectURL(a.href); showStatus('GeoJSON scaricato','success');
 }
 
 // ─── Status toast ─────────────────────────────────────────

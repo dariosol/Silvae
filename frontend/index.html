@@ -35,24 +35,24 @@
     <div class="login-logo">
       <div class="login-logo-ring"><i class="fa-solid fa-tree"></i></div>
       <div class="login-app-name">Silvae Pro</div>
-      <div class="login-tagline">Field Tree Management System</div>
+      <div class="login-tagline">Sistema di Gestione Alberi</div>
     </div>
     <div class="login-field">
-      <label for="loginUsername">Username</label>
+      <label for="loginUsername">Nome utente</label>
       <div class="login-field-wrap">
         <i class="ico fa-regular fa-user"></i>
-        <input id="loginUsername" class="login-input" type="text" placeholder="Enter your username" autocomplete="username">
+        <input id="loginUsername" class="login-input" type="text" placeholder="Inserisci il nome utente" autocomplete="username">
       </div>
     </div>
     <div class="login-field">
       <label for="loginPassword">Password</label>
       <div class="login-field-wrap">
         <i class="ico fa-solid fa-lock"></i>
-        <input id="loginPassword" class="login-input" type="password" placeholder="Enter your password" autocomplete="current-password">
+        <input id="loginPassword" class="login-input" type="password" placeholder="Inserisci la password" autocomplete="current-password">
       </div>
     </div>
-    <button id="loginBtn" class="btn-login"><i class="fa-solid fa-right-to-bracket"></i>&nbsp; Sign In</button>
-    <div class="login-footer">Silvae Pro &nbsp;·&nbsp; Field Edition</div>
+    <button id="loginBtn" class="btn-login"><i class="fa-solid fa-right-to-bracket"></i>&nbsp; Accedi</button>
+    <div class="login-footer">Silvae Pro &nbsp;·&nbsp; Edizione Campo</div>
   </div>
 </div>
 
@@ -67,9 +67,9 @@
     </a>
     <div class="nav-filters">
       <select id="citySelect" class="nav-select" onchange="fetchTrees()">
-        <option value="">All cities</option>
+        <option value="">Tutti i comuni</option>
       </select>
-      <input id="streetSearch" class="nav-search" type="text" placeholder="Search by address…">
+      <input id="streetSearch" class="nav-search" type="text" placeholder="Cerca per indirizzo…">
       <button class="btn-logout" style="padding:7px 10px;" onclick="fetchTrees()" title="Search">
         <i class="fa-solid fa-magnifying-glass"></i>
       </button>
@@ -79,16 +79,16 @@
         <i class="fa-solid fa-circle-user"></i>
         <span id="loggedInUser"></span>
       </div>
-      <button id="logoutBtn" class="btn-logout"><i class="fa-solid fa-right-from-bracket"></i> Logout</button>
+      <button id="logoutBtn" class="btn-logout"><i class="fa-solid fa-right-from-bracket"></i> Esci</button>
     </div>
   </nav>
 
   <!-- Tab bar -->
   <div class="tab-bar">
-    <button class="tab-btn active" data-tab="trees"><i class="fa-solid fa-seedling"></i><span>Trees</span></button>
-    <button class="tab-btn" data-tab="map"><i class="fa-solid fa-map-location-dot"></i><span>Map</span></button>
-    <button class="tab-btn" data-tab="manage" id="tabManageBtn" style="display:none"><i class="fa-solid fa-users-gear"></i><span>Manage</span></button>
-    <button class="tab-btn" data-tab="export"><i class="fa-solid fa-download"></i><span>Export</span></button>
+    <button class="tab-btn active" data-tab="trees"><i class="fa-solid fa-seedling"></i><span>Alberi</span></button>
+    <button class="tab-btn" data-tab="map"><i class="fa-solid fa-map-location-dot"></i><span>Mappa</span></button>
+    <button class="tab-btn" data-tab="manage" id="tabManageBtn" style="display:none"><i class="fa-solid fa-users-gear"></i><span>Gestione</span></button>
+    <button class="tab-btn" data-tab="export"><i class="fa-solid fa-download"></i><span>Esporta</span></button>
   </div>
 
   <!-- Tab content -->
@@ -103,36 +103,36 @@
           <div class="toolbar-left">
             <div class="filter-wrap">
               <i class="fa-solid fa-magnifying-glass filter-ico"></i>
-              <input id="idFilter" class="inp" type="text" style="padding-left:32px;min-width:180px;" placeholder="Filter by ID…">
+              <input id="idFilter" class="inp" type="text" style="padding-left:32px;min-width:180px;" placeholder="Filtra per ID…">
             </div>
-            <span id="inventoryLabel" class="section-label">Tree Inventory</span>
+            <span id="inventoryLabel" class="section-label">Inventario Alberi</span>
             <span class="count-badge" id="treeCount">0</span>
           </div>
           <div class="toolbar-right">
-            <select id="pageSizeSelect" class="inp" style="width:80px;" title="Rows per page">
+            <select id="pageSizeSelect" class="inp" style="width:80px;" title="Righe per pagina">
               <option value="25">25</option><option value="50">50</option><option value="100">100</option>
             </select>
-            <button class="btn btn-primary" id="openFormBtn"><i class="fa-solid fa-plus"></i> Add Tree</button>
+            <button class="btn btn-primary" id="openFormBtn"><i class="fa-solid fa-plus"></i> Aggiungi Albero</button>
           </div>
         </div>
         <div class="section-card">
           <div class="card-head" style="flex-shrink:0;">
             <span class="card-title" style="font-size:12px;color:var(--text-muted);">
               <i class="fa-solid fa-circle-info"></i>
-              Select a city in the top bar, then use the ID filter to find a specific tree.
+              Seleziona un comune nella barra superiore, poi usa il filtro ID per trovare un albero specifico.
             </span>
           </div>
           <div class="tbl-wrap">
             <table class="tbl">
               <thead>
                 <tr>
-                  <th class="sortable" data-sort="custom_id">Custom ID <i class="sort-ico fa-solid fa-sort"></i></th>
-                  <th>Species</th>
-                  <th class="sortable" data-sort="condition">Condition <i class="sort-ico fa-solid fa-sort"></i></th>
-                  <th class="sortable" data-sort="address">Location <i class="sort-ico fa-solid fa-sort"></i></th>
-                  <th class="sortable" data-sort="latitude">Coords <i class="sort-ico fa-solid fa-sort"></i></th>
-                  <th class="sortable" data-sort="next_check">Next Check <i class="sort-ico fa-solid fa-sort"></i></th>
-                  <th style="text-align:right">Actions</th>
+                  <th class="sortable" data-sort="custom_id">ID Albero <i class="sort-ico fa-solid fa-sort"></i></th>
+                  <th>Specie</th>
+                  <th class="sortable" data-sort="condition">Condizione <i class="sort-ico fa-solid fa-sort"></i></th>
+                  <th class="sortable" data-sort="address">Localizzazione <i class="sort-ico fa-solid fa-sort"></i></th>
+                  <th class="sortable" data-sort="latitude">Coordinate <i class="sort-ico fa-solid fa-sort"></i></th>
+                  <th class="sortable" data-sort="next_check">Prossima Ispezione <i class="sort-ico fa-solid fa-sort"></i></th>
+                  <th style="text-align:right">Azioni</th>
                 </tr>
               </thead>
               <tbody id="treeList"></tbody>
@@ -150,9 +150,9 @@
       <div id="view-edit" class="tab-view">
         <div class="view-bar">
           <button class="btn btn-outline btn-sm" onclick="showTreeView('list')">
-            <i class="fa-solid fa-arrow-left"></i> Back to Trees
+            <i class="fa-solid fa-arrow-left"></i> Torna agli Alberi
           </button>
-          <span class="view-title" id="formTitle"><i class="fa-solid fa-seedling"></i> Add New Tree</span>
+          <span class="view-title" id="formTitle"><i class="fa-solid fa-seedling"></i> Nuovo Albero</span>
         </div>
 
         <div class="view-body">
@@ -556,10 +556,10 @@
       <div id="view-history" class="tab-view">
         <div class="view-bar">
           <button class="btn btn-outline btn-sm" onclick="showTreeView('list')">
-            <i class="fa-solid fa-arrow-left"></i> Back to Trees
+            <i class="fa-solid fa-arrow-left"></i> Torna agli Alberi
           </button>
           <span class="view-title" id="historyTitle">
-            <i class="fa-solid fa-clock-rotate-left"></i> Inspection History
+            <i class="fa-solid fa-clock-rotate-left"></i> Storico Ispezioni
           </span>
         </div>
         <div class="history-layout">
@@ -567,22 +567,22 @@
             <div id="timelineContent" class="timeline-wrap"></div>
           </div>
           <div class="history-form">
-            <div class="fs-title" style="padding:0 0 14px;"><i class="fa-solid fa-plus"></i> Log New Inspection</div>
+            <div class="fs-title" style="padding:0 0 14px;"><i class="fa-solid fa-plus"></i> Registra Nuova Ispezione</div>
             <input type="hidden" id="inspTreeId">
             <div class="fc-grid2">
-              <div class="fgrp"><label class="flabel">Date</label><input id="inspDate" class="fc" type="date"></div>
-              <div class="fgrp"><label class="flabel">Condition</label><input id="inspCondition" class="fc" type="text" placeholder="Good / Fair / Poor"></div>
+              <div class="fgrp"><label class="flabel">Data</label><input id="inspDate" class="fc" type="date"></div>
+              <div class="fgrp"><label class="flabel">Condizione</label><input id="inspCondition" class="fc" type="text" placeholder="Buono / Discreto / Scarso"></div>
             </div>
             <div class="fgrp">
-              <label class="flabel">Comments / Observations</label>
-              <textarea id="inspComments" class="fc" rows="4" placeholder="What did you observe?"></textarea>
+              <label class="flabel">Commenti / Osservazioni</label>
+              <textarea id="inspComments" class="fc" rows="4" placeholder="Cosa hai osservato?"></textarea>
             </div>
             <div class="fgrp">
-              <label class="flabel">Actions Taken</label>
-              <input id="inspActions" class="fc" type="text" placeholder="Pruning, treatment…">
+              <label class="flabel">Interventi Effettuati</label>
+              <input id="inspActions" class="fc" type="text" placeholder="Potatura, trattamento…">
             </div>
             <button class="btn btn-primary" style="width:100%;margin-top:6px;" onclick="submitInspection()">
-              <i class="fa-solid fa-floppy-disk"></i> Log Inspection
+              <i class="fa-solid fa-floppy-disk"></i> Registra Ispezione
             </button>
           </div>
         </div>
@@ -601,35 +601,35 @@
     <section id="tab-manage" class="tab-section">
       <div class="scroll-area">
         <div id="userManagement" class="panel mb">
-          <div class="panel-head"><i class="fa-solid fa-users"></i> User Management</div>
+          <div class="panel-head"><i class="fa-solid fa-users"></i> Gestione Utenti</div>
           <div class="panel-body">
             <div class="form-row mb-sm">
-              <input id="newUsername" class="inp" placeholder="Username">
+              <input id="newUsername" class="inp" placeholder="Nome utente">
               <input id="newPassword" type="password" class="inp" placeholder="Password">
               <select id="newRole" class="inp" style="max-width:110px;">
-                <option value="user">user</option>
-                <option value="city">city</option>
-                <option value="superuser">superuser</option>
+                <option value="user">utente</option>
+                <option value="city">comune</option>
+                <option value="superuser">superutente</option>
               </select>
-              <input id="newCity" list="newCityDatalist" class="inp" placeholder="City (optional)" style="max-width:160px;">
+              <input id="newCity" list="newCityDatalist" class="inp" placeholder="Comune (opzionale)" style="max-width:160px;">
               <datalist id="newCityDatalist"></datalist>
               <button id="createUserBtn" class="btn btn-primary btn-sm" style="flex:0 0 auto;">
-                <i class="fa-solid fa-plus"></i> Add User
+                <i class="fa-solid fa-plus"></i> Aggiungi Utente
               </button>
             </div>
             <div class="user-list" id="userList"></div>
           </div>
         </div>
         <div id="cityManagement" class="panel mb">
-          <div class="panel-head"><i class="fa-solid fa-city"></i> City Management</div>
+          <div class="panel-head"><i class="fa-solid fa-city"></i> Gestione Comuni</div>
           <div class="panel-body">
             <div class="form-row">
-              <input id="cityName" class="inp" placeholder="New city name">
+              <input id="cityName" class="inp" placeholder="Nuovo comune">
               <button id="createCityBtn" class="btn btn-primary btn-sm" style="flex:0 0 auto;">
-                <i class="fa-solid fa-plus"></i> Add City
+                <i class="fa-solid fa-plus"></i> Aggiungi Comune
               </button>
               <button id="refreshCitiesBtn" class="btn btn-outline btn-sm" style="flex:0 0 auto;">
-                <i class="fa-solid fa-rotate"></i> Refresh
+                <i class="fa-solid fa-rotate"></i> Aggiorna
               </button>
             </div>
           </div>
@@ -641,23 +641,23 @@
     <!-- EXPORT tab -->
     <section id="tab-export" class="tab-section">
       <div class="scroll-area">
-        <h2 class="section-heading"><i class="fa-solid fa-download"></i> Export Data</h2>
-        <p class="section-sub">Exports include all trees visible to your account for the currently selected city.</p>
+        <h2 class="section-heading"><i class="fa-solid fa-download"></i> Esporta Dati</h2>
+        <p class="section-sub">L'esportazione include tutti gli alberi visibili al tuo account per il comune selezionato.</p>
         <div class="export-grid">
           <div class="export-card">
             <div class="export-card-icon" style="background:#1d6f42;"><i class="fa-solid fa-file-excel"></i></div>
             <div class="export-card-body">
-              <h3>Excel Spreadsheet</h3>
-              <p>Full attribute table in <code>.xlsx</code> format.</p>
-              <button id="exportExcelBtn" class="btn btn-excel"><i class="fa-solid fa-file-arrow-down"></i> Download .xlsx</button>
+              <h3>Foglio Excel</h3>
+              <p>Tabella attributi completa in formato <code>.xlsx</code>.</p>
+              <button id="exportExcelBtn" class="btn btn-excel"><i class="fa-solid fa-file-arrow-down"></i> Scarica .xlsx</button>
             </div>
           </div>
           <div class="export-card">
             <div class="export-card-icon" style="background:#589632;"><i class="fa-solid fa-globe"></i></div>
             <div class="export-card-body">
               <h3>GeoJSON — QGIS</h3>
-              <p>Geographic feature collection in <code>.geojson</code> format.</p>
-              <button id="exportGeoJSONBtn" class="btn btn-qgis"><i class="fa-solid fa-file-arrow-down"></i> Download .geojson</button>
+              <p>Raccolta di elementi geografici in formato <code>.geojson</code>.</p>
+              <button id="exportGeoJSONBtn" class="btn btn-qgis"><i class="fa-solid fa-file-arrow-down"></i> Scarica .geojson</button>
             </div>
           </div>
         </div>

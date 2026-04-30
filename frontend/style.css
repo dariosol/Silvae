@@ -736,6 +736,54 @@ textarea.fc { resize: vertical; min-height: 72px; }
 .tl-empty i { font-size: 36px; display: block; margin-bottom: 10px; opacity: .3; }
 .tl-empty p { font-size: 13px; }
 
+/* Risk badge in timeline */
+.tl-risk-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 600;
+  padding: 2px 8px; border-radius: 20px;
+  margin: 0 4px 6px 0;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.risk-high   { background: #fde8e8; color: #c0392b; }
+.risk-medium { background: #fef3cd; color: #856404; }
+.risk-low    { background: #d4edda; color: #2d6a4f; }
+.risk-unknown{ background: #e9ecef; color: #6c757d; }
+
+/* Footer row with inspector + expand button */
+.tl-footer-row {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: 6px;
+}
+.btn-tl-expand {
+  background: none; border: 1.5px solid var(--border);
+  border-radius: 6px; padding: 3px 10px;
+  font-size: 11px; font-weight: 600; color: var(--text-mid);
+  cursor: pointer; display: flex; align-items: center; gap: 5px;
+  transition: background .15s;
+}
+.btn-tl-expand:hover { background: var(--surface-alt, #f4f6f3); }
+
+/* Snapshot detail panel */
+.tl-snap-panel {
+  margin-top: 10px; padding-top: 10px;
+  border-top: 1.5px dashed var(--border);
+}
+.tl-snap-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px;
+}
+.tl-snap-row {
+  display: flex; flex-direction: column;
+  padding: 3px 0;
+}
+.tl-snap-label {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .5px; color: var(--text-muted);
+}
+.tl-snap-val {
+  font-size: 12px; color: var(--text-mid);
+  word-break: break-word;
+}
+
 .tl-divider {
   font-size: 11px; font-weight: 700;
   text-transform: uppercase; letter-spacing: .8px;

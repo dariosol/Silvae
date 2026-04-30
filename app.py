@@ -151,6 +151,7 @@ class Inspection(db.Model):
     inspector_id  = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     inspector_name= db.Column(db.String(80))
     snapshot      = db.Column(db.Text)   # JSON snapshot of all tree fields at this moment
+    rischio       = db.Column(db.Text)   # JSON: assess_tree result at inspection time
     created_at    = db.Column(db.DateTime(timezone=True),
                               default=lambda: datetime.now(timezone.utc))
 
@@ -185,6 +186,13 @@ with app.app_context():
         for col_name, col_type in new_cols:
             if col_name not in existing_cols:
                 conn.execute(text(f'ALTER TABLE tree ADD COLUMN {col_name} {col_type}'))
+        conn.commit()
+    existing_insp_cols = {c['name'] for c in insp.get_columns('inspection')}
+    insp_new_cols = [('snapshot', 'TEXT'), ('rischio', 'TEXT')]
+    with db.engine.connect() as conn:
+        for col_name, col_type in insp_new_cols:
+            if col_name not in existing_insp_cols:
+                conn.execute(text(f'ALTER TABLE inspection ADD COLUMN {col_name} {col_type}'))
         conn.commit()
 
 # -----------------------
@@ -625,7 +633,9 @@ def get_inspections(tree_id):
         'id': i.id, 'date': i.date.strftime('%Y-%m-%d'),
         'condition': i.condition, 'comments': i.comments, 'actions': i.actions,
         'inspector_name': i.inspector_name,
-        'created_at': i.created_at.strftime('%Y-%m-%d %H:%M') if i.created_at else None
+        'created_at': i.created_at.strftime('%Y-%m-%d %H:%M') if i.created_at else None,
+        'rischio': json.loads(i.rischio) if i.rischio else None,
+        'snapshot': json.loads(i.snapshot) if i.snapshot else None,
     } for i in rows])
 
 @app.route('/tree/<int:tree_id>/inspections', methods=['POST'])
@@ -640,11 +650,56 @@ def add_inspection(tree_id):
     date_str = data.get('date') or datetime.now(timezone.utc).strftime('%Y-%m-%d')
     try: insp_date = datetime.strptime(date_str, '%Y-%m-%d').date()
     except ValueError: return jsonify({'message': 'Invalid date format'}), 400
+    condition = data.get('condition') or tree.condition
+
+    # Snapshot of all tree fields at this moment
+    snap = tree_to_dict(tree)
+    snap['condition'] = condition
+
+    # Calculate rischio from current ORD fields if all present
+    rischio_val = None
+    try:
+        def _f(v):
+            try: return float(v) if v not in (None,'') else None
+            except: return None
+        def _i(v):
+            try: return int(v) if v not in (None,'') else None
+            except: return None
+        rq = {
+            'tree_height_m': _f(tree.tree_height_m),
+            'circumference_cm': _f(tree.circonferenza_cm),
+            'branch_diam_cm': _f(tree.branch_diam_cm),
+            'branch_length_m': _f(tree.branch_length_m),
+            'branch_height_m': _f(tree.branch_height_m),
+            'target_height_m': _f(tree.target_height_m),
+            'pericolo_rami': _i(tree.pericolo_rami),
+            'pericolo_tronco': _i(tree.pericolo_tronco),
+            'pericolo_colletto': _i(tree.pericolo_colletto),
+            'pericolo_zolla': _i(tree.pericolo_zolla),
+            'bersaglio_chioma': _i(tree.bersaglio_chioma),
+            'bersaglio_ramo': _i(tree.bersaglio_ramo),
+        }
+        if all(v is not None for v in rq.values()):
+            rischio_val = assess_tree(
+                crown_diam_m=_f(tree.crown_diameter_m) or 0,
+                post_tree_height_m=_f(tree.post_tree_height_m),
+                post_circumference_cm=_f(tree.post_circonferenza_cm),
+                post_branch_diam_cm=_f(tree.post_branch_diam_cm),
+                post_branch_length_m=_f(tree.post_branch_length_m),
+                post_branch_height_m=_f(tree.post_branch_height_m),
+                post_target_height_m=_f(tree.post_target_height_m),
+                **rq
+            )
+    except Exception:
+        pass
+
     insp = Inspection(
         tree_id=tree_id, date=insp_date,
-        condition=data.get('condition') or tree.condition,
+        condition=condition,
         comments=data.get('comments',''), actions=data.get('actions',''),
-        inspector_id=user_id, inspector_name=request.user.get('username')
+        inspector_id=user_id, inspector_name=request.user.get('username'),
+        snapshot=json.dumps(snap),
+        rischio=json.dumps(rischio_val) if rischio_val else None,
     )
     db.session.add(insp); db.session.commit()
     return jsonify({'message': 'Inspection logged', 'id': insp.id}), 201
