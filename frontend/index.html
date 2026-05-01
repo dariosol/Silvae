@@ -188,8 +188,17 @@
             <button class="btn btn-outline btn-sm" id="nearbyBtn" onclick="toggleNearby()" title="Ordina per distanza dalla posizione attuale">
               <i class="fa-solid fa-location-crosshairs"></i> Vicino a me
             </button>
+            <button class="btn btn-outline btn-sm" id="exportModeBtn" onclick="toggleExportMode()">
+              <i class="fa-solid fa-download"></i> Seleziona per esportare
+            </button>
             <button class="btn btn-primary" id="openFormBtn"><i class="fa-solid fa-plus"></i> Aggiungi Albero</button>
           </div>
+        </div>
+        <div id="exportBar" style="display:none;align-items:center;gap:10px;padding:8px 18px;background:#eff6ff;border-bottom:1px solid #bfdbfe;flex-shrink:0;">
+          <span id="exportCount" style="font-size:13px;font-weight:600;color:#1d4ed8;"></span>
+          <button class="btn btn-excel btn-sm" onclick="exportSelectedExcel()"><i class="fa-solid fa-file-excel"></i> Esporta Excel</button>
+          <button class="btn btn-qgis btn-sm" onclick="exportSelectedGeoJSON()"><i class="fa-solid fa-globe"></i> Esporta GeoJSON</button>
+          <button class="btn btn-outline btn-sm" onclick="toggleExportMode()" style="margin-left:auto;"><i class="fa-solid fa-xmark"></i> Annulla</button>
         </div>
         <div class="section-card">
           <div class="card-head" style="flex-shrink:0;">
@@ -202,6 +211,7 @@
             <table class="tbl">
               <thead>
                 <tr>
+                  <th id="selectAllTh" style="display:none;width:36px;text-align:center;"><input type="checkbox" id="selectAllCb" onchange="toggleSelectAll(this)" title="Seleziona tutti"></th>
                   <th class="sortable" data-sort="custom_id">ID Albero <i class="sort-ico fa-solid fa-sort"></i></th>
                   <th>Specie</th>
                   <th class="sortable" data-sort="condition">Condizione <i class="sort-ico fa-solid fa-sort"></i></th>

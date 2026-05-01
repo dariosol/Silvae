@@ -927,6 +927,10 @@ def export_excel():
     query = Tree.query
     if role == 'user':   query = query.filter(Tree.owner_id == user_id)
     elif role == 'city': query = city_tree_filter(query, user_id, user_city)
+    ids_param = request.args.get('ids')
+    if ids_param:
+        id_list = [int(x) for x in ids_param.split(',') if x.strip().isdigit()]
+        query = query.filter(Tree.id.in_(id_list))
     trees = query.all()
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -952,6 +956,10 @@ def export_geojson():
     query = Tree.query
     if role == 'user':   query = query.filter(Tree.owner_id == user_id)
     elif role == 'city': query = city_tree_filter(query, user_id, user_city)
+    ids_param = request.args.get('ids')
+    if ids_param:
+        id_list = [int(x) for x in ids_param.split(',') if x.strip().isdigit()]
+        query = query.filter(Tree.id.in_(id_list))
     features = []
     for t in query.all():
         if t.latitude is None or t.longitude is None: continue

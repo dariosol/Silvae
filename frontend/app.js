@@ -8,6 +8,7 @@ let state = {
     activeTab: 'trees',
     sortField: null, sortDir: 'asc',
     nearbyMode: false, userLat: null, userLon: null,
+    exportMode: false, exportSelected: new Set(),
     map: null, markers: [], userMarker: null,
     dropdowns: {}
 };
@@ -694,6 +695,15 @@ function renderPage() {
     renderPagination(); updateSortHeaders();
     const total = state.allTrees.length, filtered = state.filteredTrees.length;
     document.getElementById('treeCount').textContent = filtered < total ? `${filtered} / ${total}` : total;
+    if (state.exportMode) {
+        const sel = state.exportSelected.size;
+        document.getElementById('exportCount').textContent = `${sel} alber${sel !== 1 ? 'i' : 'o'} selezionat${sel !== 1 ? 'i' : 'o'}`;
+        const allCb = document.getElementById('selectAllCb');
+        if (allCb) {
+            const tot = state.filteredTrees.length, selAll = state.filteredTrees.filter(t => state.exportSelected.has(t.id)).length;
+            allCb.checked = tot > 0 && selAll === tot; allCb.indeterminate = selAll > 0 && selAll < tot;
+        }
+    }
 }
 
 function renderPagination() {
@@ -749,7 +759,7 @@ function renderTreeList(trees) {
     const tbody = document.getElementById('treeList'); tbody.innerHTML = '';
     if (trees.length === 0) {
         const q = document.getElementById('idFilter').value.trim();
-        tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><i class="fa-solid fa-tree"></i>
+        tbody.innerHTML = `<tr><td colspan="${state.exportMode ? 8 : 7}"><div class="empty-state"><i class="fa-solid fa-tree"></i>
             <p>${q ? `Nessun albero corrisponde all'ID "<strong>${q}</strong>".` : 'Nessun albero trovato. Seleziona un comune in alto, poi usa <strong>Aggiungi Albero</strong> per aggiungere il primo.'}</p>
         </div></td></tr>`;
         return;
@@ -765,6 +775,7 @@ function renderTreeList(trees) {
             ? `<br><span style="font-size:11px;color:var(--g600);"><i class="fa-solid fa-location-dot"></i> ${fmtDist(haversine(state.userLat, state.userLon, parseFloat(t.latitude), parseFloat(t.longitude)))}</span>`
             : '';
         tr.innerHTML = `
+            ${state.exportMode ? `<td style="text-align:center;"><input type="checkbox" ${state.exportSelected.has(t.id) ? 'checked' : ''} onchange="toggleTreeSelect(${t.id}, this.checked)"></td>` : ''}
             <td><span class="id-chip">${t.custom_id}</span></td>
             <td><span class="species">${t.species}</span></td>
             <td>${condBadge(t.condition)}</td>
@@ -1190,6 +1201,61 @@ async function submitInspection() {
         document.getElementById('inspActions').value   = '';
         loadHistory(parseInt(treeId));
     } else showStatus(data.message||'Errore nel registrare l\'ispezione','danger');
+}
+
+// ─── Export selection ─────────────────────────────────────
+
+function toggleExportMode() {
+    state.exportMode = !state.exportMode;
+    if (!state.exportMode) state.exportSelected = new Set();
+    const btn  = document.getElementById('exportModeBtn');
+    const bar  = document.getElementById('exportBar');
+    const th   = document.getElementById('selectAllTh');
+    btn.classList.toggle('btn-primary', state.exportMode);
+    btn.classList.toggle('btn-outline', !state.exportMode);
+    bar.style.display = state.exportMode ? 'flex' : 'none';
+    th.style.display  = state.exportMode ? '' : 'none';
+    renderPage();
+}
+
+function toggleSelectAll(cb) {
+    if (cb.checked) state.filteredTrees.forEach(t => state.exportSelected.add(t.id));
+    else state.exportSelected.clear();
+    renderPage();
+}
+
+function toggleTreeSelect(id, checked) {
+    if (checked) state.exportSelected.add(id); else state.exportSelected.delete(id);
+    const allCb = document.getElementById('selectAllCb');
+    if (allCb) {
+        const total = state.filteredTrees.length;
+        const sel   = state.filteredTrees.filter(t => state.exportSelected.has(t.id)).length;
+        allCb.checked       = total > 0 && sel === total;
+        allCb.indeterminate = sel > 0 && sel < total;
+    }
+    document.getElementById('exportCount').textContent = `${state.exportSelected.size} alber${state.exportSelected.size !== 1 ? 'i' : 'o'} selezionat${state.exportSelected.size !== 1 ? 'i' : 'o'}`;
+}
+
+async function exportSelectedExcel() {
+    if (state.exportSelected.size === 0) { showStatus('Nessun albero selezionato', 'warning'); return; }
+    showStatus('Preparazione Excel…', 'info');
+    const ids = [...state.exportSelected].join(',');
+    const res = await fetch(`${API_BASE}/export/excel?ids=${ids}`, {headers: authHeader()});
+    if (!res.ok) return showStatus('Esportazione fallita', 'danger');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(await res.blob()); a.download = 'alberi.xlsx'; a.click();
+    URL.revokeObjectURL(a.href); showStatus('File Excel scaricato', 'success');
+}
+
+async function exportSelectedGeoJSON() {
+    if (state.exportSelected.size === 0) { showStatus('Nessun albero selezionato', 'warning'); return; }
+    showStatus('Preparazione GeoJSON…', 'info');
+    const ids = [...state.exportSelected].join(',');
+    const res = await fetch(`${API_BASE}/export/geojson?ids=${ids}`, {headers: authHeader()});
+    if (!res.ok) return showStatus('Esportazione fallita', 'danger');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(await res.blob()); a.download = 'alberi.geojson'; a.click();
+    URL.revokeObjectURL(a.href); showStatus('GeoJSON scaricato', 'success');
 }
 
 // ─── Export ───────────────────────────────────────────────
