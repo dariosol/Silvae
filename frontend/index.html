@@ -32,6 +32,11 @@
     .comune-dropdown li:hover{background:var(--g50);}
     .comune-dropdown li .cd-sigla{font-size:11px;color:var(--text-muted);margin-left:6px;}
     .comune-dropdown li.ac-active{background:var(--g100);}
+  .locate-ctrl-btn{width:30px;height:30px;background:#fff;border:none;cursor:pointer;font-size:14px;color:#333;display:flex;align-items:center;justify-content:center;}
+  .locate-ctrl-btn:hover{background:var(--g50);}
+  .user-dot{width:20px;height:20px;position:relative;}
+  .user-dot-pulse{width:20px;height:20px;border-radius:50%;background:#2563eb;border:3px solid #fff;box-shadow:0 0 0 rgba(37,99,235,.4);animation:user-pulse 2s infinite;}
+  @keyframes user-pulse{0%{box-shadow:0 0 0 0 rgba(37,99,235,.4)}70%{box-shadow:0 0 0 12px rgba(37,99,235,0)}100%{box-shadow:0 0 0 0 rgba(37,99,235,0)}}
   </style>
 </head>
 <body>
@@ -180,6 +185,9 @@
             <select id="pageSizeSelect" class="inp" style="width:80px;" title="Righe per pagina">
               <option value="25">25</option><option value="50">50</option><option value="100">100</option>
             </select>
+            <button class="btn btn-outline btn-sm" id="nearbyBtn" onclick="toggleNearby()" title="Ordina per distanza dalla posizione attuale">
+              <i class="fa-solid fa-location-crosshairs"></i> Vicino a me
+            </button>
             <button class="btn btn-primary" id="openFormBtn"><i class="fa-solid fa-plus"></i> Aggiungi Albero</button>
           </div>
         </div>
@@ -219,6 +227,9 @@
         <div class="view-bar">
           <button class="btn btn-outline btn-sm" onclick="showTreeView('list')">
             <i class="fa-solid fa-arrow-left"></i> Torna agli Alberi
+          </button>
+          <button class="btn btn-outline btn-sm" onclick="switchTab('map')">
+            <i class="fa-solid fa-map"></i> Torna alla Mappa
           </button>
           <span class="view-title" id="formTitle"><i class="fa-solid fa-seedling"></i> Nuovo Albero</span>
         </div>

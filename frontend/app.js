@@ -7,7 +7,8 @@ let state = {
     currentPage: 1, pageSize: 25,
     activeTab: 'trees',
     sortField: null, sortDir: 'asc',
-    map: null, markers: [],
+    nearbyMode: false, userLat: null, userLon: null,
+    map: null, markers: [], userMarker: null,
     dropdowns: {}
 };
 
@@ -403,6 +404,18 @@ function switchTab(name) {
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19, attribution: '© OpenStreetMap'
             }).addTo(state.map);
+            const LocateControl = L.Control.extend({
+                options: { position: 'topleft' },
+                onAdd() {
+                    const btn = L.DomUtil.create('button', 'leaflet-bar locate-ctrl-btn');
+                    btn.innerHTML = '<i class="fa-solid fa-location-crosshairs"></i>';
+                    btn.title = 'Mostra la mia posizione';
+                    L.DomEvent.disableClickPropagation(btn);
+                    L.DomEvent.on(btn, 'click', locateMe);
+                    return btn;
+                }
+            });
+            new LocateControl().addTo(state.map);
         } else { state.map.invalidateSize(); }
         showOnMap(state.allTrees);
     }
@@ -623,6 +636,36 @@ function updateSortHeaders() {
     });
 }
 
+// ─── Nearby sort ─────────────────────────────────────────
+
+function haversine(lat1, lon1, lat2, lon2) {
+    const R = 6371000;
+    const φ1 = lat1 * Math.PI/180, φ2 = lat2 * Math.PI/180;
+    const Δφ = (lat2-lat1) * Math.PI/180, Δλ = (lon2-lon1) * Math.PI/180;
+    const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function fmtDist(m) {
+    return m < 1000 ? `${Math.round(m)} m` : `${(m/1000).toFixed(1)} km`;
+}
+
+function toggleNearby() {
+    const btn = document.getElementById('nearbyBtn');
+    if (state.nearbyMode) {
+        state.nearbyMode = false; state.userLat = null; state.userLon = null;
+        btn.classList.remove('btn-primary'); btn.classList.add('btn-outline');
+        renderPage(); return;
+    }
+    if (!navigator.geolocation) { showStatus('Geolocalizzazione non supportata da questo browser', 'warning'); return; }
+    navigator.geolocation.getCurrentPosition(pos => {
+        state.userLat = pos.coords.latitude; state.userLon = pos.coords.longitude;
+        state.nearbyMode = true; state.currentPage = 1;
+        btn.classList.remove('btn-outline'); btn.classList.add('btn-primary');
+        renderPage();
+    }, () => showStatus('Impossibile ottenere la posizione attuale', 'danger'));
+}
+
 // ─── Filter + pagination ──────────────────────────────────
 
 function applyIdFilter() {
@@ -636,7 +679,15 @@ function goToPage(page) { state.currentPage = page; renderPage(); }
 
 function renderPage() {
     let trees = state.filteredTrees;
-    if (state.sortField) trees = sortTrees(trees, state.sortField, state.sortDir);
+    if (state.nearbyMode && state.userLat !== null) {
+        trees = [...trees].sort((a, b) => {
+            const da = (a.latitude && a.longitude) ? haversine(state.userLat, state.userLon, parseFloat(a.latitude), parseFloat(a.longitude)) : Infinity;
+            const db = (b.latitude && b.longitude) ? haversine(state.userLat, state.userLon, parseFloat(b.latitude), parseFloat(b.longitude)) : Infinity;
+            return da - db;
+        });
+    } else if (state.sortField) {
+        trees = sortTrees(trees, state.sortField, state.sortDir);
+    }
     const {currentPage, pageSize} = state;
     const start = (currentPage - 1) * pageSize;
     renderTreeList(trees.slice(start, start + pageSize));
@@ -710,11 +761,14 @@ function renderTreeList(trees) {
         const coords = (t.latitude && t.longitude)
             ? `<span class="coords-chip">${parseFloat(t.latitude).toFixed(4)},&thinsp;${parseFloat(t.longitude).toFixed(4)}</span>`
             : '<span style="color:var(--text-muted)">—</span>';
+        const distBadge = (state.nearbyMode && state.userLat !== null && t.latitude && t.longitude)
+            ? `<br><span style="font-size:11px;color:var(--g600);"><i class="fa-solid fa-location-dot"></i> ${fmtDist(haversine(state.userLat, state.userLon, parseFloat(t.latitude), parseFloat(t.longitude)))}</span>`
+            : '';
         tr.innerHTML = `
             <td><span class="id-chip">${t.custom_id}</span></td>
             <td><span class="species">${t.species}</span></td>
             <td>${condBadge(t.condition)}</td>
-            <td><span class="addr" title="${addr}">${addr||'—'}</span></td>
+            <td><span class="addr" title="${addr}">${addr||'—'}</span>${distBadge}</td>
             <td>${coords}</td>
             <td style="font-size:13px;color:var(--text-mid)">${t.next_check||'—'}</td>
             <td><div class="act-cell">
@@ -917,6 +971,23 @@ function getLocation() {
 
 // ─── Map ──────────────────────────────────────────────────
 
+function locateMe() {
+    if (!navigator.geolocation) { showStatus('Geolocalizzazione non supportata', 'danger'); return; }
+    navigator.geolocation.getCurrentPosition(pos => {
+        const { latitude: lat, longitude: lon } = pos.coords;
+        if (state.userMarker) state.map.removeLayer(state.userMarker);
+        const icon = L.divIcon({
+            className: '',
+            html: `<div class="user-dot"><div class="user-dot-pulse"></div></div>`,
+            iconSize: [20, 20], iconAnchor: [10, 10]
+        });
+        state.userMarker = L.marker([lat, lon], {icon, zIndexOffset: 1000})
+            .bindPopup('<strong>Sei qui</strong>')
+            .addTo(state.map);
+        state.map.setView([lat, lon], 16);
+    }, () => showStatus('Impossibile ottenere la posizione', 'danger'));
+}
+
 function showOnMap(trees) {
     state.markers.forEach(m => state.map.removeLayer(m));
     state.markers = [];
@@ -928,7 +999,7 @@ function showOnMap(trees) {
             iconSize: [30,30], iconAnchor: [15,15]
         });
         const m = L.marker([t.latitude, t.longitude], {icon}).addTo(state.map)
-            .bindPopup(`<strong>${t.custom_id}</strong><br><em>${t.species}</em><br>${condBadge(t.condition)}<br><span style="font-size:12px;color:#555">${t.address||t.city||''}</span>`);
+            .bindPopup(`<strong>${t.custom_id}</strong><br><em>${t.species}</em><br>${condBadge(t.condition)}<br><span style="font-size:12px;color:#555">${t.address||t.city||''}</span><br><br><button class="btn btn-sm btn-primary" onclick="openEditForm(${t.id})"><i class="fa-solid fa-pen-to-square"></i> Modifica</button>`);
         state.markers.push(m);
     });
     if (state.markers.length > 0)
