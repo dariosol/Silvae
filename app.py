@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import sys, os, io, json
+import sys, os, io, json, secrets
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from flask import Flask, request, jsonify, send_file
@@ -46,17 +46,29 @@ geolocator = Nominatim(user_agent="tree_locator")
 # -----------------------
 class User(db.Model):
     __tablename__ = 'user'
-    id            = db.Column(db.Integer, primary_key=True)
-    username      = db.Column(db.String(80), unique=True, nullable=False)
-    password_hash = db.Column(db.String(255), nullable=False)
-    role          = db.Column(db.String(20), nullable=False)
-    city          = db.Column(db.String(100), nullable=True)
+    id                     = db.Column(db.Integer, primary_key=True)
+    username               = db.Column(db.String(80), unique=True, nullable=False)
+    email                  = db.Column(db.String(120), unique=True, nullable=True)
+    password_hash          = db.Column(db.String(255), nullable=False)
+    role                   = db.Column(db.String(20), nullable=False)
+    city                   = db.Column(db.String(100), nullable=True)
+    password_reset_token   = db.Column(db.String(100), nullable=True)
+    password_reset_expires = db.Column(db.DateTime(timezone=True), nullable=True)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+
+class CityMembership(db.Model):
+    __tablename__ = 'city_membership'
+    __table_args__ = (
+        db.UniqueConstraint('city_user_id', 'agronomer_id', name='uq_city_agronomer'),
+    )
+    id           = db.Column(db.Integer, primary_key=True)
+    city_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    agronomer_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
 class City(db.Model):
     __tablename__ = 'city'
@@ -204,6 +216,17 @@ with app.app_context():
         for col_name, col_type in insp_new_cols:
             if col_name not in existing_insp_cols:
                 conn.execute(text(f'ALTER TABLE inspection ADD COLUMN {col_name} {col_type}'))
+        conn.commit()
+    existing_user_cols = {c['name'] for c in insp.get_columns('user')}
+    user_new_cols = [
+        ('email', 'VARCHAR(120)'),
+        ('password_reset_token', 'VARCHAR(100)'),
+        ('password_reset_expires', 'TIMESTAMPTZ'),
+    ]
+    with db.engine.connect() as conn:
+        for col_name, col_type in user_new_cols:
+            if col_name not in existing_user_cols:
+                conn.execute(text(f'ALTER TABLE "user" ADD COLUMN {col_name} {col_type}'))
         conn.commit()
 
 # -----------------------
@@ -403,6 +426,64 @@ def me():
                     'role': request.user.get('role'),
                     'city': request.user.get('city')})
 
+@app.route('/register', methods=['POST'])
+def register():
+    data = request.json or {}
+    username = data.get('username', '').strip()
+    email    = data.get('email', '').strip()
+    password = data.get('password', '')
+    if not username or not password:
+        return jsonify({'message': 'Username e password obbligatori'}), 400
+    if len(password) < 6:
+        return jsonify({'message': 'Password troppo corta (minimo 6 caratteri)'}), 400
+    if User.query.filter_by(username=username).first():
+        return jsonify({'message': 'Username già in uso'}), 400
+    if email and User.query.filter_by(email=email).first():
+        return jsonify({'message': 'Email già registrata'}), 400
+    user = User(username=username, email=email or None, role='user', city=None)
+    user.set_password(password)
+    db.session.add(user)
+    db.session.commit()
+    token = generate_token(user)
+    return jsonify({'token': token,
+                    'user': {'id': user.id, 'username': user.username,
+                             'role': user.role, 'city': user.city}}), 201
+
+@app.route('/forgot-password', methods=['POST'])
+def forgot_password():
+    data  = request.json or {}
+    email = data.get('email', '').strip()
+    user  = User.query.filter_by(email=email).first() if email else None
+    if user:
+        token = secrets.token_urlsafe(32)
+        user.password_reset_token   = token
+        user.password_reset_expires = datetime.now(timezone.utc) + timedelta(hours=2)
+        db.session.commit()
+        # TODO: send email — replace this block with your SMTP/SendGrid call
+        print(f"[PASSWORD RESET] Token for {user.email}: {token}")
+    # Always return the same message to avoid user enumeration
+    return jsonify({'message': 'Se l\'email è registrata riceverai un link per il reset.'}), 200
+
+@app.route('/reset-password', methods=['POST'])
+def reset_password():
+    data         = request.json or {}
+    token        = data.get('token', '').strip()
+    new_password = data.get('password', '')
+    if not token or not new_password:
+        return jsonify({'message': 'Token e nuova password obbligatori'}), 400
+    if len(new_password) < 6:
+        return jsonify({'message': 'Password troppo corta (minimo 6 caratteri)'}), 400
+    user = User.query.filter_by(password_reset_token=token).first()
+    if not user or not user.password_reset_expires:
+        return jsonify({'message': 'Token non valido'}), 400
+    if user.password_reset_expires < datetime.now(timezone.utc):
+        return jsonify({'message': 'Token scaduto'}), 400
+    user.set_password(new_password)
+    user.password_reset_token   = None
+    user.password_reset_expires = None
+    db.session.commit()
+    return jsonify({'message': 'Password aggiornata con successo'}), 200
+
 # -----------------------
 # User management
 # -----------------------
@@ -437,6 +518,62 @@ def list_users():
     elif role == 'city':      users = User.query.filter_by(city=user_city).all()
     else:                     users = User.query.filter_by(id=user_id).all()
     return jsonify([{'id': u.id, 'username': u.username, 'role': u.role, 'city': u.city} for u in users])
+
+# -----------------------
+# City ↔ Agronomer membership
+# -----------------------
+@app.route('/city/agronomers', methods=['GET'])
+@auth_required
+@role_required('city', 'superuser')
+def list_city_agronomers():
+    user_id = request.user.get('user_id')
+    role    = request.user.get('role')
+    city_user_id = int(request.args.get('city_user_id', user_id)) if role == 'superuser' else user_id
+    rows = CityMembership.query.filter_by(city_user_id=city_user_id).all()
+    result = []
+    for m in rows:
+        a = db.session.get(User, m.agronomer_id)
+        if a:
+            result.append({'membership_id': m.id, 'agronomer_id': a.id,
+                           'username': a.username, 'email': a.email or ''})
+    return jsonify(result)
+
+@app.route('/city/agronomers', methods=['POST'])
+@auth_required
+@role_required('city', 'superuser')
+def add_city_agronomer():
+    user_id = request.user.get('user_id')
+    role    = request.user.get('role')
+    data    = request.json or {}
+    username = data.get('username', '').strip()
+    if not username:
+        return jsonify({'message': 'username obbligatorio'}), 400
+    agronomer = User.query.filter_by(username=username, role='user').first()
+    if not agronomer:
+        return jsonify({'message': f'Agronomo "{username}" non trovato'}), 404
+    city_user_id = user_id if role == 'city' else int(data.get('city_user_id', user_id))
+    if CityMembership.query.filter_by(city_user_id=city_user_id, agronomer_id=agronomer.id).first():
+        return jsonify({'message': 'Agronomo già collegato a questo comune'}), 409
+    m = CityMembership(city_user_id=city_user_id, agronomer_id=agronomer.id)
+    db.session.add(m)
+    db.session.commit()
+    return jsonify({'membership_id': m.id, 'agronomer_id': agronomer.id,
+                    'username': agronomer.username, 'email': agronomer.email or ''}), 201
+
+@app.route('/city/agronomers/<int:membership_id>', methods=['DELETE'])
+@auth_required
+@role_required('city', 'superuser')
+def remove_city_agronomer(membership_id):
+    user_id = request.user.get('user_id')
+    role    = request.user.get('role')
+    m = db.session.get(CityMembership, membership_id)
+    if not m:
+        return jsonify({'message': 'Collegamento non trovato'}), 404
+    if role == 'city' and m.city_user_id != user_id:
+        return jsonify({'message': 'Forbidden'}), 403
+    db.session.delete(m)
+    db.session.commit()
+    return jsonify({'message': 'Agronomo rimosso dal comune'}), 200
 
 # -----------------------
 # City management
@@ -564,15 +701,28 @@ def calculate_risk():
     return jsonify(result)
 
 # -----------------------
+# City visibility helpers
+# -----------------------
+def city_tree_filter(query, city_user_id, user_city):
+    linked = db.session.query(CityMembership.agronomer_id).filter_by(city_user_id=city_user_id)
+    return query.filter(Tree.owner_id.in_(linked), Tree.city == user_city)
+
+def city_can_access_tree(tree, city_user_id, user_city):
+    if tree.owner_id is None or tree.city != user_city:
+        return False
+    return CityMembership.query.filter_by(
+        city_user_id=city_user_id, agronomer_id=tree.owner_id).first() is not None
+
+# -----------------------
 # Tree endpoints
 # -----------------------
 @app.route('/trees', methods=['GET'])
 @auth_required
 def get_trees():
-    role, user_city, user_id = (request.user.get(k) for k in ('role','city','user_id'))
+    role, user_id, user_city = (request.user.get(k) for k in ('role','user_id','city'))
     query = Tree.query
     if role == 'user':   query = query.filter(Tree.owner_id == user_id)
-    elif role == 'city': query = query.filter(Tree.city == user_city)
+    elif role == 'city': query = city_tree_filter(query, user_id, user_city)
     city_q = request.args.get('city')
     addr_q = request.args.get('address')
     if city_q:  query = query.filter(Tree.city.ilike(f"%{city_q}%"))
@@ -584,9 +734,9 @@ def get_trees():
 def get_tree_by_id(tree_id):
     tree = db.session.get(Tree, tree_id)
     if not tree: return jsonify({'message': 'Tree not found'}), 404
-    role, user_city, user_id = (request.user.get(k) for k in ('role','city','user_id'))
-    if role == 'user' and tree.owner_id != user_id: return jsonify({'message': 'Forbidden'}), 403
-    if role == 'city' and tree.city != user_city:   return jsonify({'message': 'Forbidden'}), 403
+    role, user_id, user_city = (request.user.get(k) for k in ('role','user_id','city'))
+    if role == 'user' and tree.owner_id != user_id:          return jsonify({'message': 'Forbidden'}), 403
+    if role == 'city' and not city_can_access_tree(tree, user_id, user_city): return jsonify({'message': 'Forbidden'}), 403
     return jsonify(tree_to_dict(tree))
 
 @app.route('/tree/<int:tree_id>', methods=['PATCH'])
@@ -594,9 +744,9 @@ def get_tree_by_id(tree_id):
 def update_tree(tree_id):
     tree = db.session.get(Tree, tree_id)
     if not tree: return jsonify({'message': 'Tree not found'}), 404
-    role, user_city, user_id = (request.user.get(k) for k in ('role','city','user_id'))
-    if role == 'user' and tree.owner_id != user_id: return jsonify({'message': 'Forbidden'}), 403
-    if role == 'city' and tree.city != user_city:   return jsonify({'message': 'Forbidden'}), 403
+    role, user_id, user_city = (request.user.get(k) for k in ('role','user_id','city'))
+    if role == 'user' and tree.owner_id != user_id:          return jsonify({'message': 'Forbidden'}), 403
+    if role == 'city' and not city_can_access_tree(tree, user_id, user_city): return jsonify({'message': 'Forbidden'}), 403
 
     data = request.json or {}
     apply_tree_fields(tree, data)
@@ -626,9 +776,9 @@ def update_tree(tree_id):
 def delete_tree(tree_id):
     tree = db.session.get(Tree, tree_id)
     if not tree: return jsonify({'message': 'Tree not found'}), 404
-    role, user_city, user_id = (request.user.get(k) for k in ('role','city','user_id'))
-    if role == 'user' and tree.owner_id != user_id: return jsonify({'message': 'Forbidden'}), 403
-    if role == 'city' and tree.city != user_city:   return jsonify({'message': 'Forbidden'}), 403
+    role, user_id, user_city = (request.user.get(k) for k in ('role','user_id','city'))
+    if role == 'user' and tree.owner_id != user_id:          return jsonify({'message': 'Forbidden'}), 403
+    if role == 'city' and not city_can_access_tree(tree, user_id, user_city): return jsonify({'message': 'Forbidden'}), 403
     db.session.delete(tree); db.session.commit()
     return jsonify({'message': f'Tree {tree_id} deleted successfully!'}), 200
 
@@ -687,10 +837,10 @@ def add_tree():
 @app.route('/tree/custom/<string:custom_id>', methods=['GET'])
 @auth_required
 def get_tree_by_custom_id(custom_id):
-    role, user_city, user_id = (request.user.get(k) for k in ('role','city','user_id'))
+    role, user_id, user_city = (request.user.get(k) for k in ('role','user_id','city'))
     query = Tree.query.filter_by(custom_id=custom_id)
     if role == 'user':   query = query.filter(Tree.owner_id == user_id)
-    elif role == 'city': query = query.filter(Tree.city == user_city)
+    elif role == 'city': query = city_tree_filter(query, user_id, user_city)
     else:
         city_param = request.args.get('city')
         if city_param: query = query.filter(Tree.city == city_param)
@@ -703,9 +853,9 @@ def get_tree_by_custom_id(custom_id):
 def get_inspections(tree_id):
     tree = db.session.get(Tree, tree_id)
     if not tree: return jsonify({'message': 'Tree not found'}), 404
-    role, user_city, user_id = (request.user.get(k) for k in ('role','city','user_id'))
-    if role == 'user' and tree.owner_id != user_id: return jsonify({'message': 'Forbidden'}), 403
-    if role == 'city' and tree.city != user_city:   return jsonify({'message': 'Forbidden'}), 403
+    role, user_id, user_city = (request.user.get(k) for k in ('role','user_id','city'))
+    if role == 'user' and tree.owner_id != user_id:          return jsonify({'message': 'Forbidden'}), 403
+    if role == 'city' and not city_can_access_tree(tree, user_id, user_city): return jsonify({'message': 'Forbidden'}), 403
     rows = (Inspection.query.filter_by(tree_id=tree_id)
             .order_by(Inspection.date.desc(), Inspection.created_at.desc()).all())
     return jsonify([{
@@ -722,9 +872,9 @@ def get_inspections(tree_id):
 def add_inspection(tree_id):
     tree = db.session.get(Tree, tree_id)
     if not tree: return jsonify({'message': 'Tree not found'}), 404
-    role, user_city, user_id = (request.user.get(k) for k in ('role','city','user_id'))
-    if role == 'user' and tree.owner_id != user_id: return jsonify({'message': 'Forbidden'}), 403
-    if role == 'city' and tree.city != user_city:   return jsonify({'message': 'Forbidden'}), 403
+    role, user_id, user_city = (request.user.get(k) for k in ('role','user_id','city'))
+    if role == 'user' and tree.owner_id != user_id:          return jsonify({'message': 'Forbidden'}), 403
+    if role == 'city' and not city_can_access_tree(tree, user_id, user_city): return jsonify({'message': 'Forbidden'}), 403
     data = request.json or {}
     date_str = data.get('date') or datetime.now(timezone.utc).strftime('%Y-%m-%d')
     try: insp_date = datetime.strptime(date_str, '%Y-%m-%d').date()
@@ -773,10 +923,10 @@ def reverse_geocode():
 @app.route('/export/excel', methods=['GET'])
 @auth_required
 def export_excel():
-    role, user_city, user_id = (request.user.get(k) for k in ('role','city','user_id'))
+    role, user_id, user_city = (request.user.get(k) for k in ('role','user_id','city'))
     query = Tree.query
     if role == 'user':   query = query.filter(Tree.owner_id == user_id)
-    elif role == 'city': query = query.filter(Tree.city == user_city)
+    elif role == 'city': query = city_tree_filter(query, user_id, user_city)
     trees = query.all()
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -798,10 +948,10 @@ def export_excel():
 @app.route('/export/geojson', methods=['GET'])
 @auth_required
 def export_geojson():
-    role, user_city, user_id = (request.user.get(k) for k in ('role','city','user_id'))
+    role, user_id, user_city = (request.user.get(k) for k in ('role','user_id','city'))
     query = Tree.query
     if role == 'user':   query = query.filter(Tree.owner_id == user_id)
-    elif role == 'city': query = query.filter(Tree.city == user_city)
+    elif role == 'city': query = city_tree_filter(query, user_id, user_city)
     features = []
     for t in query.all():
         if t.latitude is None or t.longitude is None: continue

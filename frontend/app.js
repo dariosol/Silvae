@@ -276,10 +276,118 @@ function setupAuthUI() {
 function showRoleFeatures(role) {
     const show = v => v ? 'block' : 'none';
     const isAdmin = role === 'superuser' || role === 'city';
-    document.getElementById('userManagement').style.display = show(isAdmin);
+    document.getElementById('userManagement').style.display = show(role === 'superuser');
+    document.getElementById('agronomistManagement').style.display = show(role === 'city');
     document.getElementById('cityManagement').style.display = show(role === 'superuser');
     const tabManage = document.getElementById('tabManageBtn');
     if (tabManage) tabManage.style.display = show(isAdmin);
+}
+
+// ─── Login page view switching ────────────────────────────
+
+function showLoginView(name) {
+    ['loginView','registerView','forgotView'].forEach(id => {
+        document.getElementById(id).style.display = id === name ? 'block' : 'none';
+    });
+}
+
+// ─── Register ─────────────────────────────────────────────
+
+async function register() {
+    const username  = document.getElementById('regUsername').value.trim();
+    const email     = document.getElementById('regEmail').value.trim();
+    const password  = document.getElementById('regPassword').value;
+    const password2 = document.getElementById('regPassword2').value;
+    if (!username || !password) return showStatus('Nome utente e password obbligatori', 'warning');
+    if (password !== password2)  return showStatus('Le password non coincidono', 'warning');
+    const res  = await fetch(`${API_BASE}/register`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({username, email, password})
+    });
+    const data = await res.json();
+    if (res.ok) {
+        state.token = data.token; state.user = data.user;
+        localStorage.setItem('token', state.token);
+        localStorage.setItem('user', JSON.stringify(state.user));
+        setupAuthUI(); fetchTrees();
+        showStatus(`Benvenuto, ${data.user.username}! Account creato.`, 'success');
+    } else {
+        showStatus(data.message || 'Errore nella registrazione', 'danger');
+    }
+}
+
+// ─── Forgot password ──────────────────────────────────────
+
+async function forgotPassword() {
+    const email = document.getElementById('forgotEmail').value.trim();
+    if (!email) return showStatus('Inserisci la tua email', 'warning');
+    const res  = await fetch(`${API_BASE}/forgot-password`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({email})
+    });
+    const data = await res.json();
+    showStatus(data.message || 'Richiesta inviata', 'success');
+}
+
+// ─── Agronomer management (city role) ────────────────────
+
+async function loadAgronomists() {
+    const res = await fetch(`${API_BASE}/city/agronomers`, {headers: authHeader()});
+    if (!res.ok) return;
+    renderAgronomistList(await res.json());
+}
+
+function renderAgronomistList(agronomists) {
+    const list = document.getElementById('agronomistList');
+    if (!list) return;
+    list.innerHTML = '';
+    if (!agronomists.length) {
+        list.innerHTML = '<p style="font-size:13px;color:var(--text-muted);padding:8px 0;">Nessun agronomista collegato.</p>';
+        return;
+    }
+    agronomists.forEach(a => {
+        const div = document.createElement('div');
+        div.className = 'user-item';
+        div.innerHTML = `<i class="fa-regular fa-user"></i>
+            <span>${a.username}</span>
+            ${a.email ? `<span style="font-size:12px;color:var(--text-muted)">(${a.email})</span>` : ''}
+            <button class="btn btn-danger btn-sm" style="margin-left:auto;"
+                onclick="removeAgronomist(${a.membership_id})">
+              <i class="fa-solid fa-xmark"></i>
+            </button>`;
+        list.appendChild(div);
+    });
+}
+
+async function addAgronomist() {
+    const username = document.getElementById('addAgronomistUsername').value.trim();
+    if (!username) return showStatus('Inserisci il nome utente dell\'agronomista', 'warning');
+    const res  = await fetch(`${API_BASE}/city/agronomers`, {
+        method: 'POST',
+        headers: Object.assign({'Content-Type':'application/json'}, authHeader()),
+        body: JSON.stringify({username})
+    });
+    const data = await res.json();
+    if (res.ok) {
+        showStatus(`${username} aggiunto al comune`, 'success');
+        document.getElementById('addAgronomistUsername').value = '';
+        await loadAgronomists();
+        await fetchTrees();
+    } else {
+        showStatus(data.message || 'Errore', 'danger');
+    }
+}
+
+async function removeAgronomist(membershipId) {
+    if (!confirm('Rimuovere questo agronomista dal comune?')) return;
+    const res  = await fetch(`${API_BASE}/city/agronomers/${membershipId}`, {
+        method: 'DELETE', headers: authHeader()
+    });
+    const data = await res.json();
+    if (res.ok) { showStatus('Agronomista rimosso', 'success'); await loadAgronomists(); await fetchTrees(); }
+    else showStatus(data.message || 'Errore', 'danger');
 }
 
 function switchTab(name) {
@@ -288,6 +396,7 @@ function switchTab(name) {
         b.classList.toggle('active', b.dataset.tab === name));
     document.querySelectorAll('.tab-section').forEach(s =>
         s.classList.toggle('active', s.id === 'tab-' + name));
+    if (name === 'manage' && state.user?.role === 'city') loadAgronomists();
     if (name === 'map') {
         if (!state.map) {
             state.map = L.map('map').setView([45.4642, 9.19], 12);
@@ -314,6 +423,7 @@ async function login() {
         localStorage.setItem('token', state.token);
         localStorage.setItem('user', JSON.stringify(state.user));
         setupAuthUI(); fetchTrees();
+        if (data.user.role === 'city') loadAgronomists();
         showStatus(`Benvenuto, ${data.user.username}`, 'success');
     } else {
         showStatus(data.message || 'Accesso fallito', 'danger');
@@ -1050,6 +1160,15 @@ function showStatus(msg, level='info') {
 document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('loginBtn').addEventListener('click', login);
     document.getElementById('loginPassword').addEventListener('keydown', e => e.key==='Enter' && login());
+    document.getElementById('showRegisterLink').addEventListener('click', e => { e.preventDefault(); showLoginView('registerView'); });
+    document.getElementById('showForgotLink').addEventListener('click', e => { e.preventDefault(); showLoginView('forgotView'); });
+    document.getElementById('showLoginFromRegLink').addEventListener('click', e => { e.preventDefault(); showLoginView('loginView'); });
+    document.getElementById('showLoginFromForgotLink').addEventListener('click', e => { e.preventDefault(); showLoginView('loginView'); });
+    document.getElementById('registerBtn').addEventListener('click', register);
+    document.getElementById('regPassword2').addEventListener('keydown', e => e.key==='Enter' && register());
+    document.getElementById('forgotBtn').addEventListener('click', forgotPassword);
+    document.getElementById('forgotEmail').addEventListener('keydown', e => e.key==='Enter' && forgotPassword());
+    document.getElementById('addAgronomistBtn').addEventListener('click', addAgronomist);
     document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
     document.querySelectorAll('th.sortable').forEach(th => th.addEventListener('click', () => applySort(th.dataset.sort)));
     document.getElementById('logoutBtn').addEventListener('click', logout);

@@ -44,21 +44,82 @@
       <div class="login-app-name">Silvae Pro</div>
       <div class="login-tagline">Sistema di Gestione Alberi</div>
     </div>
-    <div class="login-field">
-      <label for="loginUsername">Nome utente</label>
-      <div class="login-field-wrap">
-        <i class="ico fa-regular fa-user"></i>
-        <input id="loginUsername" class="login-input" type="text" placeholder="Inserisci il nome utente" autocomplete="username">
+
+    <!-- LOGIN VIEW -->
+    <div id="loginView">
+      <div class="login-field">
+        <label for="loginUsername">Nome utente</label>
+        <div class="login-field-wrap">
+          <i class="ico fa-regular fa-user"></i>
+          <input id="loginUsername" class="login-input" type="text" placeholder="Inserisci il nome utente" autocomplete="username">
+        </div>
+      </div>
+      <div class="login-field">
+        <label for="loginPassword">Password</label>
+        <div class="login-field-wrap">
+          <i class="ico fa-solid fa-lock"></i>
+          <input id="loginPassword" class="login-input" type="password" placeholder="Inserisci la password" autocomplete="current-password">
+        </div>
+      </div>
+      <button id="loginBtn" class="btn-login"><i class="fa-solid fa-right-to-bracket"></i>&nbsp; Accedi</button>
+      <div style="display:flex;justify-content:space-between;margin-top:12px;font-size:13px;">
+        <a href="#" id="showRegisterLink" style="color:var(--g600);">Crea account</a>
+        <a href="#" id="showForgotLink" style="color:var(--g600);">Password dimenticata?</a>
       </div>
     </div>
-    <div class="login-field">
-      <label for="loginPassword">Password</label>
-      <div class="login-field-wrap">
-        <i class="ico fa-solid fa-lock"></i>
-        <input id="loginPassword" class="login-input" type="password" placeholder="Inserisci la password" autocomplete="current-password">
+
+    <!-- REGISTER VIEW -->
+    <div id="registerView" style="display:none;">
+      <div class="login-field">
+        <label for="regUsername">Nome utente *</label>
+        <div class="login-field-wrap">
+          <i class="ico fa-regular fa-user"></i>
+          <input id="regUsername" class="login-input" type="text" placeholder="Scegli un nome utente" autocomplete="username">
+        </div>
+      </div>
+      <div class="login-field">
+        <label for="regEmail">Email</label>
+        <div class="login-field-wrap">
+          <i class="ico fa-regular fa-envelope"></i>
+          <input id="regEmail" class="login-input" type="email" placeholder="Per il recupero password (facoltativa)">
+        </div>
+      </div>
+      <div class="login-field">
+        <label for="regPassword">Password *</label>
+        <div class="login-field-wrap">
+          <i class="ico fa-solid fa-lock"></i>
+          <input id="regPassword" class="login-input" type="password" placeholder="Minimo 6 caratteri">
+        </div>
+      </div>
+      <div class="login-field">
+        <label for="regPassword2">Conferma password *</label>
+        <div class="login-field-wrap">
+          <i class="ico fa-solid fa-lock"></i>
+          <input id="regPassword2" class="login-input" type="password" placeholder="Ripeti la password">
+        </div>
+      </div>
+      <button id="registerBtn" class="btn-login"><i class="fa-solid fa-user-plus"></i>&nbsp; Registrati</button>
+      <div style="text-align:center;margin-top:12px;font-size:13px;">
+        <a href="#" id="showLoginFromRegLink" style="color:var(--g600);">Hai già un account? Accedi</a>
       </div>
     </div>
-    <button id="loginBtn" class="btn-login"><i class="fa-solid fa-right-to-bracket"></i>&nbsp; Accedi</button>
+
+    <!-- FORGOT PASSWORD VIEW -->
+    <div id="forgotView" style="display:none;">
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px;">Inserisci la tua email: riceverai un link per reimpostare la password.</p>
+      <div class="login-field">
+        <label for="forgotEmail">Email</label>
+        <div class="login-field-wrap">
+          <i class="ico fa-regular fa-envelope"></i>
+          <input id="forgotEmail" class="login-input" type="email" placeholder="La tua email">
+        </div>
+      </div>
+      <button id="forgotBtn" class="btn-login"><i class="fa-solid fa-paper-plane"></i>&nbsp; Invia link di reset</button>
+      <div style="text-align:center;margin-top:12px;font-size:13px;">
+        <a href="#" id="showLoginFromForgotLink" style="color:var(--g600);">Torna al login</a>
+      </div>
+    </div>
+
     <div class="login-footer">Silvae Pro &nbsp;·&nbsp; Edizione Campo</div>
   </div>
 </div>
@@ -630,6 +691,21 @@
               </button>
             </div>
             <div class="user-list" id="userList"></div>
+          </div>
+        </div>
+        <div id="agronomistManagement" class="panel mb" style="display:none;">
+          <div class="panel-head"><i class="fa-solid fa-user-tie"></i> Agronomi del Comune</div>
+          <div class="panel-body">
+            <p style="font-size:13px;color:var(--text-muted);margin-bottom:10px;">
+              Aggiungi gli agronomi che lavorano per questo comune. Solo i loro alberi saranno visibili al comune.
+            </p>
+            <div class="form-row mb-sm">
+              <input id="addAgronomistUsername" class="inp" placeholder="Nome utente dell'agronomista">
+              <button id="addAgronomistBtn" class="btn btn-primary btn-sm" style="flex:0 0 auto;">
+                <i class="fa-solid fa-plus"></i> Aggiungi
+              </button>
+            </div>
+            <div id="agronomistList" class="user-list"></div>
           </div>
         </div>
         <div id="cityManagement" class="panel mb">
