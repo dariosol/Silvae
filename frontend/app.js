@@ -330,6 +330,70 @@ function logout() {
     setupAuthUI();
 }
 
+// ─── Comune autocomplete ──────────────────────────────────
+
+function initComuneAutocomplete(inputId) {
+    const input    = document.getElementById(inputId);
+    const dropdown = document.getElementById(inputId + '-dropdown');
+    if (!input || !dropdown) return;
+
+    let timer;
+    input.addEventListener('input', () => {
+        clearTimeout(timer);
+        const q = input.value.trim();
+        if (q.length < 2) { dropdown.style.display = 'none'; return; }
+        timer = setTimeout(async () => {
+            const res = await fetch(`${API_BASE}/comuni/search?q=${encodeURIComponent(q)}`);
+            if (!res.ok) return;
+            renderComuneDropdown(input, dropdown, await res.json());
+        }, 250);
+    });
+
+    document.addEventListener('click', e => {
+        if (!input.contains(e.target) && !dropdown.contains(e.target))
+            dropdown.style.display = 'none';
+    });
+
+    input.addEventListener('keydown', e => {
+        const items = dropdown.querySelectorAll('li');
+        const active = dropdown.querySelector('li.ac-active');
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            const next = active ? active.nextElementSibling : items[0];
+            if (active) active.classList.remove('ac-active');
+            if (next) next.classList.add('ac-active');
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            const prev = active ? active.previousElementSibling : items[items.length - 1];
+            if (active) active.classList.remove('ac-active');
+            if (prev) prev.classList.add('ac-active');
+        } else if (e.key === 'Enter' && active) {
+            e.preventDefault();
+            input.value = active.dataset.value;
+            dropdown.style.display = 'none';
+        } else if (e.key === 'Escape') {
+            dropdown.style.display = 'none';
+        }
+    });
+}
+
+function renderComuneDropdown(input, dropdown, results) {
+    dropdown.innerHTML = '';
+    if (!results.length) { dropdown.style.display = 'none'; return; }
+    results.forEach(c => {
+        const li = document.createElement('li');
+        li.dataset.value = c.nome;
+        li.innerHTML = `${c.nome}<span class="cd-sigla">${c.sigla} — ${c.regione}</span>`;
+        li.addEventListener('mousedown', e => {
+            e.preventDefault();
+            input.value = c.nome;
+            dropdown.style.display = 'none';
+        });
+        dropdown.appendChild(li);
+    });
+    dropdown.style.display = 'block';
+}
+
 // ─── City ─────────────────────────────────────────────────
 
 async function populateCities() {
@@ -342,8 +406,6 @@ async function populateCities() {
         const o = document.createElement('option');
         o.value = o.text = c; sel.appendChild(o);
     });
-    const dl = document.getElementById('newCityDatalist');
-    if (dl) { dl.innerHTML = ''; cities.forEach(c => { const o = document.createElement('option'); o.value = c; dl.appendChild(o); }); }
 }
 
 async function createCity() {
@@ -999,6 +1061,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('pageSizeSelect').addEventListener('change', changePageSize);
     document.getElementById('addTreeForm').addEventListener('submit', submitTreeForm);
     document.getElementById('openFormBtn').addEventListener('click', () => { resetForm(); showTreeView('edit'); });
+    initComuneAutocomplete('city');
+    initComuneAutocomplete('newCity');
     document.getElementById('exportExcelBtn').addEventListener('click', exportExcel);
     document.getElementById('exportGeoJSONBtn').addEventListener('click', exportGeoJSON);
     init();

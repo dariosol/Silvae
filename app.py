@@ -9,7 +9,7 @@ from geoalchemy2 import Geometry
 from geopy.geocoders import Nominatim
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect, text, case
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 from functools import wraps
@@ -62,6 +62,15 @@ class City(db.Model):
     __tablename__ = 'city'
     id   = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), unique=True, nullable=False)
+
+class Comune(db.Model):
+    __tablename__ = 'comune'
+    id        = db.Column(db.Integer, primary_key=True)
+    nome      = db.Column(db.String(120), nullable=False, index=True)
+    provincia = db.Column(db.String(100))
+    sigla     = db.Column(db.String(2))
+    regione   = db.Column(db.String(100))
+    codice    = db.Column(db.String(10), unique=True)
 
 class Tree(db.Model):
     __tablename__ = 'tree'
@@ -449,6 +458,28 @@ def get_cities():
     from_table = {c.name for c in City.query.all()}
     from_trees = {row[0] for row in db.session.query(Tree.city).distinct() if row[0]}
     return jsonify(sorted(from_table | from_trees))
+
+@app.route('/comuni/search', methods=['GET'])
+def search_comuni():
+    q = request.args.get('q', '').strip()
+    if len(q) < 2:
+        return jsonify([])
+    results = (
+        Comune.query
+        .filter(Comune.nome.ilike(f'%{q}%'))
+        .order_by(
+            case((Comune.nome.ilike(f'{q}%'), 0), else_=1),
+            Comune.nome
+        )
+        .limit(20)
+        .all()
+    )
+    return jsonify([{
+        'nome': c.nome,
+        'provincia': c.provincia,
+        'sigla': c.sigla,
+        'regione': c.regione,
+    } for c in results])
 
 # -----------------------
 # Dropdowns endpoint

@@ -25,6 +25,13 @@
     .pericolo-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
     .bersaglio-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
     .post-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+    .comune-ac-wrap{position:relative;}
+    .comune-dropdown{position:absolute;top:100%;left:0;right:0;z-index:1000;background:#fff;border:1px solid var(--border);border-top:none;border-radius:0 0 var(--r) var(--r);max-height:220px;overflow-y:auto;list-style:none;padding:0;margin:0;box-shadow:0 4px 12px rgba(0,0,0,.12);display:none;}
+    .comune-dropdown li{padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--g100);}
+    .comune-dropdown li:last-child{border-bottom:none;}
+    .comune-dropdown li:hover{background:var(--g50);}
+    .comune-dropdown li .cd-sigla{font-size:11px;color:var(--text-muted);margin-left:6px;}
+    .comune-dropdown li.ac-active{background:var(--g100);}
   </style>
 </head>
 <body>
@@ -170,7 +177,10 @@
                 <div class="fc-grid2">
                   <div class="fgrp">
                     <label class="flabel" for="city">Comune *</label>
-                    <input id="city" class="fc" type="text" required>
+                    <div class="comune-ac-wrap">
+                      <input id="city" class="fc" type="text" required autocomplete="off" placeholder="Cerca comune…">
+                      <ul id="city-dropdown" class="comune-dropdown"></ul>
+                    </div>
                   </div>
                   <div class="fgrp">
                     <label class="flabel" for="cpc">Codice CPC</label>
@@ -611,8 +621,10 @@
                 <option value="city">comune</option>
                 <option value="superuser">superutente</option>
               </select>
-              <input id="newCity" list="newCityDatalist" class="inp" placeholder="Comune (opzionale)" style="max-width:160px;">
-              <datalist id="newCityDatalist"></datalist>
+              <div style="position:relative;flex:0 0 160px;">
+                <input id="newCity" class="inp" placeholder="Comune (opzionale)" autocomplete="off" style="width:100%;">
+                <ul id="newCity-dropdown" class="comune-dropdown"></ul>
+              </div>
               <button id="createUserBtn" class="btn btn-primary btn-sm" style="flex:0 0 auto;">
                 <i class="fa-solid fa-plus"></i> Aggiungi Utente
               </button>
