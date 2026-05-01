@@ -14,6 +14,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 from functools import wraps
 import openpyxl
+from openpyxl.styles import PatternFill, Font, Alignment
+from openpyxl.utils import get_column_letter
 
 from Schede_Rilevamento_ARETE import dropdowns_ord as dd
 from Schede_Rilevamento_ARETE.lookup_tables import (
@@ -932,21 +934,171 @@ def export_excel():
         id_list = [int(x) for x in ids_param.split(',') if x.strip().isdigit()]
         query = query.filter(Tree.id.in_(id_list))
     trees = query.all()
+
+    def _jlist(val):
+        if not val: return ''
+        try:
+            lst = json.loads(val) if isinstance(val, str) else val
+            return ', '.join(str(x) for x in lst) if isinstance(lst, list) else str(lst)
+        except: return ''
+
+    def _diag(val):
+        if not val: return ''
+        try:
+            lst = json.loads(val) if isinstance(val, str) else val
+            return '; '.join(
+                f"{r.get('caratt','')}: {r.get('giudizio','')}"
+                for r in lst if isinstance(r, dict) and r.get('caratt')
+            )
+        except: return ''
+
+    def _rtop(t, phase, field):
+        if not t.rischio: return ''
+        try: return json.loads(t.rischio).get(phase, {}).get(field, '')
+        except: return ''
+
+    def _rpart(t, phase, part, field):
+        if not t.rischio: return ''
+        try: return json.loads(t.rischio).get(phase, {}).get(part, {}).get(field, '')
+        except: return ''
+
+    # (group_label, color_hex, [(col_header, getter), ...])
+    GROUPS = [
+        ('Identificazione', 'BDD7EE', [
+            ('ID',                  lambda t: t.id),
+            ('ID Albero',           lambda t: t.custom_id),
+            ('Comune',              lambda t: t.city),
+            ('Indirizzo',           lambda t: t.address or ''),
+            ('Latitudine',          lambda t: t.latitude),
+            ('Longitudine',         lambda t: t.longitude),
+            ('Specie',              lambda t: t.species),
+            ('Condizione',          lambda t: t.condition),
+            ('Età',                 lambda t: t.age or ''),
+            ('CPC',                 lambda t: t.cpc or ''),
+            ('Posizione',           lambda t: t.location or ''),
+            ('Dimora',              lambda t: t.dimora or ''),
+            ('Stadio sviluppo',     lambda t: t.stadio_sviluppo or ''),
+            ('Posizione sociale',   lambda t: t.posizione_sociale or ''),
+            ('Localizzazione',      lambda t: t.localizzazione or ''),
+            ('Vincoli',             lambda t: t.vincoli or ''),
+            ('Prossima ispezione',  lambda t: t.next_check.strftime('%Y-%m-%d') if t.next_check else ''),
+            ('Urgenza',             lambda t: t.urgenza or ''),
+            ('Monitoraggio',        lambda t: t.monitoraggio or ''),
+            ('Note',                lambda t: t.comments or ''),
+            ('Azioni',              lambda t: t.actions or ''),
+        ]),
+        ('Misure', 'C6EFCE', [
+            ('Altezza (m)',         lambda t: t.tree_height_m),
+            ('Altezza generica',    lambda t: t.height or ''),
+            ('Circonferenza (cm)',  lambda t: t.circonferenza_cm),
+            ('Ø Tronco (cm)',       lambda t: t.trunk_diameter_cm),
+            ('Ø Chioma (m)',        lambda t: t.crown_diameter_m),
+            ('Ø Ramo (cm)',         lambda t: t.branch_diam_cm),
+            ('Lung. ramo (m)',      lambda t: t.branch_length_m),
+            ('Alt. ramo (m)',       lambda t: t.branch_height_m),
+            ('Alt. target (m)',     lambda t: t.target_height_m),
+        ]),
+        ('Post-intervento', 'FFF2CC', [
+            ('Altezza post (m)',        lambda t: t.post_tree_height_m),
+            ('Circonferenza post (cm)', lambda t: t.post_circonferenza_cm),
+            ('Ø Ramo post (cm)',        lambda t: t.post_branch_diam_cm),
+            ('Lung. ramo post (m)',     lambda t: t.post_branch_length_m),
+            ('Alt. ramo post (m)',      lambda t: t.post_branch_height_m),
+            ('Alt. target post (m)',    lambda t: t.post_target_height_m),
+        ]),
+        ('Valutazione rischio', 'FCE4D6', [
+            ('Pericolo rami',               lambda t: t.pericolo_rami or ''),
+            ('Pericolo tronco',             lambda t: t.pericolo_tronco or ''),
+            ('Pericolo colletto',           lambda t: t.pericolo_colletto or ''),
+            ('Pericolo zolla',              lambda t: t.pericolo_zolla or ''),
+            ('Bersaglio chioma',            lambda t: t.bersaglio_chioma),
+            ('Bersaglio ramo',              lambda t: t.bersaglio_ramo),
+            ('Imp. chioma att. (kgm/s)',    lambda t: _rtop(t, 'attuale', 'crown_momentum_kgms')),
+            ('Classe imp. chioma att.',     lambda t: _rtop(t, 'attuale', 'crown_impulso_class')),
+            ('Imp. ramo att. (kgm/s)',      lambda t: _rtop(t, 'attuale', 'branch_momentum_kgms')),
+            ('Classe imp. ramo att.',       lambda t: _rtop(t, 'attuale', 'branch_impulso_class')),
+            ('Rischio rami (att.)',         lambda t: _rpart(t, 'attuale', 'rami',     'risk_description')),
+            ('Rischio tronco (att.)',       lambda t: _rpart(t, 'attuale', 'tronco',   'risk_description')),
+            ('Rischio colletto (att.)',     lambda t: _rpart(t, 'attuale', 'colletto', 'risk_description')),
+            ('Rischio zolla (att.)',        lambda t: _rpart(t, 'attuale', 'zolla',    'risk_description')),
+            ('Imp. chioma res. (kgm/s)',    lambda t: _rtop(t, 'residuo', 'crown_momentum_kgms')),
+            ('Classe imp. chioma res.',     lambda t: _rtop(t, 'residuo', 'crown_impulso_class')),
+            ('Imp. ramo res. (kgm/s)',      lambda t: _rtop(t, 'residuo', 'branch_momentum_kgms')),
+            ('Classe imp. ramo res.',       lambda t: _rtop(t, 'residuo', 'branch_impulso_class')),
+            ('Rischio rami (res.)',         lambda t: _rpart(t, 'residuo', 'rami',     'risk_description')),
+            ('Rischio tronco (res.)',       lambda t: _rpart(t, 'residuo', 'tronco',   'risk_description')),
+            ('Rischio colletto (res.)',     lambda t: _rpart(t, 'residuo', 'colletto', 'risk_description')),
+            ('Rischio zolla (res.)',        lambda t: _rpart(t, 'residuo', 'zolla',    'risk_description')),
+        ]),
+        ('Diagnosi', 'E2EFDA', [
+            ('Diagnosi zolla',          lambda t: _diag(t.diag_zolla)),
+            ('Diagnosi colletto',       lambda t: _diag(t.diag_colletto)),
+            ('Diagnosi fusto',          lambda t: _diag(t.diag_fusto)),
+            ('Diagnosi castello',       lambda t: _diag(t.diag_castello)),
+            ('Diagnosi ramificazione',  lambda t: _diag(t.diag_ramificazione)),
+            ('Diagnosi chioma',         lambda t: _diag(t.diag_chioma)),
+        ]),
+        ('Prescrizioni e patologie', 'E8DAEF', [
+            ('Conflitti',                   lambda t: _jlist(t.conflitti_list)),
+            ('Agenti carie',                lambda t: _jlist(t.agenti_carie)),
+            ('Altri patogeni',              lambda t: _jlist(t.altri_patogeni)),
+            ('Prescrizioni valutazione',    lambda t: _jlist(t.prescrizioni_val)),
+            ('Prescrizioni mitigazione',    lambda t: _jlist(t.prescrizioni_mit)),
+            ('Prescrizioni collaterale',    lambda t: _jlist(t.prescrizioni_col)),
+        ]),
+    ]
+
+    # Flatten columns and track group spans for merged header row
+    all_cols   = []  # [(header, getter, color)]
+    group_info = []  # [(label, start_col, end_col, color)]
+    col_idx = 1
+    for label, color, cols in GROUPS:
+        group_info.append((label, col_idx, col_idx + len(cols) - 1, color))
+        for header, getter in cols:
+            all_cols.append((header, getter, color))
+        col_idx += len(cols)
+
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = 'Trees'
-    ws.append(['ID','Custom ID','City','Address','Latitude','Longitude','Species',
-               'Condition','Height (m)','Trunk Diam (cm)','Crown Diam (m)','Age',
-               'Location','CPC','Comments','Actions','Next Check','Owner ID'])
-    for t in trees:
-        ws.append([t.id, t.custom_id, t.city, t.address, t.latitude, t.longitude,
-                   t.species, t.condition, t.height, t.trunk_diameter_cm,
-                   t.crown_diameter_m, t.age, t.location, t.cpc,
-                   t.comments, t.actions,
-                   t.next_check.strftime("%Y-%m-%d") if t.next_check else None,
-                   t.owner_id])
-    buf = io.BytesIO(); wb.save(buf); buf.seek(0)
-    return send_file(buf, download_name='trees.xlsx', as_attachment=True,
+    ws.title = 'Alberi'
+
+    hdr_font   = Font(bold=True)
+    center     = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+    # Row 1: group labels (merged)
+    for label, start, end, color in group_info:
+        if start < end:
+            ws.merge_cells(start_row=1, start_column=start, end_row=1, end_column=end)
+        cell = ws.cell(row=1, column=start, value=label)
+        cell.fill      = PatternFill(fill_type='solid', fgColor=color)
+        cell.font      = Font(bold=True, size=11)
+        cell.alignment = center
+
+    # Row 2: column headers
+    for col_num, (header, _, color) in enumerate(all_cols, 1):
+        cell = ws.cell(row=2, column=col_num, value=header)
+        cell.fill      = PatternFill(fill_type='solid', fgColor=color)
+        cell.font      = hdr_font
+        cell.alignment = center
+
+    # Data rows
+    for row_num, t in enumerate(trees, 3):
+        for col_num, (_, getter, _color) in enumerate(all_cols, 1):
+            val = getter(t)
+            ws.cell(row=row_num, column=col_num, value=val if val != '' else None)
+
+    # Column widths (approx by header length, capped)
+    for col_num, (header, _, _) in enumerate(all_cols, 1):
+        ws.column_dimensions[get_column_letter(col_num)].width = max(10, min(35, len(header) + 3))
+
+    ws.row_dimensions[1].height = 20
+    ws.row_dimensions[2].height = 30
+    ws.freeze_panes = 'C3'  # freeze first 2 cols + 2 header rows
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return send_file(buf, download_name='alberi.xlsx', as_attachment=True,
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 @app.route('/export/geojson', methods=['GET'])
