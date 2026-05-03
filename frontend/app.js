@@ -80,15 +80,25 @@ function populateStaticDropdowns() {
         });
     });
 
-    // Bersaglio (1-7)
+    // Bersaglio tipo dropdowns
+    ['bersaglio_chioma_tipo', 'bersaglio_ramo_tipo'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        while (el.options.length > 1) el.remove(1);
+        (d.bersaglio_tipi || []).forEach(t => {
+            const o = document.createElement('option');
+            o.value = t; o.textContent = t;
+            el.appendChild(o);
+        });
+    });
+    // Bersaglio class selects (1-7, used for pedoni/traffico types)
     ['bersaglio_chioma','bersaglio_ramo'].forEach(id => {
         const el = document.getElementById(id);
         if (!el) return;
         while (el.options.length > 1) el.remove(1);
         for (let i = 1; i <= 7; i++) {
             const o = document.createElement('option');
-            o.value = i;
-            o.textContent = `${i}`;
+            o.value = i; o.textContent = `${i}`;
             el.appendChild(o);
         }
     });
@@ -104,6 +114,45 @@ function populateStaticDropdowns() {
     populateMultiSelect('prescrizioni_val', d.prescrizioni_val || []);
     populateMultiSelect('prescrizioni_mit', d.prescrizioni_mit || []);
     populateMultiSelect('prescrizioni_col', d.prescrizioni_col || []);
+}
+
+// ─── Bersaglio tipo/value handling ───────────────────────
+
+const BERSAGLIO_VALUE_TIPI = ['proprietà', 'occupazione'];
+
+function onBersaglioTipoChange(side) {
+    const d = state.dropdowns;
+    const tipo = document.getElementById(`bersaglio_${side}_tipo`)?.value || '';
+    const valueGrp = document.getElementById(`bersaglio_${side}_value_grp`);
+    const classGrp = document.getElementById(`bersaglio_${side}_class_grp`);
+    const valueEl  = document.getElementById(`bersaglio_${side}_value`);
+    if (!valueGrp || !classGrp || !valueEl) return;
+
+    while (valueEl.options.length > 1) valueEl.remove(1);
+
+    if (tipo === 'proprietà') {
+        (d.bersaglio_proprieta_values || []).forEach(v => {
+            const o = document.createElement('option');
+            o.value = v; o.textContent = v;
+            valueEl.appendChild(o);
+        });
+        valueGrp.style.display = '';
+        classGrp.style.display = 'none';
+    } else if (tipo === 'occupazione') {
+        (d.bersaglio_occupazione_values || []).forEach(v => {
+            const o = document.createElement('option');
+            o.value = v; o.textContent = v;
+            valueEl.appendChild(o);
+        });
+        valueGrp.style.display = '';
+        classGrp.style.display = 'none';
+    } else if (tipo) {
+        valueGrp.style.display = 'none';
+        classGrp.style.display = '';
+    } else {
+        valueGrp.style.display = 'none';
+        classGrp.style.display = 'none';
+    }
 }
 
 // ─── Diagnosi rows ────────────────────────────────────────
@@ -212,7 +261,13 @@ function buildRiskPayload() {
         branch_height_m: v('branch_height_m'), target_height_m: v('target_height_m'),
         pericolo_rami: v('pericolo_rami'), pericolo_tronco: v('pericolo_tronco'),
         pericolo_colletto: v('pericolo_colletto'), pericolo_zolla: v('pericolo_zolla'),
-        bersaglio_chioma: v('bersaglio_chioma'), bersaglio_ramo: v('bersaglio_ramo'),
+        bersaglio_chioma_tipo:  v('bersaglio_chioma_tipo'),
+        bersaglio_chioma_value: v('bersaglio_chioma_value'),
+        bersaglio_chioma:       v('bersaglio_chioma'),
+        bersaglio_ramo_tipo:    v('bersaglio_ramo_tipo'),
+        bersaglio_ramo_value:   v('bersaglio_ramo_value'),
+        bersaglio_ramo:         v('bersaglio_ramo'),
+        moltiplicatore: v('moltiplicatore') ? parseInt(v('moltiplicatore')) : null,
         post_tree_height_m: v('post_tree_height_m'),
         post_circonferenza_cm: v('post_circonferenza_cm'),
         post_branch_diam_cm: v('post_branch_diam_cm'),
@@ -346,7 +401,7 @@ function renderAgronomistList(agronomists) {
     if (!list) return;
     list.innerHTML = '';
     if (!agronomists.length) {
-        list.innerHTML = '<p style="font-size:13px;color:var(--text-muted);padding:8px 0;">Nessun agronomista collegato.</p>';
+        list.innerHTML = '<p style="font-size:13px;color:var(--text-muted);padding:8px 0;">Nessun Agronomo collegato.</p>';
         return;
     }
     agronomists.forEach(a => {
@@ -365,7 +420,7 @@ function renderAgronomistList(agronomists) {
 
 async function addAgronomist() {
     const username = document.getElementById('addAgronomistUsername').value.trim();
-    if (!username) return showStatus('Inserisci il nome utente dell\'agronomista', 'warning');
+    if (!username) return showStatus('Inserisci il nome utente dell\'Agronomo', 'warning');
     const res  = await fetch(`${API_BASE}/city/agronomers`, {
         method: 'POST',
         headers: Object.assign({'Content-Type':'application/json'}, authHeader()),
@@ -383,12 +438,12 @@ async function addAgronomist() {
 }
 
 async function removeAgronomist(membershipId) {
-    if (!confirm('Rimuovere questo agronomista dal comune?')) return;
+    if (!confirm('Rimuovere questo Agronomo dal comune?')) return;
     const res  = await fetch(`${API_BASE}/city/agronomers/${membershipId}`, {
         method: 'DELETE', headers: authHeader()
     });
     const data = await res.json();
-    if (res.ok) { showStatus('Agronomista rimosso', 'success'); await loadAgronomists(); await fetchTrees(); }
+    if (res.ok) { showStatus('Agronomo rimosso', 'success'); await loadAgronomists(); await fetchTrees(); }
     else showStatus(data.message || 'Errore', 'danger');
 }
 
@@ -831,7 +886,16 @@ function fillForm(data) {
     // Pericolo / Bersaglio
     sv('pericolo_rami', data.pericolo_rami); sv('pericolo_tronco', data.pericolo_tronco);
     sv('pericolo_colletto', data.pericolo_colletto); sv('pericolo_zolla', data.pericolo_zolla);
-    sv('bersaglio_chioma', data.bersaglio_chioma); sv('bersaglio_ramo', data.bersaglio_ramo);
+    // Bersaglio: set tipo first (triggers visibility), then value/class
+    sv('bersaglio_chioma_tipo', data.bersaglio_chioma_tipo);
+    onBersaglioTipoChange('chioma');
+    sv('bersaglio_chioma_value', data.bersaglio_chioma_value);
+    sv('bersaglio_chioma', data.bersaglio_chioma);
+    sv('bersaglio_ramo_tipo', data.bersaglio_ramo_tipo);
+    onBersaglioTipoChange('ramo');
+    sv('bersaglio_ramo_value', data.bersaglio_ramo_value);
+    sv('bersaglio_ramo', data.bersaglio_ramo);
+    sv('moltiplicatore', data.moltiplicatore);
     // Diagnosi rows
     DIAG_PARTS.forEach(p => loadDiagRows(p, data[`diag_${p}`]));
     // Multi-selects
@@ -900,8 +964,13 @@ async function submitTreeForm(e) {
         post_target_height_m: v('post_target_height_m') || null,
         pericolo_rami: v('pericolo_rami'), pericolo_tronco: v('pericolo_tronco'),
         pericolo_colletto: v('pericolo_colletto'), pericolo_zolla: v('pericolo_zolla'),
-        bersaglio_chioma: v('bersaglio_chioma') ? parseInt(v('bersaglio_chioma')) : null,
-        bersaglio_ramo: v('bersaglio_ramo') ? parseInt(v('bersaglio_ramo')) : null,
+        bersaglio_chioma_tipo:  v('bersaglio_chioma_tipo') || null,
+        bersaglio_chioma_value: v('bersaglio_chioma_value') || null,
+        bersaglio_chioma:       v('bersaglio_chioma') ? parseInt(v('bersaglio_chioma')) : null,
+        bersaglio_ramo_tipo:    v('bersaglio_ramo_tipo') || null,
+        bersaglio_ramo_value:   v('bersaglio_ramo_value') || null,
+        bersaglio_ramo:         v('bersaglio_ramo') ? parseInt(v('bersaglio_ramo')) : null,
+        moltiplicatore:         v('moltiplicatore') ? parseInt(v('moltiplicatore')) : null,
         // Diagnosi
         diag_zolla: getDiagData('zolla'),
         diag_colletto: getDiagData('colletto'),
@@ -1116,8 +1185,13 @@ function renderSnapshotDetails(snap) {
     add('Pericolo tronco', snap.pericolo_tronco);
     add('Pericolo colletto', snap.pericolo_colletto);
     add('Pericolo zolla', snap.pericolo_zolla);
-    add('Bersaglio chioma', snap.bersaglio_chioma);
-    add('Bersaglio ramo', snap.bersaglio_ramo);
+    add('Bersaglio chioma tipo', snap.bersaglio_chioma_tipo);
+    add('Bersaglio chioma desc.', snap.bersaglio_chioma_value);
+    add('Bersaglio chioma classe', snap.bersaglio_chioma);
+    add('Bersaglio ramo tipo', snap.bersaglio_ramo_tipo);
+    add('Bersaglio ramo desc.', snap.bersaglio_ramo_value);
+    add('Bersaglio ramo classe', snap.bersaglio_ramo);
+    add('Moltiplicatore', snap.moltiplicatore);
     add('Monitoraggio', snap.monitoraggio);
     add('Urgenza', snap.urgenza);
     const prescrMit = Array.isArray(snap.prescrizioni_mit) ? snap.prescrizioni_mit.join(', ') : snap.prescrizioni_mit;

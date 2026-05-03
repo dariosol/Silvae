@@ -175,6 +175,104 @@ RISK_PROBABILITY: dict[str, float] = {
     '1:1M':   1/1e6,   '<1:1M':  1e-11,
 }
 
+# Ascending (probability, ratio) pairs for "+bers" reverse lookup.
+# Mirrors sheet A, AR23:AS73.  VLOOKUP TRUE semantics: find the largest
+# threshold ≤ the query probability and return the associated ratio string.
+_PROB_THRESHOLDS: list[tuple[float, str]] = [
+    (1e-11,        '<1:1M'),
+    (1/1_000_000,  '1:1M'),
+    (1/800_000,    '1:800k'),
+    (1/200_000,    '1:200k'),
+    (1/130_000,    '1:130k'),
+    (1/120_000,    '1:120k'),
+    (1/80_000,     '1:80k'),
+    (1/20_000,     '1:20k'),
+    (1/12_000,     '1:12k'),
+    (1/10_000,     '1:10k'),
+    (1/8_000,      '1:8k'),
+    (1/2_000,      '1:2k'),
+    (1/1_000,      '1:1k'),
+    (1/800,        '1:800'),
+    (1/200,        '1:200'),
+    (1/100,        '1:100'),
+    (1/20,         '1:20'),
+    (1/3,          '1:3'),
+]
+
+
+def probability_to_risk_ratio(prob: float) -> str:
+    """Convert an annual probability to a risk ratio string.
+
+    Used for the '+bers' (multiple simultaneous targets) calculation:
+    multiply the base probability by the moltiplicatore (n) and call this
+    function to get the corresponding risk class string.
+    Replicates VLOOKUP(prob, A!AR23:AS73, 2, TRUE) from the ORD sheet.
+    """
+    result = '<1:1M'
+    for threshold, ratio in _PROB_THRESHOLDS:
+        if prob >= threshold:
+            result = ratio
+    return result
+
+
+# ---------------------------------------------------------------------------
+# BERSAGLIO TYPE → CLASS lookup tables  (ORD sheet, BQ column)
+# ---------------------------------------------------------------------------
+
+# Ordered descriptions for each type (index 0 = class 1, index 6 = class 7)
+BERSAGLIO_PROPRIETA_VALUES: list[str] = [
+    "danni da € 600'000 a 3'000'000",
+    "danni da € 60'000 a € 600'000",
+    "danni da € 6'000 a € 60'000",
+    "danni da € 600 a € 6'000",
+    "danni da € 60 a € 600",
+    "danni da € 6 a € 60",
+    "danni da € 3 a € 6",
+]
+
+BERSAGLIO_OCCUPAZIONE_VALUES: list[str] = [
+    "da 5 ore/giorno a costante",
+    "da 29 min/giorno a 5 h/giorno",
+    "da 3 a 29 min/giorno",
+    "da 2 min/sett. a 3 min/giorno",
+    "da 0,9 min/mese a 2 min/sett.",
+    "da 1 min/anno a 0,9 min/mese",
+    "da 0,5 a 1 min/anno",
+]
+
+# Description → class 1-7
+BERSAGLIO_PROPRIETA_MAP: dict[str, int] = {
+    v: i + 1 for i, v in enumerate(BERSAGLIO_PROPRIETA_VALUES)
+}
+BERSAGLIO_OCCUPAZIONE_MAP: dict[str, int] = {
+    v: i + 1 for i, v in enumerate(BERSAGLIO_OCCUPAZIONE_VALUES)
+}
+
+# All selectable target types (matches C32/N32 in the ORD sheet)
+BERSAGLIO_TIPI: list[str] = [
+    "proprietà",
+    "occupazione",
+    "pedoni/ciclisti",
+    "traffico 30 Km/h",
+    "traffico 50 km/h",
+    "traffico 70 Km/h",
+    "traffico 90 Km/h",
+    "traffico 110 km/h",
+]
+
+
+def bersaglio_value_to_class(tipo: str, value: str) -> int | None:
+    """Convert a target-type + value description to a bersaglio class (1-7).
+
+    Returns None for types (pedoni/traffico) where the class must be entered
+    manually because it depends on a traffic/flow-rate calculation.
+    """
+    if tipo == "proprietà":
+        return BERSAGLIO_PROPRIETA_MAP.get(value)
+    if tipo == "occupazione":
+        return BERSAGLIO_OCCUPAZIONE_MAP.get(value)
+    return None   # pedoni/ciclisti and traffico: class computed externally
+
 
 # ---------------------------------------------------------------------------
 # PERICOLO (danger/failure probability) descriptions  (sheet A, B4:C14)
@@ -316,8 +414,13 @@ def assess_tree(
     pericolo_zolla: int,        # failure prob. for root-plate       (E38 ← E29)
 
     # --- Bersaglio classes (1-7) – derived from target occupancy ---
-    bersaglio_chioma: int,      # exposure class for crown fall target  (G32)
-    bersaglio_ramo: int,        # exposure class for branch fall target (R32)
+    bersaglio_chioma: int,      # exposure class for crown fall target  (G32 "Bersaglio Albero")
+    bersaglio_ramo: int,        # exposure class for branch fall target (R32 "Bersaglio Rami")
+
+    # --- Moltiplicatore – number of simultaneous targets (H32, default 1) ---
+    # When > 1 the final risk is: probability_to_risk_ratio(base_prob * n).
+    # Mirrors ORD sheet column Z ("+bers") logic.
+    moltiplicatore: int = 1,
 
     # --- Post-intervention dimensions (default = same as current) ---
     post_tree_height_m: float | None = None,
@@ -350,14 +453,25 @@ def assess_tree(
         branch_imp_cls = impulso_to_class(branch_mom)
 
         def _risk_entry(pericolo, bersaglio, imp_cls):
-            ratio = calc_risk(bersaglio, imp_cls, pericolo)
+            ratio_1bers = calc_risk(bersaglio, imp_cls, pericolo)
+            # "+bers": multiply the base probability by moltiplicatore (n > 1
+            # means n simultaneous people in the hazard zone), then convert
+            # back to a risk ratio string via the sheet-A reverse lookup.
+            if moltiplicatore > 1 and ratio_1bers != 'SOSPESO':
+                base_prob = RISK_PROBABILITY.get(ratio_1bers, 0.0)
+                ratio_plusbers = probability_to_risk_ratio(base_prob * moltiplicatore)
+            else:
+                ratio_plusbers = ratio_1bers
+            displayed = ratio_plusbers
             return {
                 'pericolo_class': pericolo,
                 'bersaglio_class': bersaglio,
                 'impulso_class': imp_cls,
                 'risk_key': f"{bersaglio}{imp_cls}{pericolo}",
-                'risk_ratio': ratio,
-                'risk_description': risk_description(ratio),
+                'risk_ratio': displayed,
+                'risk_ratio_1bers': ratio_1bers,
+                'risk_ratio_plusbers': ratio_plusbers,
+                'risk_description': risk_description(displayed),
             }
 
         return {

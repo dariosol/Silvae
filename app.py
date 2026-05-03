@@ -26,7 +26,7 @@ from Schede_Rilevamento_ARETE.lookup_tables import (
     prescrizioni_mitigazione as lt_prescrizioni_mit,
     prescrizioni_colturali as lt_prescrizioni_col,
 )
-from Schede_Rilevamento_ARETE.ord_calculator import assess_tree
+from Schede_Rilevamento_ARETE.ord_calculator import assess_tree, bersaglio_value_to_class
 
 # -----------------------
 # Configuration
@@ -142,8 +142,13 @@ class Tree(db.Model):
     pericolo_zolla    = db.Column(db.String(20))
 
     # --- Bersaglio ---
-    bersaglio_chioma = db.Column(db.Integer)
-    bersaglio_ramo   = db.Column(db.Integer)
+    bersaglio_chioma_tipo  = db.Column(db.String(50))   # C32: proprietà/occupazione/pedoni/traffico…
+    bersaglio_chioma_value = db.Column(db.String(100))  # selected description (proprietà/occupazione)
+    bersaglio_chioma       = db.Column(db.Integer)      # resolved class 1-7 (G32)
+    bersaglio_ramo_tipo    = db.Column(db.String(50))   # N32
+    bersaglio_ramo_value   = db.Column(db.String(100))
+    bersaglio_ramo         = db.Column(db.Integer)      # resolved class 1-7 (R32)
+    moltiplicatore         = db.Column(db.Integer)      # n simultaneous targets (H32); NULL = 1
 
     # --- Diagnosi (JSON: [{caratt, giudizio}, ...]) ---
     diag_zolla        = db.Column(db.Text)
@@ -199,7 +204,11 @@ with app.app_context():
         ('post_branch_height_m','FLOAT'), ('post_target_height_m','FLOAT'),
         ('pericolo_rami','VARCHAR(20)'), ('pericolo_tronco','VARCHAR(20)'),
         ('pericolo_colletto','VARCHAR(20)'), ('pericolo_zolla','VARCHAR(20)'),
-        ('bersaglio_chioma','INTEGER'), ('bersaglio_ramo','INTEGER'),
+        ('bersaglio_chioma_tipo','VARCHAR(50)'), ('bersaglio_chioma_value','VARCHAR(100)'),
+        ('bersaglio_chioma','INTEGER'),
+        ('bersaglio_ramo_tipo','VARCHAR(50)'), ('bersaglio_ramo_value','VARCHAR(100)'),
+        ('bersaglio_ramo','INTEGER'),
+        ('moltiplicatore','INTEGER'),
         ('diag_zolla','TEXT'), ('diag_colletto','TEXT'), ('diag_fusto','TEXT'),
         ('diag_castello','TEXT'), ('diag_ramificazione','TEXT'), ('diag_chioma','TEXT'),
         ('conflitti_list','TEXT'), ('agenti_carie','TEXT'), ('altri_patogeni','TEXT'),
@@ -266,7 +275,13 @@ def tree_to_dict(t):
         'post_target_height_m': t.post_target_height_m,
         'pericolo_rami': t.pericolo_rami, 'pericolo_tronco': t.pericolo_tronco,
         'pericolo_colletto': t.pericolo_colletto, 'pericolo_zolla': t.pericolo_zolla,
-        'bersaglio_chioma': t.bersaglio_chioma, 'bersaglio_ramo': t.bersaglio_ramo,
+        'bersaglio_chioma_tipo': t.bersaglio_chioma_tipo,
+        'bersaglio_chioma_value': t.bersaglio_chioma_value,
+        'bersaglio_chioma': t.bersaglio_chioma,
+        'bersaglio_ramo_tipo': t.bersaglio_ramo_tipo,
+        'bersaglio_ramo_value': t.bersaglio_ramo_value,
+        'bersaglio_ramo': t.bersaglio_ramo,
+        'moltiplicatore': t.moltiplicatore,
         'diag_zolla': parse_json_field(t.diag_zolla),
         'diag_colletto': parse_json_field(t.diag_colletto),
         'diag_fusto': parse_json_field(t.diag_fusto),
@@ -294,7 +309,9 @@ def apply_tree_fields(tree_obj, data):
         'post_tree_height_m','post_circonferenza_cm','post_branch_diam_cm',
         'post_branch_length_m','post_branch_height_m','post_target_height_m',
         'pericolo_rami','pericolo_tronco','pericolo_colletto','pericolo_zolla',
-        'bersaglio_chioma','bersaglio_ramo',
+        'bersaglio_chioma_tipo','bersaglio_chioma_value','bersaglio_chioma',
+        'bersaglio_ramo_tipo','bersaglio_ramo_value','bersaglio_ramo',
+        'moltiplicatore',
         'monitoraggio','urgenza',
     ]
     json_fields = [
@@ -310,6 +327,18 @@ def apply_tree_fields(tree_obj, data):
         if f in data:
             v = data[f]
             setattr(tree_obj, f, json.dumps(v) if isinstance(v, (list, dict)) else v)
+    # Auto-compute bersaglio class from tipo+value for proprietà/occupazione.
+    # For pedoni/traffico the class must be entered manually (complex formula).
+    for tipo_key, value_key, class_key in [
+        ('bersaglio_chioma_tipo', 'bersaglio_chioma_value', 'bersaglio_chioma'),
+        ('bersaglio_ramo_tipo',   'bersaglio_ramo_value',   'bersaglio_ramo'),
+    ]:
+        tipo  = data.get(tipo_key)  or getattr(tree_obj, tipo_key, None)
+        value = data.get(value_key) or getattr(tree_obj, value_key, None)
+        if tipo and value:
+            computed = bersaglio_value_to_class(tipo, value)
+            if computed is not None:
+                setattr(tree_obj, class_key, computed)
 
 def _calc_rischio(tree_obj):
     """Return assess_tree dict for tree_obj, or None if ORD fields are incomplete."""
@@ -335,9 +364,11 @@ def _calc_rischio(tree_obj):
     }
     if any(v is None for v in rq.values()):
         return None
+    mult = _i(tree_obj.moltiplicatore) or 1
     try:
         return assess_tree(
             crown_diam_m=_f(tree_obj.crown_diameter_m) or 0,
+            moltiplicatore=mult,
             post_tree_height_m=_f(tree_obj.post_tree_height_m),
             post_circumference_cm=_f(tree_obj.post_circonferenza_cm),
             post_branch_diam_cm=_f(tree_obj.post_branch_diam_cm),
@@ -634,6 +665,9 @@ def get_dropdowns():
         'vincoli': dd.vincoli,
         'giudizio_severita': dd.giudizio_severita,
         'pericolo_ord': {str(k): v for k, v in dd.pericolo_ord.items()},
+        'bersaglio_tipi': dd.BERSAGLIO_TIPI,
+        'bersaglio_proprieta_values': dd.BERSAGLIO_PROPRIETA_VALUES,
+        'bersaglio_occupazione_values': dd.BERSAGLIO_OCCUPAZIONE_VALUES,
         'bersaglio_range': list(range(1, 8)),
         'diag_zolla': dd.zolla_radicale,
         'diag_colletto': dd.caratteri_colletto,
@@ -675,6 +709,17 @@ def calculate_risk():
         'pericolo_colletto': i('pericolo_colletto'), 'pericolo_zolla': i('pericolo_zolla'),
         'bersaglio_chioma': i('bersaglio_chioma'), 'bersaglio_ramo': i('bersaglio_ramo'),
     }
+    # Resolve bersaglio class from tipo+value if provided (proprietà / occupazione)
+    for tipo_key, value_key, class_key in [
+        ('bersaglio_chioma_tipo', 'bersaglio_chioma_value', 'bersaglio_chioma'),
+        ('bersaglio_ramo_tipo',   'bersaglio_ramo_value',   'bersaglio_ramo'),
+    ]:
+        tipo  = data.get(tipo_key)
+        value = data.get(value_key)
+        if tipo and value:
+            computed = bersaglio_value_to_class(tipo, value)
+            if computed is not None:
+                required[class_key] = computed
     missing = [k for k, v in required.items() if v is None]
     if missing:
         return jsonify({'message': f'Missing: {", ".join(missing)}'}), 400
@@ -693,6 +738,7 @@ def calculate_risk():
         pericolo_zolla=required['pericolo_zolla'],
         bersaglio_chioma=required['bersaglio_chioma'],
         bersaglio_ramo=required['bersaglio_ramo'],
+        moltiplicatore=i('moltiplicatore') or 1,
         post_tree_height_m=f('post_tree_height_m'),
         post_circumference_cm=f('post_circonferenza_cm'),
         post_branch_diam_cm=f('post_branch_diam_cm'),
@@ -1011,23 +1057,36 @@ def export_excel():
             ('Pericolo tronco',             lambda t: t.pericolo_tronco or ''),
             ('Pericolo colletto',           lambda t: t.pericolo_colletto or ''),
             ('Pericolo zolla',              lambda t: t.pericolo_zolla or ''),
-            ('Bersaglio chioma',            lambda t: t.bersaglio_chioma),
-            ('Bersaglio ramo',              lambda t: t.bersaglio_ramo),
+            ('Tipo bersaglio chioma',        lambda t: t.bersaglio_chioma_tipo or ''),
+            ('Descrizione bersaglio chioma',lambda t: t.bersaglio_chioma_value or ''),
+            ('Classe bersaglio chioma',     lambda t: t.bersaglio_chioma),
+            ('Tipo bersaglio ramo',         lambda t: t.bersaglio_ramo_tipo or ''),
+            ('Descrizione bersaglio ramo',  lambda t: t.bersaglio_ramo_value or ''),
+            ('Classe bersaglio ramo',       lambda t: t.bersaglio_ramo),
+            ('Moltiplicatore (n bersagli)', lambda t: t.moltiplicatore or 1),
             ('Imp. chioma att. (kgm/s)',    lambda t: _rtop(t, 'attuale', 'crown_momentum_kgms')),
             ('Classe imp. chioma att.',     lambda t: _rtop(t, 'attuale', 'crown_impulso_class')),
             ('Imp. ramo att. (kgm/s)',      lambda t: _rtop(t, 'attuale', 'branch_momentum_kgms')),
             ('Classe imp. ramo att.',       lambda t: _rtop(t, 'attuale', 'branch_impulso_class')),
+            ('Rischio rami 1bers (att.)',   lambda t: _rpart(t, 'attuale', 'rami',     'risk_ratio_1bers')),
             ('Rischio rami (att.)',         lambda t: _rpart(t, 'attuale', 'rami',     'risk_description')),
+            ('Rischio tronco 1bers (att.)',lambda t: _rpart(t, 'attuale', 'tronco',   'risk_ratio_1bers')),
             ('Rischio tronco (att.)',       lambda t: _rpart(t, 'attuale', 'tronco',   'risk_description')),
+            ('Rischio colletto 1bers (att.)',lambda t: _rpart(t, 'attuale', 'colletto','risk_ratio_1bers')),
             ('Rischio colletto (att.)',     lambda t: _rpart(t, 'attuale', 'colletto', 'risk_description')),
+            ('Rischio zolla 1bers (att.)', lambda t: _rpart(t, 'attuale', 'zolla',    'risk_ratio_1bers')),
             ('Rischio zolla (att.)',        lambda t: _rpart(t, 'attuale', 'zolla',    'risk_description')),
             ('Imp. chioma res. (kgm/s)',    lambda t: _rtop(t, 'residuo', 'crown_momentum_kgms')),
             ('Classe imp. chioma res.',     lambda t: _rtop(t, 'residuo', 'crown_impulso_class')),
             ('Imp. ramo res. (kgm/s)',      lambda t: _rtop(t, 'residuo', 'branch_momentum_kgms')),
             ('Classe imp. ramo res.',       lambda t: _rtop(t, 'residuo', 'branch_impulso_class')),
+            ('Rischio rami 1bers (res.)',   lambda t: _rpart(t, 'residuo', 'rami',     'risk_ratio_1bers')),
             ('Rischio rami (res.)',         lambda t: _rpart(t, 'residuo', 'rami',     'risk_description')),
+            ('Rischio tronco 1bers (res.)',lambda t: _rpart(t, 'residuo', 'tronco',   'risk_ratio_1bers')),
             ('Rischio tronco (res.)',       lambda t: _rpart(t, 'residuo', 'tronco',   'risk_description')),
+            ('Rischio colletto 1bers (res.)',lambda t: _rpart(t, 'residuo', 'colletto','risk_ratio_1bers')),
             ('Rischio colletto (res.)',     lambda t: _rpart(t, 'residuo', 'colletto', 'risk_description')),
+            ('Rischio zolla 1bers (res.)', lambda t: _rpart(t, 'residuo', 'zolla',    'risk_ratio_1bers')),
             ('Rischio zolla (res.)',        lambda t: _rpart(t, 'residuo', 'zolla',    'risk_description')),
         ]),
         ('Diagnosi', 'E2EFDA', [

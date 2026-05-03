@@ -37,6 +37,18 @@
   .user-dot{width:20px;height:20px;position:relative;}
   .user-dot-pulse{width:20px;height:20px;border-radius:50%;background:#2563eb;border:3px solid #fff;box-shadow:0 0 0 rgba(37,99,235,.4);animation:user-pulse 2s infinite;}
   @keyframes user-pulse{0%{box-shadow:0 0 0 0 rgba(37,99,235,.4)}70%{box-shadow:0 0 0 12px rgba(37,99,235,0)}100%{box-shadow:0 0 0 0 rgba(37,99,235,0)}}
+  /* Info modal */
+  .info-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2000;align-items:center;justify-content:center;}
+  .info-modal-overlay.open{display:flex;}
+  .info-modal{background:#fff;border-radius:12px;max-width:560px;width:calc(100% - 32px);max-height:85vh;overflow-y:auto;padding:24px 24px 20px;box-shadow:0 16px 48px rgba(0,0,0,.22);position:relative;}
+  .info-modal h3{margin:0 0 14px;font-size:16px;font-weight:700;color:var(--g900);}
+  .info-modal h4{margin:14px 0 4px;font-size:13px;font-weight:700;color:var(--g700);text-transform:uppercase;letter-spacing:.04em;}
+  .info-modal p,.info-modal li{font-size:13px;color:var(--g700);line-height:1.55;margin:0 0 4px;}
+  .info-modal ul{padding-left:18px;margin:4px 0 8px;}
+  .info-modal-close{position:absolute;top:12px;right:14px;background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-muted);line-height:1;}
+  .info-modal-close:hover{color:var(--g900);}
+  .info-btn{background:none;border:1px solid var(--border);border-radius:50%;width:26px;height:26px;font-size:13px;font-weight:700;cursor:pointer;color:var(--text-muted);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .info-btn:hover{background:var(--g50);color:var(--g900);}
   </style>
 </head>
 <body>
@@ -491,23 +503,56 @@
               <div class="fs">
                 <div class="fs-title"><i class="fa-solid fa-person"></i> Bersaglio (1=massimo, 7=minimo)</div>
                 <div class="bersaglio-grid">
+                  <!-- Chioma/Tronco -->
                   <div class="fgrp">
-                    <label class="flabel" for="bersaglio_chioma">B — Chioma/Tronco</label>
+                    <label class="flabel" for="bersaglio_chioma_tipo">Tipo — Chioma/Tronco</label>
+                    <select id="bersaglio_chioma_tipo" class="fc" onchange="onBersaglioTipoChange('chioma')">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                  <div class="fgrp" id="bersaglio_chioma_value_grp" style="display:none;">
+                    <label class="flabel" for="bersaglio_chioma_value">Descrizione — Chioma/Tronco</label>
+                    <select id="bersaglio_chioma_value" class="fc">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                  <div class="fgrp" id="bersaglio_chioma_class_grp" style="display:none;">
+                    <label class="flabel" for="bersaglio_chioma">Classe — Chioma/Tronco (1–7)</label>
                     <select id="bersaglio_chioma" class="fc">
                       <option value="">—</option>
                     </select>
                   </div>
+                  <!-- Ramo -->
                   <div class="fgrp">
-                    <label class="flabel" for="bersaglio_ramo">B — Ramo</label>
+                    <label class="flabel" for="bersaglio_ramo_tipo">Tipo — Ramo</label>
+                    <select id="bersaglio_ramo_tipo" class="fc" onchange="onBersaglioTipoChange('ramo')">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                  <div class="fgrp" id="bersaglio_ramo_value_grp" style="display:none;">
+                    <label class="flabel" for="bersaglio_ramo_value">Descrizione — Ramo</label>
+                    <select id="bersaglio_ramo_value" class="fc">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                  <div class="fgrp" id="bersaglio_ramo_class_grp" style="display:none;">
+                    <label class="flabel" for="bersaglio_ramo">Classe — Ramo (1–7)</label>
                     <select id="bersaglio_ramo" class="fc">
                       <option value="">—</option>
                     </select>
                   </div>
+                  <!-- Moltiplicatore -->
+                  <div class="fgrp">
+                    <label class="flabel" for="moltiplicatore">Moltiplicatore (n bersagli)</label>
+                    <input id="moltiplicatore" class="fc" type="number" min="1" step="1" placeholder="1">
+                  </div>
                 </div>
-                <button type="button" class="btn btn-outline" style="width:100%;margin-top:10px;"
-                        onclick="calculateRisk()">
-                  <i class="fa-solid fa-calculator"></i> Calcola rischio ORD
-                </button>
+                <div style="display:flex;gap:8px;align-items:center;margin-top:10px;">
+                  <button type="button" class="btn btn-outline" style="flex:1;" onclick="calculateRisk()">
+                    <i class="fa-solid fa-calculator"></i> Calcola rischio ORD
+                  </button>
+                  <button type="button" class="info-btn" onclick="document.getElementById('riskInfoModal').classList.add('open')" title="Come funziona il calcolo">?</button>
+                </div>
                 <div id="riskResults" style="display:none;"></div>
               </div>
 
@@ -721,7 +766,7 @@
               Aggiungi gli agronomi che lavorano per questo comune. Solo i loro alberi saranno visibili al comune.
             </p>
             <div class="form-row mb-sm">
-              <input id="addAgronomistUsername" class="inp" placeholder="Nome utente dell'agronomista">
+              <input id="addAgronomistUsername" class="inp" placeholder="Nome utente dell'Agronomo">
               <button id="addAgronomistBtn" class="btn btn-primary btn-sm" style="flex:0 0 auto;">
                 <i class="fa-solid fa-plus"></i> Aggiungi
               </button>
@@ -781,5 +826,45 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="app.js"></script>
+
+<!-- Modale: Come funziona il calcolo del rischio ORD -->
+<div class="info-modal-overlay" id="riskInfoModal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="info-modal">
+    <button class="info-modal-close" onclick="document.getElementById('riskInfoModal').classList.remove('open')">&times;</button>
+    <h3><i class="fa-solid fa-circle-info" style="color:#2563eb;margin-right:6px;"></i>Come viene calcolato il rischio ORD</h3>
+
+    <p>Il metodo ARETE calcola il <strong>rischio annuo di danno</strong> per ogni punto di cedimento dell'albero (rami, tronco/castello, colletto, zolla radicale) combinando tre fattori: <strong>B · I · P</strong>.</p>
+
+    <h4>B — Bersaglio</h4>
+    <p>Rappresenta l'<strong>esposizione del bersaglio</strong> nell'area di caduta. Si seleziona prima il <em>tipo</em> (proprietà, occupazione, pedoni/ciclisti, traffico) e poi la descrizione:</p>
+    <ul>
+      <li><strong>Proprietà</strong>: scelto tra 7 fasce di valore del danno economico → classe automatica</li>
+      <li><strong>Occupazione</strong>: scelto tra 7 durate di presenza nell'area → classe automatica</li>
+      <li><strong>Pedoni/Ciclisti, Traffico</strong>: classe 1–7 inserita manualmente</li>
+    </ul>
+    <p style="color:var(--text-muted);font-size:12px;">Classe 1 = bersaglio sempre presente; Classe 7 = presenza rarissima.</p>
+
+    <h4>I — Impulso</h4>
+    <p>È la <strong>quantità di moto</strong> della parte che cade (massa × velocità di impatto), calcolata automaticamente dalle misure inserite:</p>
+    <ul>
+      <li><strong>Chioma/Tronco</strong>: usa altezza albero, circonferenza, diametro chioma</li>
+      <li><strong>Ramo</strong>: usa diametro, lunghezza e altezza del ramo</li>
+    </ul>
+    <p style="color:var(--text-muted);font-size:12px;">La classe I va da 1 (impulso ≥ 10 000 kg·m/s) a 7 (impulso &lt; 5 kg·m/s).</p>
+
+    <h4>P — Pericolo</h4>
+    <p>È la <strong>probabilità stimata di cedimento</strong>, valutata sul campo per ogni zona dell'albero (rami, tronco, colletto, zolla). Si sceglie tramite i menu a tendina nella sezione <em>Pericolo ORD</em>.</p>
+    <p style="color:var(--text-muted);font-size:12px;">Classe 1 = cedimento praticamente certo; Classe 7 = cedimento eccezionale. Valore 0 = valutazione sospesa.</p>
+
+    <h4>Matrice BIP → rischio</h4>
+    <p>Le tre classi B, I, P formano una chiave a tre cifre (es. <code>3 2 4</code>) che viene cercata in una <strong>matrice 7×7×7</strong>. Il risultato è una probabilità annua di danno espressa come rapporto (es. <em>1:10 000</em> = un evento ogni 10 000 anni).</p>
+
+    <h4>Moltiplicatore (n)</h4>
+    <p>Se nell'area di caduta sono presenti <strong>n bersagli simultanei</strong> (es. più persone o più veicoli), la probabilità base viene moltiplicata per n e il rischio viene ricalcolato sulla scala standard. Il risultato è indicato accanto al rischio con 1 solo bersaglio.</p>
+
+    <h4>Rischio residuo</h4>
+    <p>Se si compilano le <em>Misure post-intervento</em>, il calcolo viene ripetuto con i parametri ridotti per stimare il rischio dopo l'intervento di mitigazione.</p>
+  </div>
+</div>
 </body>
 </html>
