@@ -2,6 +2,9 @@
 import sys, os, io, json, secrets
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from dotenv import load_dotenv
+load_dotenv()  # loads .env when running locally; no-op on Railway
+
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
@@ -26,7 +29,9 @@ from Schede_Rilevamento_ARETE.lookup_tables import (
     prescrizioni_mitigazione as lt_prescrizioni_mit,
     prescrizioni_colturali as lt_prescrizioni_col,
 )
-from Schede_Rilevamento_ARETE.ord_calculator import assess_tree, bersaglio_value_to_class
+from Schede_Rilevamento_ARETE.ord_calculator import (
+    assess_tree, bersaglio_value_to_class, bersaglio_flow_to_class,
+)
 
 # -----------------------
 # Configuration
@@ -35,6 +40,9 @@ app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 DB_URL = os.environ.get('DATABASE_URL', 'postgresql://postgres:c0st4m4gn4@localhost/trees_db')
+# Railway provides postgres:// — SQLAlchemy requires postgresql://
+if DB_URL.startswith('postgres://'):
+    DB_URL = DB_URL.replace('postgres://', 'postgresql://', 1)
 app.config['SQLALCHEMY_DATABASE_URI'] = DB_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 SECRET_KEY = os.environ.get('SECRET_KEY', 'super-secret-change-me')
@@ -143,10 +151,12 @@ class Tree(db.Model):
 
     # --- Bersaglio ---
     bersaglio_chioma_tipo  = db.Column(db.String(50))   # C32: proprietà/occupazione/pedoni/traffico…
-    bersaglio_chioma_value = db.Column(db.String(100))  # selected description (proprietà/occupazione)
+    bersaglio_chioma_value = db.Column(db.String(100))  # description (proprietà/occupazione types)
+    bersaglio_chioma_flow  = db.Column(db.Float)        # flow rate (pedoni/ora or auto/giorno)
     bersaglio_chioma       = db.Column(db.Integer)      # resolved class 1-7 (G32)
     bersaglio_ramo_tipo    = db.Column(db.String(50))   # N32
     bersaglio_ramo_value   = db.Column(db.String(100))
+    bersaglio_ramo_flow    = db.Column(db.Float)        # flow rate for ramo
     bersaglio_ramo         = db.Column(db.Integer)      # resolved class 1-7 (R32)
     moltiplicatore         = db.Column(db.Integer)      # n simultaneous targets (H32); NULL = 1
 
@@ -205,9 +215,9 @@ with app.app_context():
         ('pericolo_rami','VARCHAR(20)'), ('pericolo_tronco','VARCHAR(20)'),
         ('pericolo_colletto','VARCHAR(20)'), ('pericolo_zolla','VARCHAR(20)'),
         ('bersaglio_chioma_tipo','VARCHAR(50)'), ('bersaglio_chioma_value','VARCHAR(100)'),
-        ('bersaglio_chioma','INTEGER'),
+        ('bersaglio_chioma_flow','FLOAT'), ('bersaglio_chioma','INTEGER'),
         ('bersaglio_ramo_tipo','VARCHAR(50)'), ('bersaglio_ramo_value','VARCHAR(100)'),
-        ('bersaglio_ramo','INTEGER'),
+        ('bersaglio_ramo_flow','FLOAT'), ('bersaglio_ramo','INTEGER'),
         ('moltiplicatore','INTEGER'),
         ('diag_zolla','TEXT'), ('diag_colletto','TEXT'), ('diag_fusto','TEXT'),
         ('diag_castello','TEXT'), ('diag_ramificazione','TEXT'), ('diag_chioma','TEXT'),
@@ -275,12 +285,14 @@ def tree_to_dict(t):
         'post_target_height_m': t.post_target_height_m,
         'pericolo_rami': t.pericolo_rami, 'pericolo_tronco': t.pericolo_tronco,
         'pericolo_colletto': t.pericolo_colletto, 'pericolo_zolla': t.pericolo_zolla,
-        'bersaglio_chioma_tipo': t.bersaglio_chioma_tipo,
+        'bersaglio_chioma_tipo':  t.bersaglio_chioma_tipo,
         'bersaglio_chioma_value': t.bersaglio_chioma_value,
-        'bersaglio_chioma': t.bersaglio_chioma,
-        'bersaglio_ramo_tipo': t.bersaglio_ramo_tipo,
-        'bersaglio_ramo_value': t.bersaglio_ramo_value,
-        'bersaglio_ramo': t.bersaglio_ramo,
+        'bersaglio_chioma_flow':  t.bersaglio_chioma_flow,
+        'bersaglio_chioma':       t.bersaglio_chioma,
+        'bersaglio_ramo_tipo':    t.bersaglio_ramo_tipo,
+        'bersaglio_ramo_value':   t.bersaglio_ramo_value,
+        'bersaglio_ramo_flow':    t.bersaglio_ramo_flow,
+        'bersaglio_ramo':         t.bersaglio_ramo,
         'moltiplicatore': t.moltiplicatore,
         'diag_zolla': parse_json_field(t.diag_zolla),
         'diag_colletto': parse_json_field(t.diag_colletto),
@@ -309,8 +321,8 @@ def apply_tree_fields(tree_obj, data):
         'post_tree_height_m','post_circonferenza_cm','post_branch_diam_cm',
         'post_branch_length_m','post_branch_height_m','post_target_height_m',
         'pericolo_rami','pericolo_tronco','pericolo_colletto','pericolo_zolla',
-        'bersaglio_chioma_tipo','bersaglio_chioma_value','bersaglio_chioma',
-        'bersaglio_ramo_tipo','bersaglio_ramo_value','bersaglio_ramo',
+        'bersaglio_chioma_tipo','bersaglio_chioma_value','bersaglio_chioma_flow','bersaglio_chioma',
+        'bersaglio_ramo_tipo','bersaglio_ramo_value','bersaglio_ramo_flow','bersaglio_ramo',
         'moltiplicatore',
         'monitoraggio','urgenza',
     ]
@@ -327,16 +339,32 @@ def apply_tree_fields(tree_obj, data):
         if f in data:
             v = data[f]
             setattr(tree_obj, f, json.dumps(v) if isinstance(v, (list, dict)) else v)
-    # Auto-compute bersaglio class from tipo+value for proprietà/occupazione.
-    # For pedoni/traffico the class must be entered manually (complex formula).
-    for tipo_key, value_key, class_key in [
-        ('bersaglio_chioma_tipo', 'bersaglio_chioma_value', 'bersaglio_chioma'),
-        ('bersaglio_ramo_tipo',   'bersaglio_ramo_value',   'bersaglio_ramo'),
+    # Auto-compute bersaglio class from tipo + value (proprietà/occupazione)
+    # or tipo + flow rate (pedoni/ciclisti, traffico *).
+    def _f(v):
+        try: return float(v) if v not in (None, '') else None
+        except: return None
+    crown_diam = _f(data.get('crown_diameter_m')) or _f(getattr(tree_obj, 'crown_diameter_m', None)) or 0.0
+    tree_h     = _f(data.get('tree_height_m'))    or _f(getattr(tree_obj, 'tree_height_m',    None)) or 0.0
+    branch_l   = _f(data.get('branch_length_m'))  or _f(getattr(tree_obj, 'branch_length_m',  None)) or 0.0
+    zone_chioma = (crown_diam + tree_h) / 2.0 if (crown_diam + tree_h) > 0 else 0.0
+    zone_ramo   = branch_l * 1.25 if branch_l > 0 else 0.0
+
+    for tipo_key, value_key, flow_key, class_key, zone_w in [
+        ('bersaglio_chioma_tipo', 'bersaglio_chioma_value', 'bersaglio_chioma_flow',
+         'bersaglio_chioma', zone_chioma),
+        ('bersaglio_ramo_tipo',   'bersaglio_ramo_value',   'bersaglio_ramo_flow',
+         'bersaglio_ramo',   zone_ramo),
     ]:
-        tipo  = data.get(tipo_key)  or getattr(tree_obj, tipo_key, None)
+        tipo  = data.get(tipo_key)  or getattr(tree_obj, tipo_key,  None)
         value = data.get(value_key) or getattr(tree_obj, value_key, None)
+        flow  = _f(data.get(flow_key)) or _f(getattr(tree_obj, flow_key, None))
         if tipo and value:
             computed = bersaglio_value_to_class(tipo, value)
+            if computed is not None:
+                setattr(tree_obj, class_key, computed)
+        elif tipo and flow is not None and zone_w > 0:
+            computed = bersaglio_flow_to_class(tipo, flow, zone_w)
             if computed is not None:
                 setattr(tree_obj, class_key, computed)
 
@@ -709,15 +737,28 @@ def calculate_risk():
         'pericolo_colletto': i('pericolo_colletto'), 'pericolo_zolla': i('pericolo_zolla'),
         'bersaglio_chioma': i('bersaglio_chioma'), 'bersaglio_ramo': i('bersaglio_ramo'),
     }
-    # Resolve bersaglio class from tipo+value if provided (proprietà / occupazione)
-    for tipo_key, value_key, class_key in [
-        ('bersaglio_chioma_tipo', 'bersaglio_chioma_value', 'bersaglio_chioma'),
-        ('bersaglio_ramo_tipo',   'bersaglio_ramo_value',   'bersaglio_ramo'),
+    # Resolve bersaglio class from tipo+value (proprietà/occupazione)
+    # or from tipo+flow (pedoni/traffico).
+    crown_diam_m = f('crown_diameter_m') or 0
+    tree_h_m     = required['tree_height_m'] or 0
+    branch_l_m   = required['branch_length_m'] or 0
+    zone_chioma  = (crown_diam_m + tree_h_m) / 2.0
+    zone_ramo    = branch_l_m * 1.25
+    for tipo_key, value_key, flow_key, class_key, zone_w in [
+        ('bersaglio_chioma_tipo', 'bersaglio_chioma_value', 'bersaglio_chioma_flow',
+         'bersaglio_chioma', zone_chioma),
+        ('bersaglio_ramo_tipo',   'bersaglio_ramo_value',   'bersaglio_ramo_flow',
+         'bersaglio_ramo',   zone_ramo),
     ]:
         tipo  = data.get(tipo_key)
         value = data.get(value_key)
+        flow  = f(flow_key)
         if tipo and value:
             computed = bersaglio_value_to_class(tipo, value)
+            if computed is not None:
+                required[class_key] = computed
+        elif tipo and flow is not None and zone_w > 0:
+            computed = bersaglio_flow_to_class(tipo, flow, zone_w)
             if computed is not None:
                 required[class_key] = computed
     missing = [k for k, v in required.items() if v is None]
@@ -727,7 +768,7 @@ def calculate_risk():
     result = assess_tree(
         tree_height_m=required['tree_height_m'],
         circumference_cm=required['circonferenza_cm'],
-        crown_diam_m=f('crown_diameter_m') or 0,
+        crown_diam_m=crown_diam_m,
         branch_diam_cm=required['branch_diam_cm'],
         branch_length_m=required['branch_length_m'],
         branch_height_m=required['branch_height_m'],
@@ -1059,9 +1100,11 @@ def export_excel():
             ('Pericolo zolla',              lambda t: t.pericolo_zolla or ''),
             ('Tipo bersaglio chioma',        lambda t: t.bersaglio_chioma_tipo or ''),
             ('Descrizione bersaglio chioma',lambda t: t.bersaglio_chioma_value or ''),
+            ('Flusso bersaglio chioma',     lambda t: t.bersaglio_chioma_flow),
             ('Classe bersaglio chioma',     lambda t: t.bersaglio_chioma),
             ('Tipo bersaglio ramo',         lambda t: t.bersaglio_ramo_tipo or ''),
             ('Descrizione bersaglio ramo',  lambda t: t.bersaglio_ramo_value or ''),
+            ('Flusso bersaglio ramo',       lambda t: t.bersaglio_ramo_flow),
             ('Classe bersaglio ramo',       lambda t: t.bersaglio_ramo),
             ('Moltiplicatore (n bersagli)', lambda t: t.moltiplicatore or 1),
             ('Imp. chioma att. (kgm/s)',    lambda t: _rtop(t, 'attuale', 'crown_momentum_kgms')),

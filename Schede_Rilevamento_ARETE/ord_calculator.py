@@ -264,14 +264,69 @@ BERSAGLIO_TIPI: list[str] = [
 def bersaglio_value_to_class(tipo: str, value: str) -> int | None:
     """Convert a target-type + value description to a bersaglio class (1-7).
 
-    Returns None for types (pedoni/traffico) where the class must be entered
-    manually because it depends on a traffic/flow-rate calculation.
+    Returns None for types (pedoni/traffico) where the class depends on flow rate.
     """
     if tipo == "proprietà":
         return BERSAGLIO_PROPRIETA_MAP.get(value)
     if tipo == "occupazione":
         return BERSAGLIO_OCCUPAZIONE_MAP.get(value)
-    return None   # pedoni/ciclisti and traffico: class computed externally
+    return None
+
+
+def bersaglio_flow_to_class(tipo: str, flow: float, zone_width_m: float) -> int | None:
+    """Compute bersaglio class (1-7) from flow rate for pedestrian/traffic types.
+
+    Replicates BA/BB column formulas (pedoni) and BD-BH column formulas (traffico)
+    from the ORD sheet.
+
+    Args:
+        tipo:         "pedoni/ciclisti" or "traffico NN Km/h" / "traffico NN km/h"
+        flow:         pedestrians/hour for pedoni; vehicles/day for traffico
+        zone_width_m: hazard zone width —
+                        chioma: (crown_diam_m + tree_height_m) / 2
+                        ramo:   branch_length_m * 1.25
+    Returns:
+        Class 1–7 or None if inputs are invalid / tipo not flow-based.
+    """
+    import re as _re
+    if zone_width_m <= 0 or flow < 0:
+        return None
+
+    if tipo == "pedoni/ciclisti":
+        # BA6 = zone_width / walking_speed  (seconds to traverse the zone)
+        # BA8 = 3600 / BA6                  (max pedestrians/hour)
+        walking_speed = 10.0 / 9.0           # 4 km/h = 1.1111… m/s
+        t_pass = zone_width_m / walking_speed
+        max_flow = 3600.0 / t_pass
+        # Class lower-bounds in pedoni/ora (same geometric progression as traffic)
+        lower = [max_flow / d for d in (5, 50, 500, 5_000, 50_000, 500_000)]
+    else:
+        m = _re.search(r'(\d+)', tipo)
+        if not m:
+            return None
+        speed_kmh = float(m.group(1))
+        v_ms      = speed_kmh * 1000.0 / 3600.0
+        # BD27 = v²/(2·9.8·0.5),  BD28 = BD27/v = v/9.8  (time to stop)
+        t_stop    = v_ms / 9.8
+        t_cross   = zone_width_m / v_ms
+        # BD31 = MIN(86400/t_stop, 86400/t_cross) / 1.3  → max vehicles/day
+        v1 = min(86400.0 / t_stop, 86400.0 / t_cross) / 1.3
+        # Class lower-bounds in auto/giorno
+        lower = [v1 / d for d in (5, 50, 500, 5_000, 50_000, 500_000)]
+
+    for cls, lb in enumerate(lower, start=1):
+        if flow >= lb:
+            return cls
+    return 7
+
+
+def bersaglio_flow_unit(tipo: str) -> str:
+    """Return the expected flow unit string for a given target type."""
+    if tipo == "pedoni/ciclisti":
+        return "pedoni/ora"
+    if tipo.startswith("traffico"):
+        return "auto/giorno"
+    return ""
 
 
 # ---------------------------------------------------------------------------

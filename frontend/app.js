@@ -125,10 +125,15 @@ function onBersaglioTipoChange(side) {
     const tipo = document.getElementById(`bersaglio_${side}_tipo`)?.value || '';
     const valueGrp = document.getElementById(`bersaglio_${side}_value_grp`);
     const classGrp = document.getElementById(`bersaglio_${side}_class_grp`);
+    const flowGrp  = document.getElementById(`bersaglio_${side}_flow_grp`);
+    const flowUnit = document.getElementById(`bersaglio_${side}_flow_unit`);
     const valueEl  = document.getElementById(`bersaglio_${side}_value`);
-    if (!valueGrp || !classGrp || !valueEl) return;
+    if (!valueGrp || !classGrp || !flowGrp || !valueEl) return;
 
     while (valueEl.options.length > 1) valueEl.remove(1);
+
+    const hide = (...els) => els.forEach(e => { if(e) e.style.display = 'none'; });
+    const show = (...els) => els.forEach(e => { if(e) e.style.display = ''; });
 
     if (tipo === 'proprietà') {
         (d.bersaglio_proprieta_values || []).forEach(v => {
@@ -136,22 +141,24 @@ function onBersaglioTipoChange(side) {
             o.value = v; o.textContent = v;
             valueEl.appendChild(o);
         });
-        valueGrp.style.display = '';
-        classGrp.style.display = 'none';
+        show(valueGrp); hide(classGrp, flowGrp);
     } else if (tipo === 'occupazione') {
         (d.bersaglio_occupazione_values || []).forEach(v => {
             const o = document.createElement('option');
             o.value = v; o.textContent = v;
             valueEl.appendChild(o);
         });
-        valueGrp.style.display = '';
-        classGrp.style.display = 'none';
+        show(valueGrp); hide(classGrp, flowGrp);
+    } else if (tipo === 'pedoni/ciclisti') {
+        if (flowUnit) flowUnit.textContent = 'pedoni/ora';
+        show(flowGrp); hide(valueGrp, classGrp);
+    } else if (tipo.startsWith('traffico')) {
+        if (flowUnit) flowUnit.textContent = 'auto/giorno';
+        show(flowGrp); hide(valueGrp, classGrp);
     } else if (tipo) {
-        valueGrp.style.display = 'none';
-        classGrp.style.display = '';
+        show(classGrp); hide(valueGrp, flowGrp);
     } else {
-        valueGrp.style.display = 'none';
-        classGrp.style.display = 'none';
+        hide(valueGrp, classGrp, flowGrp);
     }
 }
 
@@ -263,9 +270,11 @@ function buildRiskPayload() {
         pericolo_colletto: v('pericolo_colletto'), pericolo_zolla: v('pericolo_zolla'),
         bersaglio_chioma_tipo:  v('bersaglio_chioma_tipo'),
         bersaglio_chioma_value: v('bersaglio_chioma_value'),
+        bersaglio_chioma_flow:  v('bersaglio_chioma_flow') ? parseFloat(v('bersaglio_chioma_flow')) : null,
         bersaglio_chioma:       v('bersaglio_chioma'),
         bersaglio_ramo_tipo:    v('bersaglio_ramo_tipo'),
         bersaglio_ramo_value:   v('bersaglio_ramo_value'),
+        bersaglio_ramo_flow:    v('bersaglio_ramo_flow') ? parseFloat(v('bersaglio_ramo_flow')) : null,
         bersaglio_ramo:         v('bersaglio_ramo'),
         moltiplicatore: v('moltiplicatore') ? parseInt(v('moltiplicatore')) : null,
         post_tree_height_m: v('post_tree_height_m'),
@@ -281,22 +290,52 @@ function renderRiskResults(data) {
     const box = document.getElementById('riskResults');
     if (!box) return;
     const labels = {rami:'Rami/Branche', tronco:'Tronco/Castello', colletto:'Colletto', zolla:'Zolla radicale'};
+
+    // Colour map shared with rischioBadge
+    const colour = desc => {
+        if (!desc || desc === 'SOSPESO') return {fg:'#6b7280', bg:'#f3f4f6'};
+        if (desc.includes('inaccettabile') || desc.includes('imposto a terzi'))
+            return {fg:'#dc2626', bg:'#fef2f2'};
+        if (desc.includes('per accordo') || desc.includes('ALARP'))
+            return {fg:'#d97706', bg:'#fffbeb'};
+        if (desc.includes('tollerabile'))
+            return {fg:'#16a34a', bg:'#f0fdf4'};
+        return {fg:'#2563eb', bg:'#eff6ff'};  // largamente accettabile
+    };
+
     const html = ['attuale','residuo'].map(phase => {
         const d = data[phase];
+        if (!d) return '';
         const title = phase === 'attuale' ? 'RISCHIO ATTUALE' : 'RISCHIO RESIDUO';
-        const rows = Object.entries(labels).map(([k,lbl]) => {
-            const e = d[k];
-            return `<div class="risk-row">
-                <span class="risk-label">${lbl}</span>
-                <span class="risk-val">${e.risk_ratio}</span>
-                <span style="font-size:11px;color:var(--text-muted);max-width:200px;text-align:right">${e.risk_description}</span>
+
+        // Summary: worst failure mode for this phase
+        const entries = Object.entries(labels).map(([key,lbl]) => ({key, lbl, e: d[key]}));
+        const worst = entries.slice().sort((a,b) =>
+            rischioSeverity(b.e?.risk_description) - rischioSeverity(a.e?.risk_description))[0];
+        const wc = colour(worst?.e?.risk_description);
+
+        const rows = entries.map(({lbl, e}) => {
+            if (!e) return '';
+            const c = colour(e.risk_description);
+            const ratio = e.risk_ratio === 'SOSPESO'
+                ? `<span style="color:#6b7280;font-weight:600;">SOSPESO</span>`
+                : `<span style="font-weight:700;font-size:15px;color:${c.fg};">${e.risk_ratio}</span>`;
+            const bip = `<span style="font-size:10px;color:var(--text-muted);margin-left:4px;">B${e.bersaglio_class}·I${e.impulso_class}·P${e.pericolo_class}</span>`;
+            const plusbers = (e.risk_ratio_plusbers && e.risk_ratio_plusbers !== e.risk_ratio_1bers)
+                ? `<span style="font-size:10px;color:${c.fg};margin-left:4px;">(×n→${e.risk_ratio_plusbers})</span>` : '';
+            return `<div class="risk-row" style="background:${c.bg};border-radius:4px;padding:5px 8px;margin-bottom:4px;border:none;">
+                <span class="risk-label" style="font-size:12px;">${lbl}</span>
+                <span style="display:flex;align-items:center;gap:2px;">${ratio}${plusbers}${bip}</span>
+                <span style="font-size:11px;color:${c.fg};max-width:220px;text-align:right;">${e.risk_description}</span>
             </div>`;
         }).join('');
-        return `<div class="risk-box">
-            <div style="font-weight:700;color:var(--g900);margin-bottom:6px;font-size:13px;">${title}</div>
-            <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;">
-              Chioma: ${d.crown_momentum_kgms} kg·m/s (cl.${d.crown_impulso_class}) &nbsp;|&nbsp;
-              Ramo: ${d.branch_momentum_kgms} kg·m/s (cl.${d.branch_impulso_class})
+
+        return `<div class="risk-box" style="border-left:4px solid ${wc.fg};">
+            <div style="font-weight:700;color:${wc.fg};margin-bottom:6px;font-size:13px;">${title}</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">
+              Impulso chioma: <strong>${d.crown_momentum_kgms}</strong> kg·m/s → cl.<strong>${d.crown_impulso_class}</strong>
+              &nbsp;|&nbsp;
+              Impulso ramo: <strong>${d.branch_momentum_kgms}</strong> kg·m/s → cl.<strong>${d.branch_impulso_class}</strong>
             </div>
             ${rows}
         </div>`;
@@ -886,14 +925,16 @@ function fillForm(data) {
     // Pericolo / Bersaglio
     sv('pericolo_rami', data.pericolo_rami); sv('pericolo_tronco', data.pericolo_tronco);
     sv('pericolo_colletto', data.pericolo_colletto); sv('pericolo_zolla', data.pericolo_zolla);
-    // Bersaglio: set tipo first (triggers visibility), then value/class
+    // Bersaglio: set tipo first (triggers visibility), then value/flow/class
     sv('bersaglio_chioma_tipo', data.bersaglio_chioma_tipo);
     onBersaglioTipoChange('chioma');
     sv('bersaglio_chioma_value', data.bersaglio_chioma_value);
+    sv('bersaglio_chioma_flow',  data.bersaglio_chioma_flow);
     sv('bersaglio_chioma', data.bersaglio_chioma);
     sv('bersaglio_ramo_tipo', data.bersaglio_ramo_tipo);
     onBersaglioTipoChange('ramo');
     sv('bersaglio_ramo_value', data.bersaglio_ramo_value);
+    sv('bersaglio_ramo_flow',  data.bersaglio_ramo_flow);
     sv('bersaglio_ramo', data.bersaglio_ramo);
     sv('moltiplicatore', data.moltiplicatore);
     // Diagnosi rows
@@ -966,9 +1007,11 @@ async function submitTreeForm(e) {
         pericolo_colletto: v('pericolo_colletto'), pericolo_zolla: v('pericolo_zolla'),
         bersaglio_chioma_tipo:  v('bersaglio_chioma_tipo') || null,
         bersaglio_chioma_value: v('bersaglio_chioma_value') || null,
+        bersaglio_chioma_flow:  v('bersaglio_chioma_flow') ? parseFloat(v('bersaglio_chioma_flow')) : null,
         bersaglio_chioma:       v('bersaglio_chioma') ? parseInt(v('bersaglio_chioma')) : null,
         bersaglio_ramo_tipo:    v('bersaglio_ramo_tipo') || null,
         bersaglio_ramo_value:   v('bersaglio_ramo_value') || null,
+        bersaglio_ramo_flow:    v('bersaglio_ramo_flow') ? parseFloat(v('bersaglio_ramo_flow')) : null,
         bersaglio_ramo:         v('bersaglio_ramo') ? parseInt(v('bersaglio_ramo')) : null,
         moltiplicatore:         v('moltiplicatore') ? parseInt(v('moltiplicatore')) : null,
         // Diagnosi
@@ -1187,9 +1230,11 @@ function renderSnapshotDetails(snap) {
     add('Pericolo zolla', snap.pericolo_zolla);
     add('Bersaglio chioma tipo', snap.bersaglio_chioma_tipo);
     add('Bersaglio chioma desc.', snap.bersaglio_chioma_value);
+    add('Bersaglio chioma flusso', snap.bersaglio_chioma_flow);
     add('Bersaglio chioma classe', snap.bersaglio_chioma);
     add('Bersaglio ramo tipo', snap.bersaglio_ramo_tipo);
     add('Bersaglio ramo desc.', snap.bersaglio_ramo_value);
+    add('Bersaglio ramo flusso', snap.bersaglio_ramo_flow);
     add('Bersaglio ramo classe', snap.bersaglio_ramo);
     add('Moltiplicatore', snap.moltiplicatore);
     add('Monitoraggio', snap.monitoraggio);
