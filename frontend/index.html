@@ -1,173 +1,1125 @@
 <!DOCTYPE html>
-<html lang="en">
-
+<html lang="it">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tree Database</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Silvae Pro</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .diag-row{display:flex;gap:6px;align-items:center;margin-bottom:4px;}
+    .diag-row select{flex:1;min-width:0;}
+    .diag-row .sel-giu{width:80px;flex:none;}
+    .diag-row .btn-rm{flex:none;padding:4px 8px;font-size:12px;}
+    details.fs-detail{margin-bottom:12px;}
+    details.fs-detail summary{cursor:pointer;font-weight:600;padding:8px 0;color:var(--g800);list-style:none;}
+    details.fs-detail summary::before{content:'▶ ';font-size:10px;}
+    details.fs-detail[open] summary::before{content:'▼ ';}
+    .risk-box{background:var(--g50);border:1px solid var(--border);border-radius:var(--r);padding:12px;margin-top:8px;}
+    .risk-row{display:flex;justify-content:space-between;font-size:13px;padding:3px 0;border-bottom:1px solid var(--border);}
+    .risk-row:last-child{border:none;}
+    .risk-label{color:var(--text-muted);}
+    .risk-val{font-weight:600;color:var(--g800);}
+    select[multiple]{width:100%;height:110px;font-size:13px;}
+    .pericolo-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+    .bersaglio-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+    .post-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+    .comune-ac-wrap{position:relative;}
+    .comune-dropdown{position:absolute;top:100%;left:0;right:0;z-index:1000;background:#fff;border:1px solid var(--border);border-top:none;border-radius:0 0 var(--r) var(--r);max-height:220px;overflow-y:auto;list-style:none;padding:0;margin:0;box-shadow:0 4px 12px rgba(0,0,0,.12);display:none;}
+    .comune-dropdown li{padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--g100);}
+    .comune-dropdown li:last-child{border-bottom:none;}
+    .comune-dropdown li:hover{background:var(--g50);}
+    .comune-dropdown li .cd-sigla{font-size:11px;color:var(--text-muted);margin-left:6px;}
+    .comune-dropdown li.ac-active{background:var(--g100);}
+  .locate-ctrl-btn{width:30px;height:30px;background:#fff;border:none;cursor:pointer;font-size:14px;color:#333;display:flex;align-items:center;justify-content:center;}
+  .locate-ctrl-btn:hover{background:var(--g50);}
+  .user-dot{width:20px;height:20px;position:relative;}
+  .user-dot-pulse{width:20px;height:20px;border-radius:50%;background:#2563eb;border:3px solid #fff;box-shadow:0 0 0 rgba(37,99,235,.4);animation:user-pulse 2s infinite;}
+  @keyframes user-pulse{0%{box-shadow:0 0 0 0 rgba(37,99,235,.4)}70%{box-shadow:0 0 0 12px rgba(37,99,235,0)}100%{box-shadow:0 0 0 0 rgba(37,99,235,0)}}
+  /* Algoritmo ARETE doc styles */
+  .doc{max-width:820px;margin:0 auto;padding:0 4px 40px;}
+  .doc h2{font-size:20px;font-weight:700;color:var(--g900);margin:32px 0 8px;padding-bottom:6px;border-bottom:2px solid var(--border);}
+  .doc h2:first-child{margin-top:0;}
+  .doc h3{font-size:14px;font-weight:700;color:var(--g700);text-transform:uppercase;letter-spacing:.05em;margin:20px 0 6px;}
+  .doc p{font-size:13px;color:var(--g700);line-height:1.6;margin:0 0 8px;}
+  .doc ul,.doc ol{font-size:13px;color:var(--g700);line-height:1.6;padding-left:20px;margin:0 0 8px;}
+  .doc code{font-family:monospace;font-size:12px;background:var(--g100);border-radius:3px;padding:1px 5px;color:#c7254e;}
+  .doc pre{background:var(--g50);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;overflow-x:auto;margin:8px 0 12px;}
+  .doc pre code{background:none;padding:0;color:var(--g800);font-size:12px;line-height:1.55;}
+  .doc .dtbl{width:100%;border-collapse:collapse;font-size:12px;margin:8px 0 12px;}
+  .doc .dtbl th{background:var(--g100);color:var(--g800);font-weight:600;text-align:left;padding:6px 10px;border:1px solid var(--border);}
+  .doc .dtbl td{padding:5px 10px;border:1px solid var(--border);color:var(--g700);vertical-align:top;}
+  .doc .dtbl tr:nth-child(even) td{background:var(--g50);}
+  .doc .note{font-size:12px;color:var(--text-muted);font-style:italic;margin:4px 0 10px;}
+  .doc .callout{background:#eff6ff;border-left:3px solid #2563eb;padding:10px 14px;border-radius:0 var(--r) var(--r) 0;margin:10px 0 14px;}
+  .doc .callout p{margin:0;font-size:13px;color:#1e40af;}
+  /* Info modal */
+  .info-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2000;align-items:center;justify-content:center;}
+  .info-modal-overlay.open{display:flex;}
+  .info-modal{background:#fff;border-radius:12px;max-width:560px;width:calc(100% - 32px);max-height:85vh;overflow-y:auto;padding:24px 24px 20px;box-shadow:0 16px 48px rgba(0,0,0,.22);position:relative;}
+  .info-modal h3{margin:0 0 14px;font-size:16px;font-weight:700;color:var(--g900);}
+  .info-modal h4{margin:14px 0 4px;font-size:13px;font-weight:700;color:var(--g700);text-transform:uppercase;letter-spacing:.04em;}
+  .info-modal p,.info-modal li{font-size:13px;color:var(--g700);line-height:1.55;margin:0 0 4px;}
+  .info-modal ul{padding-left:18px;margin:4px 0 8px;}
+  .info-modal-close{position:absolute;top:12px;right:14px;background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-muted);line-height:1;}
+  .info-modal-close:hover{color:var(--g900);}
+  .info-btn{background:none;border:1px solid var(--border);border-radius:50%;width:26px;height:26px;font-size:13px;font-weight:700;cursor:pointer;color:var(--text-muted);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .info-btn:hover{background:var(--g50);color:var(--g900);}
+  </style>
 </head>
+<body>
 
-<body class="container mt-4">
+<!-- LOGIN PAGE -->
+<div id="loginPage">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="login-logo-ring"><i class="fa-solid fa-tree"></i></div>
+      <div class="login-app-name">Silvae Pro</div>
+      <div class="login-tagline">Sistema di Gestione Alberi</div>
+    </div>
 
-    <h1 class="text-center">🌳 Tree Management System</h1>
+    <!-- LOGIN VIEW -->
+    <div id="loginView">
+      <div class="login-field">
+        <label for="loginUsername">Nome utente</label>
+        <div class="login-field-wrap">
+          <i class="ico fa-regular fa-user"></i>
+          <input id="loginUsername" class="login-input" type="text" placeholder="Inserisci il nome utente" autocomplete="username">
+        </div>
+      </div>
+      <div class="login-field">
+        <label for="loginPassword">Password</label>
+        <div class="login-field-wrap">
+          <i class="ico fa-solid fa-lock"></i>
+          <input id="loginPassword" class="login-input" type="password" placeholder="Inserisci la password" autocomplete="current-password">
+        </div>
+      </div>
+      <button id="loginBtn" class="btn-login"><i class="fa-solid fa-right-to-bracket"></i>&nbsp; Accedi</button>
+      <div style="display:flex;justify-content:space-between;margin-top:12px;font-size:13px;">
+        <a href="#" id="showRegisterLink" style="color:var(--g600);">Crea account</a>
+        <a href="#" id="showForgotLink" style="color:var(--g600);">Password dimenticata?</a>
+      </div>
+    </div>
 
-    <!-- Filters: Select City & Address -->
-    <div class="row mb-3">
-        <div class="col-md-4">
-            <label for="citySelect">Select City:</label>
-            <select id="citySelect" class="form-control" onchange="fetchStreets()">
-                <option value="">-- Choose a city --</option>
+    <!-- REGISTER VIEW -->
+    <div id="registerView" style="display:none;">
+      <div class="login-field">
+        <label for="regUsername">Nome utente *</label>
+        <div class="login-field-wrap">
+          <i class="ico fa-regular fa-user"></i>
+          <input id="regUsername" class="login-input" type="text" placeholder="Scegli un nome utente" autocomplete="username">
+        </div>
+      </div>
+      <div class="login-field">
+        <label for="regEmail">Email</label>
+        <div class="login-field-wrap">
+          <i class="ico fa-regular fa-envelope"></i>
+          <input id="regEmail" class="login-input" type="email" placeholder="Per il recupero password (facoltativa)">
+        </div>
+      </div>
+      <div class="login-field">
+        <label for="regPassword">Password *</label>
+        <div class="login-field-wrap">
+          <i class="ico fa-solid fa-lock"></i>
+          <input id="regPassword" class="login-input" type="password" placeholder="Minimo 6 caratteri">
+        </div>
+      </div>
+      <div class="login-field">
+        <label for="regPassword2">Conferma password *</label>
+        <div class="login-field-wrap">
+          <i class="ico fa-solid fa-lock"></i>
+          <input id="regPassword2" class="login-input" type="password" placeholder="Ripeti la password">
+        </div>
+      </div>
+      <button id="registerBtn" class="btn-login"><i class="fa-solid fa-user-plus"></i>&nbsp; Registrati</button>
+      <div style="text-align:center;margin-top:12px;font-size:13px;">
+        <a href="#" id="showLoginFromRegLink" style="color:var(--g600);">Hai già un account? Accedi</a>
+      </div>
+    </div>
+
+    <!-- FORGOT PASSWORD VIEW -->
+    <div id="forgotView" style="display:none;">
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px;">Inserisci la tua email: riceverai un link per reimpostare la password.</p>
+      <div class="login-field">
+        <label for="forgotEmail">Email</label>
+        <div class="login-field-wrap">
+          <i class="ico fa-regular fa-envelope"></i>
+          <input id="forgotEmail" class="login-input" type="email" placeholder="La tua email">
+        </div>
+      </div>
+      <button id="forgotBtn" class="btn-login"><i class="fa-solid fa-paper-plane"></i>&nbsp; Invia link di reset</button>
+      <div style="text-align:center;margin-top:12px;font-size:13px;">
+        <a href="#" id="showLoginFromForgotLink" style="color:var(--g600);">Torna al login</a>
+      </div>
+    </div>
+
+    <div class="login-footer">Silvae Pro &nbsp;·&nbsp; Edizione Campo</div>
+  </div>
+</div>
+
+<!-- APP PAGE -->
+<div id="appPage">
+
+  <!-- Navbar -->
+  <nav class="navbar">
+    <a href="#" class="nav-brand">
+      <div class="nav-brand-icon"><i class="fa-solid fa-tree"></i></div>
+      <div class="nav-brand-name">Silvae <small>Pro</small></div>
+    </a>
+    <div class="nav-filters">
+      <select id="citySelect" class="nav-select" onchange="fetchTrees()">
+        <option value="">Tutti i comuni</option>
+      </select>
+      <input id="streetSearch" class="nav-search" type="text" placeholder="Cerca per indirizzo…">
+      <button class="btn-logout" style="padding:7px 10px;" onclick="fetchTrees()" title="Search">
+        <i class="fa-solid fa-magnifying-glass"></i>
+      </button>
+    </div>
+    <div class="nav-user">
+      <div class="nav-user-badge">
+        <i class="fa-solid fa-circle-user"></i>
+        <span id="loggedInUser"></span>
+      </div>
+      <button id="logoutBtn" class="btn-logout"><i class="fa-solid fa-right-from-bracket"></i> Esci</button>
+    </div>
+  </nav>
+
+  <!-- Tab bar -->
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="trees"><i class="fa-solid fa-seedling"></i><span>Alberi</span></button>
+    <button class="tab-btn" data-tab="map"><i class="fa-solid fa-map-location-dot"></i><span>Mappa</span></button>
+    <button class="tab-btn" data-tab="manage" id="tabManageBtn" style="display:none"><i class="fa-solid fa-users-gear"></i><span>Gestione</span></button>
+    <button class="tab-btn" data-tab="export"><i class="fa-solid fa-download"></i><span>Esporta</span></button>
+    <button class="tab-btn" data-tab="algoritmo"><i class="fa-solid fa-square-root-variable"></i><span>Algoritmo</span></button>
+  </div>
+
+  <!-- Tab content -->
+  <div class="tab-content">
+
+    <!-- TREES tab -->
+    <section id="tab-trees" class="tab-section active">
+
+      <!-- LIST VIEW -->
+      <div id="view-list" class="tab-view active">
+        <div class="section-toolbar">
+          <div class="toolbar-left">
+            <div class="filter-wrap">
+              <i class="fa-solid fa-magnifying-glass filter-ico"></i>
+              <input id="idFilter" class="inp" type="text" style="padding-left:32px;min-width:180px;" placeholder="Filtra per ID…">
+            </div>
+            <span id="inventoryLabel" class="section-label">Inventario Alberi</span>
+            <span class="count-badge" id="treeCount">0</span>
+          </div>
+          <div class="toolbar-right">
+            <select id="pageSizeSelect" class="inp" style="width:80px;" title="Righe per pagina">
+              <option value="25">25</option><option value="50">50</option><option value="100">100</option>
             </select>
+            <button class="btn btn-outline btn-sm" id="nearbyBtn" onclick="toggleNearby()" title="Ordina per distanza dalla posizione attuale">
+              <i class="fa-solid fa-location-crosshairs"></i> Vicino a me
+            </button>
+            <button class="btn btn-outline btn-sm" id="exportModeBtn" onclick="toggleExportMode()">
+              <i class="fa-solid fa-download"></i> Seleziona per esportare
+            </button>
+            <button class="btn btn-primary" id="openFormBtn"><i class="fa-solid fa-plus"></i> Aggiungi Albero</button>
+          </div>
+        </div>
+        <div id="exportBar" style="display:none;align-items:center;gap:10px;padding:8px 18px;background:#eff6ff;border-bottom:1px solid #bfdbfe;flex-shrink:0;">
+          <span id="exportCount" style="font-size:13px;font-weight:600;color:#1d4ed8;"></span>
+          <button class="btn btn-excel btn-sm" onclick="exportSelectedExcel()"><i class="fa-solid fa-file-excel"></i> Esporta Excel</button>
+          <button class="btn btn-qgis btn-sm" onclick="exportSelectedGeoJSON()"><i class="fa-solid fa-globe"></i> Esporta GeoJSON</button>
+          <button class="btn btn-outline btn-sm" onclick="toggleExportMode()" style="margin-left:auto;"><i class="fa-solid fa-xmark"></i> Annulla</button>
+        </div>
+        <div class="section-card">
+          <div class="card-head" style="flex-shrink:0;">
+            <span class="card-title" style="font-size:12px;color:var(--text-muted);">
+              <i class="fa-solid fa-circle-info"></i>
+              Seleziona un comune nella barra superiore, poi usa il filtro ID per trovare un albero specifico.
+            </span>
+          </div>
+          <div class="tbl-wrap">
+            <table class="tbl">
+              <thead>
+                <tr>
+                  <th id="selectAllTh" style="display:none;width:36px;text-align:center;"><input type="checkbox" id="selectAllCb" onchange="toggleSelectAll(this)" title="Seleziona tutti"></th>
+                  <th class="sortable" data-sort="custom_id">ID Albero <i class="sort-ico fa-solid fa-sort"></i></th>
+                  <th>Specie</th>
+                  <th class="sortable" data-sort="condition">Condizione <i class="sort-ico fa-solid fa-sort"></i></th>
+                  <th class="sortable" data-sort="address">Localizzazione <i class="sort-ico fa-solid fa-sort"></i></th>
+                  <th class="sortable" data-sort="latitude">Coordinate <i class="sort-ico fa-solid fa-sort"></i></th>
+                  <th class="sortable" data-sort="next_check">Prossima Ispezione <i class="sort-ico fa-solid fa-sort"></i></th>
+                  <th style="text-align:right">Azioni</th>
+                </tr>
+              </thead>
+              <tbody id="treeList"></tbody>
+            </table>
+          </div>
+          <div id="paginationBar" style="display:none;align-items:center;justify-content:space-between;padding:10px 18px;border-top:1px solid var(--border);background:var(--g50);flex-shrink:0;">
+            <span id="pagingInfo" style="font-size:13px;color:var(--text-muted);"></span>
+            <div id="pagination" style="display:flex;gap:4px;align-items:center;"></div>
+          </div>
+        </div>
+      </div><!-- /view-list -->
+
+
+      <!-- EDIT / ADD VIEW -->
+      <div id="view-edit" class="tab-view">
+        <div class="view-bar">
+          <button class="btn btn-outline btn-sm" onclick="showTreeView('list')">
+            <i class="fa-solid fa-arrow-left"></i> Torna agli Alberi
+          </button>
+          <button class="btn btn-outline btn-sm" onclick="switchTab('map')">
+            <i class="fa-solid fa-map"></i> Torna alla Mappa
+          </button>
+          <span class="view-title" id="formTitle"><i class="fa-solid fa-seedling"></i> Nuovo Albero</span>
         </div>
 
-        <div class="col-md-4">
-            <label for="streetSearch">Street Contains:</label>
-            <input type="text" id="streetSearch" class="form-control" placeholder="Enter part of the address">
-        </div>
+        <div class="view-body">
+          <form id="addTreeForm">
+            <input type="hidden" id="editTreeId">
+            <div class="form-grid">
 
-        <div class="col-md-4 d-flex align-items-end">
-            <button class="btn btn-primary w-100" onclick="fetchTrees()">Search Trees</button>
-        </div>
-    </div>
+              <!-- 1. IDENTIFICAZIONE -->
+              <div class="fs">
+                <div class="fs-title"><i class="fa-solid fa-tag"></i> Identificazione</div>
+                <div class="fgrp">
+                  <label class="flabel" for="custom_id">ID Albero *</label>
+                  <input id="custom_id" class="fc" type="text" required placeholder="es. TOR-001">
+                </div>
+                <div class="fc-grid2">
+                  <div class="fgrp">
+                    <label class="flabel" for="city">Comune *</label>
+                    <div class="comune-ac-wrap">
+                      <input id="city" class="fc" type="text" required autocomplete="off" placeholder="Cerca comune…">
+                      <ul id="city-dropdown" class="comune-dropdown"></ul>
+                    </div>
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="cpc">Codice CPC</label>
+                    <input id="cpc" class="fc" type="text">
+                  </div>
+                </div>
+              </div>
 
-    <!-- Search by Tree ID -->
-    <div class="row mb-3">
-        <div class="col-md-6">
-            <input type="text" id="treeIdInput" class="form-control" placeholder="Enter Custom Tree ID">
-        </div>
-        <div class="col-md-3">
-            <button class="btn btn-secondary w-100" onclick="fetchTreeById()">Search by ID</button>
-        </div>
-        <div class="col-md-3">
-            <button class="btn btn-danger w-100" onclick="deleteTreeById()">Delete Tree</button>
-        </div>
-    </div>
+              <!-- 2. LOCALIZZAZIONE GPS -->
+              <div class="fs">
+                <div class="fs-title"><i class="fa-solid fa-location-dot"></i> Localizzazione</div>
+                <div class="fgrp">
+                  <label class="flabel" for="address">Indirizzo</label>
+                  <input id="address" class="fc" type="text" placeholder="Auto-compilato da GPS o usato per geocoding">
+                </div>
+                <div class="fc-grid2" style="margin-bottom:10px;">
+                  <div class="fgrp">
+                    <label class="flabel" for="latitude">Latitudine</label>
+                    <input id="latitude" class="fc" type="text" placeholder="es. 45.4642">
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="longitude">Longitudine</label>
+                    <input id="longitude" class="fc" type="text" placeholder="es. 9.1900">
+                  </div>
+                </div>
+                <button type="button" class="btn btn-outline" style="width:100%;" onclick="getLocation()">
+                  <i class="fa-solid fa-location-crosshairs"></i> Usa posizione GPS
+                </button>
+                <div id="gpsStatus" style="font-size:12px;color:var(--text-muted);margin-top:6px;text-align:center;"></div>
+              </div>
 
-    <!-- Tree List -->
-    <h3>🌲 Tree List</h3>
-    <table class="table table-bordered">
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>Custom ID</th>
-                <th>Species</th>
-                <th>Condition</th>
-                <th>Address</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody id="treeList">
-            <!-- Trees will be inserted here -->
-        </tbody>
-    </table>
+              <!-- 3. DATI GENERALI ARETE -->
+              <div class="fs">
+                <div class="fs-title"><i class="fa-solid fa-leaf"></i> Dati Generali</div>
+                <div class="fgrp">
+                  <label class="flabel" for="species">Specie *</label>
+                  <select id="species" class="fc" required>
+                    <option value="">— seleziona specie —</option>
+                  </select>
+                </div>
+                <div class="fc-grid2">
+                  <div class="fgrp">
+                    <label class="flabel" for="dimora">Dimora</label>
+                    <select id="dimora" class="fc">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="stadio_sviluppo">Stadio di sviluppo</label>
+                    <select id="stadio_sviluppo" class="fc">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="fc-grid2">
+                  <div class="fgrp">
+                    <label class="flabel" for="posizione_sociale">Posizione sociale</label>
+                    <select id="posizione_sociale" class="fc">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="localizzazione">Localizzazione</label>
+                    <select id="localizzazione" class="fc">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="fc-grid2">
+                  <div class="fgrp">
+                    <label class="flabel" for="vincoli">Vincoli</label>
+                    <select id="vincoli" class="fc">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="age">Età / Stima età</label>
+                    <input id="age" class="fc" type="text" placeholder="es. 40 anni">
+                  </div>
+                </div>
+              </div>
 
-    <h3 id="formTitle">🌿 Add a New Tree</h3>
-    <form id="addTreeForm">
-        <input type="hidden" id="editTreeId">
-    
-        <div class="row mb-3">
-            <div class="col-md-4">
-                <label for="custom_id">Custom ID:</label>
-                <input type="text" id="custom_id" class="form-control" required>
-            </div>
-            <div class="col-md-4">
-                <label for="city">City:</label>
-                <input type="text" id="city" class="form-control" required>
-            </div>
-            <div class="col-md-4">
-                <label for="address">Address (optional):</label>
-                <input type="text" id="address" class="form-control">
-            </div>
-        </div>
-    
-        <div class="row mb-3">
-            <div class="col-md-4">
-                <label for="latitude">Latitude:</label>
-                <input type="text" id="latitude" class="form-control" required>
-            </div>
-            <div class="col-md-4">
-                <label for="longitude">Longitude:</label>
-                <input type="text" id="longitude" class="form-control" required>
-            </div>
-            <div class="col-md-4 d-flex align-items-end">
-                <button type="button" class="btn btn-info w-100" onclick="getLocation()">📍 Use GPS Location</button>
-            </div>
-        </div>
-    
-        <div class="row mb-3">
-            <div class="col-md-4">
-                <label for="species">Species:</label>
-                <input type="text" id="species" class="form-control" required>
-            </div>
-            <div class="col-md-4">
-                <label for="condition">Condition:</label>
-                <input type="text" id="condition" class="form-control" required>
-            </div>
-            <div class="col-md-4">
-                <label for="comments">Comments:</label>
-                <textarea id="comments" class="form-control"></textarea>
-            </div>
-        </div>
-    
-        <!-- Additional Details -->
-        <h4>🌱 Additional Details</h4>
-        <div class="row mb-3">
-            <div class="col-md-4">
-                <label for="height">Height (m):</label>
-                <input type="text" id="height" class="form-control">
-            </div>
-            <div class="col-md-4">
-                <label for="trunk_diameter_cm">Trunk Diameter (cm):</label>
-                <input type="number" id="trunk_diameter_cm" class="form-control">
-            </div>
-            <div class="col-md-4">
-                <label for="crown_diameter_m">Crown Diameter (m):</label>
-                <input type="number" id="crown_diameter_m" class="form-control">
-            </div>
-        </div>
-    
-        <div class="row mb-3">
-            <div class="col-md-4">
-                <label for="age">Age:</label>
-                <input type="text" id="age" class="form-control">
-            </div>
-            <div class="col-md-4">
-                <label for="actions">Actions Taken:</label>
-                <input type="text" id="actions" class="form-control">
-            </div>
-            <div class="col-md-4">
-                <label for="location">Location:</label>
-                <input type="text" id="location" class="form-control">
-            </div>
-        </div>
-    
-        <div class="row mb-3">
-            <div class="col-md-4">
-                <label for="cpc">CPC Code:</label>
-                <input type="text" id="cpc" class="form-control">
-            </div>
-            <div class="col-md-4">
-                <label for="next_check">Next Check Date:</label>
-                <input type="date" id="next_check" class="form-control">
-            </div>
-        </div>
-    
-        <!-- Buttons: Dynamic based on mode -->
-        <button type="submit" class="btn btn-success" id="formSubmitButton">🌳 Add Tree</button>
-        <button type="button" class="btn btn-secondary" onclick="resetForm()">Cancel Edit</button>
-    </form>
-        
-    <p id="status" class="mt-2"></p>
+              <!-- 4. MISURE ORD -->
+              <div class="fs">
+                <div class="fs-title"><i class="fa-solid fa-ruler-combined"></i> Misure (ORD)</div>
+                <div class="fc-grid3">
+                  <div class="fgrp">
+                    <label class="flabel" for="tree_height_m">H albero (m)</label>
+                    <input id="tree_height_m" class="fc" type="number" step="0.1" placeholder="0.0">
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="circonferenza_cm">Circ. 1.3m (cm)</label>
+                    <input id="circonferenza_cm" class="fc" type="number" step="0.1" placeholder="0.0">
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="crown_diameter_m">Ø chioma (m)</label>
+                    <input id="crown_diameter_m" class="fc" type="number" step="0.1" placeholder="0.0">
+                  </div>
+                </div>
+                <div class="fc-grid3">
+                  <div class="fgrp">
+                    <label class="flabel" for="branch_diam_cm">Ø ramo (cm)</label>
+                    <input id="branch_diam_cm" class="fc" type="number" step="0.1" placeholder="0.0">
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="branch_length_m">L ramo (m)</label>
+                    <input id="branch_length_m" class="fc" type="number" step="0.1" placeholder="0.0">
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="branch_height_m">H ramo (m)</label>
+                    <input id="branch_height_m" class="fc" type="number" step="0.1" placeholder="0.0">
+                  </div>
+                </div>
+                <div class="fc-grid2">
+                  <div class="fgrp">
+                    <label class="flabel" for="target_height_m">H bersaglio (m)</label>
+                    <input id="target_height_m" class="fc" type="number" step="0.1" placeholder="1.8" value="1.8">
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="trunk_diameter_cm">Ø tronco (cm)</label>
+                    <input id="trunk_diameter_cm" class="fc" type="number" step="0.1" placeholder="0.0">
+                  </div>
+                </div>
+              </div>
 
-    <!-- Map (Hidden by Default) -->
-    <button class="btn btn-success mt-3" onclick="toggleMap()">Show in Map</button>
-    <div id="map" style="height: 400px; display: none;"></div>
+              <!-- 5. DIAGNOSI -->
+              <div class="fs">
+                <div class="fs-title"><i class="fa-solid fa-stethoscope"></i> Diagnosi — Caratteri</div>
+                <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">
+                  Per ogni parte anatomica seleziona i caratteri osservati e il giudizio (ps/s/ms).
+                </p>
 
-    <script src="app.js"></script>
+                <!-- Zolla radicale -->
+                <details class="fs-detail" open>
+                  <summary>Zolla radicale / Stazione</summary>
+                  <div id="diag-rows-zolla"></div>
+                  <button type="button" class="btn btn-outline btn-sm" style="margin-top:4px;"
+                          onclick="addDiagRow('zolla')">
+                    <i class="fa-solid fa-plus"></i> Aggiungi
+                  </button>
+                </details>
 
+                <!-- Colletto -->
+                <details class="fs-detail">
+                  <summary>Colletto</summary>
+                  <div id="diag-rows-colletto"></div>
+                  <button type="button" class="btn btn-outline btn-sm" style="margin-top:4px;"
+                          onclick="addDiagRow('colletto')">
+                    <i class="fa-solid fa-plus"></i> Aggiungi
+                  </button>
+                </details>
+
+                <!-- Fusto -->
+                <details class="fs-detail">
+                  <summary>Fusto</summary>
+                  <div id="diag-rows-fusto"></div>
+                  <button type="button" class="btn btn-outline btn-sm" style="margin-top:4px;"
+                          onclick="addDiagRow('fusto')">
+                    <i class="fa-solid fa-plus"></i> Aggiungi
+                  </button>
+                </details>
+
+                <!-- Castello -->
+                <details class="fs-detail">
+                  <summary>Castello</summary>
+                  <div id="diag-rows-castello"></div>
+                  <button type="button" class="btn btn-outline btn-sm" style="margin-top:4px;"
+                          onclick="addDiagRow('castello')">
+                    <i class="fa-solid fa-plus"></i> Aggiungi
+                  </button>
+                </details>
+
+                <!-- Ramificazione -->
+                <details class="fs-detail">
+                  <summary>Ramificazione / Rami</summary>
+                  <div id="diag-rows-ramificazione"></div>
+                  <button type="button" class="btn btn-outline btn-sm" style="margin-top:4px;"
+                          onclick="addDiagRow('ramificazione')">
+                    <i class="fa-solid fa-plus"></i> Aggiungi
+                  </button>
+                </details>
+
+                <!-- Chioma -->
+                <details class="fs-detail">
+                  <summary>Chioma</summary>
+                  <div id="diag-rows-chioma"></div>
+                  <button type="button" class="btn btn-outline btn-sm" style="margin-top:4px;"
+                          onclick="addDiagRow('chioma')">
+                    <i class="fa-solid fa-plus"></i> Aggiungi
+                  </button>
+                </details>
+              </div>
+
+              <!-- 6. PERICOLO -->
+              <div class="fs">
+                <div class="fs-title"><i class="fa-solid fa-triangle-exclamation"></i> Grado di Pericolo (1=massimo, 7=minimo)</div>
+                <div class="pericolo-grid">
+                  <div class="fgrp">
+                    <label class="flabel" for="pericolo_rami">P — Rami/Branche</label>
+                    <select id="pericolo_rami" class="fc">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="pericolo_tronco">P — Tronco/Castello</label>
+                    <select id="pericolo_tronco" class="fc">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="pericolo_colletto">P — Colletto</label>
+                    <select id="pericolo_colletto" class="fc">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="pericolo_zolla">P — Zolla (ribalt.)</label>
+                    <select id="pericolo_zolla" class="fc">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 7. BERSAGLIO -->
+              <div class="fs">
+                <div class="fs-title"><i class="fa-solid fa-person"></i> Bersaglio (1=massimo, 7=minimo)</div>
+                <div class="bersaglio-grid">
+                  <!-- Chioma/Tronco -->
+                  <div class="fgrp">
+                    <label class="flabel" for="bersaglio_chioma_tipo">Tipo — Chioma/Tronco</label>
+                    <select id="bersaglio_chioma_tipo" class="fc" onchange="onBersaglioTipoChange('chioma')">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                  <div class="fgrp" id="bersaglio_chioma_value_grp" style="display:none;">
+                    <label class="flabel" for="bersaglio_chioma_value">Descrizione — Chioma/Tronco</label>
+                    <select id="bersaglio_chioma_value" class="fc">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                  <div class="fgrp" id="bersaglio_chioma_flow_grp" style="display:none;">
+                    <label class="flabel" for="bersaglio_chioma_flow">Flusso — Chioma/Tronco (<span id="bersaglio_chioma_flow_unit">pedoni/ora</span>)</label>
+                    <input id="bersaglio_chioma_flow" class="fc" type="number" step="0.1" min="0" placeholder="0">
+                  </div>
+                  <div class="fgrp" id="bersaglio_chioma_class_grp" style="display:none;">
+                    <label class="flabel" for="bersaglio_chioma">Classe — Chioma/Tronco (1–7)</label>
+                    <select id="bersaglio_chioma" class="fc">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                  <!-- Ramo -->
+                  <div class="fgrp">
+                    <label class="flabel" for="bersaglio_ramo_tipo">Tipo — Ramo</label>
+                    <select id="bersaglio_ramo_tipo" class="fc" onchange="onBersaglioTipoChange('ramo')">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                  <div class="fgrp" id="bersaglio_ramo_value_grp" style="display:none;">
+                    <label class="flabel" for="bersaglio_ramo_value">Descrizione — Ramo</label>
+                    <select id="bersaglio_ramo_value" class="fc">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                  <div class="fgrp" id="bersaglio_ramo_flow_grp" style="display:none;">
+                    <label class="flabel" for="bersaglio_ramo_flow">Flusso — Ramo (<span id="bersaglio_ramo_flow_unit">pedoni/ora</span>)</label>
+                    <input id="bersaglio_ramo_flow" class="fc" type="number" step="0.1" min="0" placeholder="0">
+                  </div>
+                  <div class="fgrp" id="bersaglio_ramo_class_grp" style="display:none;">
+                    <label class="flabel" for="bersaglio_ramo">Classe — Ramo (1–7)</label>
+                    <select id="bersaglio_ramo" class="fc">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                  <!-- Moltiplicatore -->
+                  <div class="fgrp">
+                    <label class="flabel" for="moltiplicatore">Moltiplicatore (n bersagli)</label>
+                    <input id="moltiplicatore" class="fc" type="number" min="1" step="1" placeholder="1">
+                  </div>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;margin-top:10px;">
+                  <button type="button" class="btn btn-outline" style="flex:1;" onclick="calculateRisk()">
+                    <i class="fa-solid fa-calculator"></i> Calcola rischio ORD
+                  </button>
+                  <button type="button" class="info-btn" onclick="document.getElementById('riskInfoModal').classList.add('open')" title="Come funziona il calcolo">?</button>
+                </div>
+                <div id="riskResults" style="display:none;"></div>
+              </div>
+
+              <!-- 8. POST INTERVENTO -->
+              <div class="fs">
+                <details class="fs-detail">
+                  <summary><i class="fa-solid fa-scissors"></i> Misure Post-Intervento (Rischio Residuo)</summary>
+                  <p style="font-size:12px;color:var(--text-muted);margin:4px 0 8px;">
+                    Lascia vuoto per usare le misure attuali.
+                  </p>
+                  <div class="post-grid">
+                    <div class="fgrp">
+                      <label class="flabel" for="post_tree_height_m">H albero (m)</label>
+                      <input id="post_tree_height_m" class="fc" type="number" step="0.1" placeholder="—">
+                    </div>
+                    <div class="fgrp">
+                      <label class="flabel" for="post_circonferenza_cm">Circ. (cm)</label>
+                      <input id="post_circonferenza_cm" class="fc" type="number" step="0.1" placeholder="—">
+                    </div>
+                    <div class="fgrp">
+                      <label class="flabel" for="post_branch_diam_cm">Ø ramo (cm)</label>
+                      <input id="post_branch_diam_cm" class="fc" type="number" step="0.1" placeholder="—">
+                    </div>
+                    <div class="fgrp">
+                      <label class="flabel" for="post_branch_length_m">L ramo (m)</label>
+                      <input id="post_branch_length_m" class="fc" type="number" step="0.1" placeholder="—">
+                    </div>
+                    <div class="fgrp">
+                      <label class="flabel" for="post_branch_height_m">H ramo (m)</label>
+                      <input id="post_branch_height_m" class="fc" type="number" step="0.1" placeholder="—">
+                    </div>
+                    <div class="fgrp">
+                      <label class="flabel" for="post_target_height_m">H bersaglio (m)</label>
+                      <input id="post_target_height_m" class="fc" type="number" step="0.1" placeholder="—">
+                    </div>
+                  </div>
+                </details>
+              </div>
+
+              <!-- 9. PATOLOGIE -->
+              <div class="fs">
+                <div class="fs-title"><i class="fa-solid fa-virus"></i> Patologie &amp; Conflitti</div>
+                <div class="fc-grid2">
+                  <div class="fgrp">
+                    <label class="flabel" for="agenti_carie">Agenti di carie <small>(Ctrl+click per multipli)</small></label>
+                    <select id="agenti_carie" class="fc" multiple></select>
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="altri_patogeni">Altri patogeni</label>
+                    <select id="altri_patogeni" class="fc" multiple></select>
+                  </div>
+                </div>
+                <div class="fgrp" style="margin-top:8px;">
+                  <label class="flabel" for="conflitti_list">Conflitti</label>
+                  <select id="conflitti_list" class="fc" multiple style="height:90px;"></select>
+                </div>
+              </div>
+
+              <!-- 10. PRESCRIZIONI -->
+              <div class="fs">
+                <div class="fs-title"><i class="fa-solid fa-clipboard-list"></i> Prescrizioni</div>
+                <div class="fgrp">
+                  <label class="flabel" for="prescrizioni_val">Prescrizioni valutative</label>
+                  <select id="prescrizioni_val" class="fc" multiple></select>
+                </div>
+                <div class="fgrp" style="margin-top:8px;">
+                  <label class="flabel" for="prescrizioni_mit">Prescrizioni di mitigazione</label>
+                  <select id="prescrizioni_mit" class="fc" multiple></select>
+                </div>
+                <div class="fgrp" style="margin-top:8px;">
+                  <label class="flabel" for="prescrizioni_col">Prescrizioni colturali</label>
+                  <select id="prescrizioni_col" class="fc" multiple style="height:130px;"></select>
+                </div>
+              </div>
+
+              <!-- 11. MONITORAGGIO & URGENZA -->
+              <div class="fs">
+                <div class="fs-title"><i class="fa-solid fa-calendar-check"></i> Monitoraggio &amp; Urgenza</div>
+                <div class="fc-grid2">
+                  <div class="fgrp">
+                    <label class="flabel" for="monitoraggio">Monitoraggio</label>
+                    <select id="monitoraggio" class="fc">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="urgenza">Urgenza</label>
+                    <select id="urgenza" class="fc">
+                      <option value="">—</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="fgrp" style="margin-top:8px;">
+                  <label class="flabel" for="next_check">Prossima ispezione</label>
+                  <input id="next_check" class="fc" type="date">
+                </div>
+              </div>
+
+              <!-- 12. NOTE -->
+              <div class="fs">
+                <div class="fs-title"><i class="fa-solid fa-note-sticky"></i> Note &amp; Azioni</div>
+                <div class="fgrp">
+                  <label class="flabel" for="comments">Osservazioni</label>
+                  <textarea id="comments" class="fc" rows="3" placeholder="Osservazioni…"></textarea>
+                </div>
+                <div class="fgrp">
+                  <label class="flabel" for="actions">Azioni effettuate</label>
+                  <input id="actions" class="fc" type="text" placeholder="Potatura, trattamento…">
+                </div>
+                <div class="fc-grid2">
+                  <div class="fgrp">
+                    <label class="flabel" for="height">Altezza (testo)</label>
+                    <input id="height" class="fc" type="text" placeholder="es. 15 m">
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="location">Dettaglio posizione</label>
+                    <input id="location" class="fc" type="text" placeholder="es. ingresso parco">
+                  </div>
+                </div>
+              </div>
+
+            </div><!-- /form-grid -->
+          </form>
+
+          <div class="view-footer">
+            <button type="submit" form="addTreeForm" class="btn btn-primary" id="formSubmitButton">
+              <i class="fa-solid fa-floppy-disk"></i> Salva albero
+            </button>
+            <button type="button" class="btn btn-outline" onclick="resetForm(); showTreeView('list')">
+              <i class="fa-solid fa-xmark"></i> Annulla
+            </button>
+          </div>
+        </div>
+      </div><!-- /view-edit -->
+
+
+      <!-- HISTORY VIEW -->
+      <div id="view-history" class="tab-view">
+        <div class="view-bar">
+          <button class="btn btn-outline btn-sm" onclick="showTreeView('list')">
+            <i class="fa-solid fa-arrow-left"></i> Torna agli Alberi
+          </button>
+          <span class="view-title" id="historyTitle">
+            <i class="fa-solid fa-clock-rotate-left"></i> Storico Ispezioni
+          </span>
+        </div>
+        <div class="history-layout">
+          <div class="history-timeline">
+            <div id="timelineContent" class="timeline-wrap"></div>
+          </div>
+          <div class="history-form">
+            <div class="fs-title" style="padding:0 0 14px;"><i class="fa-solid fa-plus"></i> Registra Nuova Ispezione</div>
+            <input type="hidden" id="inspTreeId">
+            <div class="fc-grid2">
+              <div class="fgrp"><label class="flabel">Data</label><input id="inspDate" class="fc" type="date"></div>
+              <div class="fgrp"><label class="flabel">Condizione</label><input id="inspCondition" class="fc" type="text" placeholder="Buono / Discreto / Scarso"></div>
+            </div>
+            <div class="fgrp">
+              <label class="flabel">Commenti / Osservazioni</label>
+              <textarea id="inspComments" class="fc" rows="4" placeholder="Cosa hai osservato?"></textarea>
+            </div>
+            <div class="fgrp">
+              <label class="flabel">Interventi Effettuati</label>
+              <input id="inspActions" class="fc" type="text" placeholder="Potatura, trattamento…">
+            </div>
+            <button class="btn btn-primary" style="width:100%;margin-top:6px;" onclick="submitInspection()">
+              <i class="fa-solid fa-floppy-disk"></i> Registra Ispezione
+            </button>
+          </div>
+        </div>
+      </div><!-- /view-history -->
+
+    </section><!-- /tab-trees -->
+
+
+    <!-- MAP tab -->
+    <section id="tab-map" class="tab-section">
+      <div id="map"></div>
+    </section>
+
+
+    <!-- MANAGE tab -->
+    <section id="tab-manage" class="tab-section">
+      <div class="scroll-area">
+        <div id="userManagement" class="panel mb">
+          <div class="panel-head"><i class="fa-solid fa-users"></i> Gestione Utenti</div>
+          <div class="panel-body">
+            <div class="form-row mb-sm">
+              <input id="newUsername" class="inp" placeholder="Nome utente">
+              <input id="newPassword" type="password" class="inp" placeholder="Password">
+              <select id="newRole" class="inp" style="max-width:110px;">
+                <option value="user">utente</option>
+                <option value="city">comune</option>
+                <option value="superuser">superutente</option>
+              </select>
+              <div style="position:relative;flex:0 0 160px;">
+                <input id="newCity" class="inp" placeholder="Comune (opzionale)" autocomplete="off" style="width:100%;">
+                <ul id="newCity-dropdown" class="comune-dropdown"></ul>
+              </div>
+              <button id="createUserBtn" class="btn btn-primary btn-sm" style="flex:0 0 auto;">
+                <i class="fa-solid fa-plus"></i> Aggiungi Utente
+              </button>
+            </div>
+            <div class="user-list" id="userList"></div>
+          </div>
+        </div>
+        <div id="agronomistManagement" class="panel mb" style="display:none;">
+          <div class="panel-head"><i class="fa-solid fa-user-tie"></i> Agronomi del Comune</div>
+          <div class="panel-body">
+            <p style="font-size:13px;color:var(--text-muted);margin-bottom:10px;">
+              Aggiungi gli agronomi che lavorano per questo comune. Solo i loro alberi saranno visibili al comune.
+            </p>
+            <div class="form-row mb-sm">
+              <input id="addAgronomistUsername" class="inp" placeholder="Nome utente dell'Agronomo">
+              <button id="addAgronomistBtn" class="btn btn-primary btn-sm" style="flex:0 0 auto;">
+                <i class="fa-solid fa-plus"></i> Aggiungi
+              </button>
+            </div>
+            <div id="agronomistList" class="user-list"></div>
+          </div>
+        </div>
+        <div id="cityManagement" class="panel mb">
+          <div class="panel-head"><i class="fa-solid fa-city"></i> Gestione Comuni</div>
+          <div class="panel-body">
+            <div class="form-row">
+              <input id="cityName" class="inp" placeholder="Nuovo comune">
+              <button id="createCityBtn" class="btn btn-primary btn-sm" style="flex:0 0 auto;">
+                <i class="fa-solid fa-plus"></i> Aggiungi Comune
+              </button>
+              <button id="refreshCitiesBtn" class="btn btn-outline btn-sm" style="flex:0 0 auto;">
+                <i class="fa-solid fa-rotate"></i> Aggiorna
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- EXPORT tab -->
+    <section id="tab-export" class="tab-section">
+      <div class="scroll-area">
+        <h2 class="section-heading"><i class="fa-solid fa-download"></i> Esporta Dati</h2>
+        <p class="section-sub">L'esportazione include tutti gli alberi visibili al tuo account per il comune selezionato.</p>
+        <div class="export-grid">
+          <div class="export-card">
+            <div class="export-card-icon" style="background:#1d6f42;"><i class="fa-solid fa-file-excel"></i></div>
+            <div class="export-card-body">
+              <h3>Foglio Excel</h3>
+              <p>Tabella attributi completa in formato <code>.xlsx</code>.</p>
+              <button id="exportExcelBtn" class="btn btn-excel"><i class="fa-solid fa-file-arrow-down"></i> Scarica .xlsx</button>
+            </div>
+          </div>
+          <div class="export-card">
+            <div class="export-card-icon" style="background:#589632;"><i class="fa-solid fa-globe"></i></div>
+            <div class="export-card-body">
+              <h3>GeoJSON — QGIS</h3>
+              <p>Raccolta di elementi geografici in formato <code>.geojson</code>.</p>
+              <button id="exportGeoJSONBtn" class="btn btn-qgis"><i class="fa-solid fa-file-arrow-down"></i> Scarica .geojson</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ALGORITMO ARETE tab -->
+    <section id="tab-algoritmo" class="tab-section">
+      <div class="scroll-area">
+        <div class="doc">
+
+          <h2><i class="fa-solid fa-circle-info" style="color:#2563eb;margin-right:8px;"></i>Algoritmo ARETE — Documentazione del calcolo</h2>
+
+          <div class="callout"><p>Questa pagina descrive in dettaglio tutti i calcoli implementati nell'applicazione per la valutazione del rischio secondo il protocollo <strong>ARETE</strong>. La fonte primaria è il foglio di calcolo <code>Schede_Rilevamento_ARETE_DEMO_ver.2.0.xlsm</code>, foglio <strong>ORD</strong>.</p></div>
+
+          <!-- 1. Struttura generale -->
+          <h2>1. Struttura generale</h2>
+          <p>Il metodo ARETE calcola un <strong>rischio annuo di danno</strong> per quattro possibili modalità di cedimento:</p>
+          <table class="dtbl">
+            <thead><tr><th>Modalità</th><th>Abbreviazione</th></tr></thead>
+            <tbody>
+              <tr><td>Rottura branche/rami</td><td><code>rami</code></td></tr>
+              <tr><td>Rottura tronco/castello</td><td><code>tronco</code></td></tr>
+              <tr><td>Rottura colletto</td><td><code>colletto</code></td></tr>
+              <tr><td>Ribaltamento zolla radicale</td><td><code>zolla</code></td></tr>
+            </tbody>
+          </table>
+          <p>Per ciascuna modalità il rischio è determinato dalla combinazione di tre fattori indipendenti, ognuno classificato su scala <strong>1–7</strong> (1 = massimo rischio, 7 = minimo rischio):</p>
+          <pre><code>Rischio = f(B, I, P)</code></pre>
+          <ul>
+            <li><strong>B — Bersaglio:</strong> esposizione del bersaglio nell'area di caduta</li>
+            <li><strong>I — Impulso:</strong> quantità di moto della parte che cade</li>
+            <li><strong>P — Pericolo:</strong> probabilità di cedimento stimata dal professionista</li>
+          </ul>
+          <p>Il risultato finale è una <strong>probabilità annua</strong> espressa come rapporto (es. <code>1:10.000</code>).</p>
+
+          <!-- 2. Pericolo -->
+          <h2>2. Fattore P — Pericolo</h2>
+          <p>Il pericolo è valutato sul campo per ciascuna zona anatomica. Il professionista assegna una classe 1–7 (o 0 per valutazione sospesa) tramite i menu a tendina nella sezione "Grado di pericolo ORD".</p>
+          <table class="dtbl">
+            <thead><tr><th>Classe</th><th>Descrizione</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td>Segni, sintomi e difetti gravissimi — prob. cedimento 1/1 – 1/5 all'anno</td></tr>
+              <tr><td>2</td><td>Segni, sintomi e difetti gravi — prob. cedimento 1/5 – 1/50</td></tr>
+              <tr><td>3</td><td>Segni, sintomi e difetti significativi — prob. cedimento 1/50 – 1/500</td></tr>
+              <tr><td>4</td><td>Segni, sintomi e difetti incerti — prob. cedimento 1/500 – 1/5.000</td></tr>
+              <tr><td>5</td><td>Segni, sintomi e difetti moderati — prob. cedimento 1/5.000 – 1/50.000</td></tr>
+              <tr><td>6</td><td>Segni, sintomi e difetti bassi — prob. cedimento 1/50.000 – 1/500.000</td></tr>
+              <tr><td>7</td><td>Segni, sintomi e difetti trascurabili — prob. cedimento 1/500.000 – 1/1M</td></tr>
+              <tr><td>0</td><td>Valutazione sospesa — necessario approfondimento diagnostico</td></tr>
+            </tbody>
+          </table>
+          <p>Quattro valori vengono inseriti separatamente: <code>pericolo_rami</code>, <code>pericolo_tronco</code>, <code>pericolo_colletto</code>, <code>pericolo_zolla</code>. Se pericolo = 0 il rischio di quella modalità viene marcato <strong>SOSPESO</strong>.</p>
+
+          <!-- 3. Impulso -->
+          <h2>3. Fattore I — Impulso</h2>
+          <p>L'impulso (kg·m/s) è la quantità di moto della parte che cade al momento dell'impatto. Viene calcolato automaticamente dalle misure geometriche dell'albero.</p>
+
+          <h3>3.1 Impulso chioma/tronco</h3>
+          <p>Replica la cella <strong>J33</strong> del foglio ORD.</p>
+          <p><strong>Massa</strong> (da sezione trasversale del tronco):</p>
+          <pre><code>diametro_m = circonferenza_cm / 100 / π
+area_m²    = (π/4) × diametro_m²
+massa_kg   = area_m² × altezza_albero_m × 0,75 × 900</code></pre>
+          <p class="note">Il fattore 0,75 è un coefficiente di pienezza del fusto; 900 kg/m³ è la densità del legno assunta dal protocollo.</p>
+          <p><strong>Velocità</strong> (caduta per rotazione rigida attorno alla base):</p>
+          <pre><code>velocità_ms = √(3 × 9,8 × (altezza_albero_m − altezza_bersaglio_m))</code></pre>
+          <pre><code>impulso_chioma = massa_kg × velocità_ms   [kg·m/s]</code></pre>
+
+          <h3>3.2 Impulso ramo</h3>
+          <p>Replica la cella <strong>S33</strong> del foglio ORD.</p>
+          <pre><code>diametro_m = diametro_ramo_cm / 100
+area_m²    = (π/4) × diametro_m²
+massa_kg   = area_m² × lunghezza_ramo_m × 0,75 × 900
+velocità_ms = √(2 × 9,8 × (altezza_ramo_m − altezza_bersaglio_m))
+impulso_ramo = massa_kg × velocità_ms   [kg·m/s]</code></pre>
+          <p class="note">La velocità usa la caduta libera (√2gh) invece della rotazione, dato che il ramo si stacca e cade verticalmente.</p>
+
+          <h3>3.3 Impulso → classe I</h3>
+          <table class="dtbl">
+            <thead><tr><th>Impulso (kg·m/s)</th><th>Classe I</th></tr></thead>
+            <tbody>
+              <tr><td>&lt; 5</td><td>7</td></tr>
+              <tr><td>&lt; 10</td><td>6</td></tr>
+              <tr><td>&lt; 50</td><td>5</td></tr>
+              <tr><td>&lt; 100</td><td>4</td></tr>
+              <tr><td>&lt; 1.000</td><td>3</td></tr>
+              <tr><td>&lt; 10.000</td><td>2</td></tr>
+              <tr><td>≥ 10.000</td><td>1</td></tr>
+            </tbody>
+          </table>
+          <p>La classe chioma è usata per <em>tronco</em>, <em>colletto</em> e <em>zolla</em>. La classe ramo è usata per <em>rami</em>.</p>
+
+          <!-- 4. Bersaglio -->
+          <h2>4. Fattore B — Bersaglio</h2>
+          <p>Il bersaglio rappresenta la probabilità che il target si trovi nell'area di caduta nel momento del cedimento. Classe 1 = presenza quasi costante; classe 7 = presenza rarissima (&lt; 1 minuto/anno).</p>
+
+          <h3>4.1 Tipo "Proprietà"</h3>
+          <p>Classe determinata dal valore economico del danno atteso (VLOOKUP su BQ32:BR38):</p>
+          <table class="dtbl">
+            <thead><tr><th>Classe</th><th>Descrizione</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td>Danni da € 600.000 a € 3.000.000</td></tr>
+              <tr><td>2</td><td>Danni da € 60.000 a € 600.000</td></tr>
+              <tr><td>3</td><td>Danni da € 6.000 a € 60.000</td></tr>
+              <tr><td>4</td><td>Danni da € 600 a € 6.000</td></tr>
+              <tr><td>5</td><td>Danni da € 60 a € 600</td></tr>
+              <tr><td>6</td><td>Danni da € 6 a € 60</td></tr>
+              <tr><td>7</td><td>Danni da € 3 a € 6</td></tr>
+            </tbody>
+          </table>
+
+          <h3>4.2 Tipo "Occupazione"</h3>
+          <p>Classe determinata dalla durata di presenza nell'area di caduta (VLOOKUP su BQ42:BR48):</p>
+          <table class="dtbl">
+            <thead><tr><th>Classe</th><th>Descrizione</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td>Da 5 ore/giorno a costante</td></tr>
+              <tr><td>2</td><td>Da 29 min/giorno a 5 ore/giorno</td></tr>
+              <tr><td>3</td><td>Da 3 a 29 min/giorno</td></tr>
+              <tr><td>4</td><td>Da 2 min/settimana a 3 min/giorno</td></tr>
+              <tr><td>5</td><td>Da 0,9 min/mese a 2 min/settimana</td></tr>
+              <tr><td>6</td><td>Da 1 min/anno a 0,9 min/mese</td></tr>
+              <tr><td>7</td><td>Da 0,5 a 1 min/anno</td></tr>
+            </tbody>
+          </table>
+
+          <h3>4.3 Tipo "Pedoni/ciclisti"</h3>
+          <p>Classe calcolata dal <strong>flusso pedonale</strong> (pedoni/ora) e dalle dimensioni dell'albero. Replica le colonne <strong>BA</strong> (chioma) e <strong>BB</strong> (ramo) del foglio ORD.</p>
+          <pre><code>zona_chioma_m  = (diametro_chioma_m + altezza_albero_m) / 2
+zona_ramo_m    = lunghezza_ramo_m
+
+t_passaggio_s  = zona_m / 1,111        (velocità pedonale: 4 km/h = 1,111 m/s)
+flusso_max     = 3600 / t_passaggio_s  [pedoni/ora]</code></pre>
+          <table class="dtbl">
+            <thead><tr><th>Classe</th><th>Soglia inferiore (pedoni/ora)</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td>flusso_max / 5</td></tr>
+              <tr><td>2</td><td>flusso_max / 50</td></tr>
+              <tr><td>3</td><td>flusso_max / 500</td></tr>
+              <tr><td>4</td><td>flusso_max / 5.000</td></tr>
+              <tr><td>5</td><td>flusso_max / 50.000</td></tr>
+              <tr><td>6</td><td>flusso_max / 500.000</td></tr>
+              <tr><td>7</td><td>&lt; flusso_max / 500.000</td></tr>
+            </tbody>
+          </table>
+          <p class="note">Esempio: albero H=10 m, chioma Ø=8 m → zona=9 m → t=8,1 s → flusso_max≈444 ped/ora → soglia cl.1: ≥89 ped/ora.</p>
+
+          <h3>4.4 Tipo "Traffico" (30 / 50 / 70 / 90 / 110 km/h)</h3>
+          <p>Classe calcolata dal <strong>flusso veicolare</strong> (auto/giorno) e dalle dimensioni. Replica le colonne <strong>BD–BH</strong> (chioma) e la seconda serie di righe (ramo) del foglio ORD.</p>
+          <pre><code>zona_chioma_m  = (diametro_chioma_m + altezza_albero_m) / 2    [BD29]
+zona_ramo_m    = lunghezza_ramo_m × 1,25                       [BD51]
+
+v_ms           = velocità_kmh × 1000 / 3600                   [BD26]
+t_frenata      = v_ms / 9,8                                    [BD28]  (attrito μ=0,5)
+t_transito     = zona_m / v_ms                                 [BD30]
+V1             = MIN(86400/t_frenata, 86400/t_transito) / 1,3  [BD31]  (fattore sicurezza 1,3)</code></pre>
+          <table class="dtbl">
+            <thead><tr><th>Classe</th><th>Soglia inferiore (auto/giorno)</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td>V1 / 5</td></tr>
+              <tr><td>2</td><td>V1 / 50</td></tr>
+              <tr><td>3</td><td>V1 / 500</td></tr>
+              <tr><td>4</td><td>V1 / 5.000</td></tr>
+              <tr><td>5</td><td>V1 / 50.000</td></tr>
+              <tr><td>6</td><td>V1 / 500.000</td></tr>
+              <tr><td>7</td><td>&lt; V1 / 500.000</td></tr>
+            </tbody>
+          </table>
+
+          <!-- 5. Matrice BIP -->
+          <h2>5. Matrice BIP → rischio</h2>
+          <p>Le tre classi B, I, P formano una chiave a tre cifre (es. <code>"324"</code>), cercata nella matrice <strong>7×7×7</strong> (343 combinazioni) estratta dal foglio A, colonne AM:AN del file XLSM. Il risultato è una probabilità annua di danno:</p>
+          <table class="dtbl">
+            <thead><tr><th>Stringa</th><th>Probabilità annua</th><th>Livello di rischio</th></tr></thead>
+            <tbody>
+              <tr><td><code>1:3</code></td><td>1/3</td><td>Inaccettabile — abbattimento</td></tr>
+              <tr><td><code>1:20</code></td><td>1/20</td><td>Inaccettabile — abbattimento</td></tr>
+              <tr><td><code>1:100</code> – <code>1:1k</code></td><td>1/100 – 1/1.000</td><td>Inaccettabile — abbattimento</td></tr>
+              <tr><td><code>1:2k</code> – <code>1:12k</code></td><td>1/2.000 – 1/12.000</td><td>Tollerabile per accordo se valore elevato</td></tr>
+              <tr><td><code>1:20k</code> – <code>1:130k</code></td><td>1/20.000 – 1/130.000</td><td>Tollerabile se ALARP — valutare costi/benefici</td></tr>
+              <tr><td><code>1:200k</code> – <code>1:1M</code></td><td>1/200.000 – 1/1.000.000</td><td>Tollerabile — mantenere ALARP</td></tr>
+              <tr><td><code>&lt;1:1M</code></td><td>&lt; 1/1.000.000</td><td>Largamente accettabile</td></tr>
+            </tbody>
+          </table>
+
+          <!-- 6. Assegnazione B e I -->
+          <h2>6. Assegnazione B e I per modalità di cedimento</h2>
+          <table class="dtbl">
+            <thead><tr><th>Modalità</th><th>Impulso usato</th><th>Bersaglio usato</th></tr></thead>
+            <tbody>
+              <tr><td>rami</td><td>impulso ramo</td><td>bersaglio_ramo</td></tr>
+              <tr><td>tronco</td><td>impulso chioma</td><td>bersaglio_chioma</td></tr>
+              <tr><td>colletto</td><td>impulso chioma</td><td>bersaglio_chioma</td></tr>
+              <tr><td>zolla</td><td>impulso chioma</td><td>bersaglio_chioma</td></tr>
+            </tbody>
+          </table>
+          <p>La caduta di rami coinvolge traiettorie laterali (dimensioni del ramo + bersaglio ramo); il cedimento di fusto, colletto e zolla causa la caduta dell'intero albero (chioma + bersaglio chioma).</p>
+
+          <!-- 7. Moltiplicatore -->
+          <h2>7. Moltiplicatore (n bersagli simultanei)</h2>
+          <p>Se nell'area di caduta sono presenti <strong>n bersagli contemporaneamente</strong> (es. n persone in fila, n veicoli in coda), la probabilità base viene moltiplicata per n prima di ricavare la classe di rischio finale. Replica la colonna Z del foglio ORD (formula <em>"+bers"</em>):</p>
+          <pre><code>probabilità_base = RISK_PROBABILITY[rischio_1_bersaglio]
+probabilità_n    = probabilità_base × n
+rischio_finale   = lookup_inverso(probabilità_n)    ← foglio A, colonne AR:AS</code></pre>
+          <p>Il lookup inverso trova la stringa di rischio corrispondente alla più alta soglia di probabilità ≤ <code>probabilità_n</code> (VLOOKUP TRUE su tabella crescente).</p>
+
+          <!-- 8. Rischio residuo -->
+          <h2>8. Rischio residuo (post-intervento)</h2>
+          <p>Il calcolo viene ripetuto identicamente usando le misure <em>post-intervento</em> al posto di quelle attuali. I parametri P (pericolo) e B (bersaglio) rimangono invariati; solo le dimensioni geometriche possono cambiare (es. altezza ridotta dopo potatura, ramo rimosso). Se i parametri post-intervento non vengono compilati, il rischio residuo è uguale al rischio attuale.</p>
+
+          <!-- 9. Parametri richiesti -->
+          <h2>9. Parametri di input richiesti</h2>
+          <table class="dtbl">
+            <thead><tr><th>Campo</th><th>Unità</th><th>Usato per</th></tr></thead>
+            <tbody>
+              <tr><td>Altezza albero</td><td>m</td><td>Impulso chioma, zona bersaglio</td></tr>
+              <tr><td>Circonferenza a 1,3 m</td><td>cm</td><td>Massa tronco/chioma</td></tr>
+              <tr><td>Diametro chioma</td><td>m</td><td>Zona bersaglio chioma</td></tr>
+              <tr><td>Diametro ramo</td><td>cm</td><td>Massa ramo</td></tr>
+              <tr><td>Lunghezza ramo</td><td>m</td><td>Massa ramo, zona bersaglio ramo</td></tr>
+              <tr><td>Altezza ramo</td><td>m</td><td>Velocità di caduta ramo</td></tr>
+              <tr><td>Altezza bersaglio</td><td>m</td><td>Velocità di caduta (entrambi)</td></tr>
+              <tr><td>Pericolo rami / tronco / colletto / zolla</td><td>classe 1–7</td><td>P per ogni modalità</td></tr>
+              <tr><td>Tipo bersaglio chioma/ramo</td><td>—</td><td>Metodo calcolo B</td></tr>
+              <tr><td>Flusso pedoni/traffico</td><td>ped/ora o auto/giorno</td><td>B calcolato automaticamente</td></tr>
+              <tr><td>Moltiplicatore</td><td>n (intero ≥ 1)</td><td>Scala probabilità finale</td></tr>
+            </tbody>
+          </table>
+
+        </div>
+      </div>
+    </section><!-- /tab-algoritmo -->
+
+  </div><!-- /tab-content -->
+</div><!-- /appPage -->
+
+<div id="status"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="app.js"></script>
+
+<!-- Modale: Come funziona il calcolo del rischio ORD -->
+<div class="info-modal-overlay" id="riskInfoModal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="info-modal">
+    <button class="info-modal-close" onclick="document.getElementById('riskInfoModal').classList.remove('open')">&times;</button>
+    <h3><i class="fa-solid fa-circle-info" style="color:#2563eb;margin-right:6px;"></i>Come viene calcolato il rischio ORD</h3>
+
+    <p>Il metodo ARETE calcola il <strong>rischio annuo di danno</strong> per ogni punto di cedimento dell'albero (rami, tronco/castello, colletto, zolla radicale) combinando tre fattori: <strong>B · I · P</strong>.</p>
+
+    <h4>B — Bersaglio</h4>
+    <p>Rappresenta l'<strong>esposizione del bersaglio</strong> nell'area di caduta. Si seleziona prima il <em>tipo</em> (proprietà, occupazione, pedoni/ciclisti, traffico) e poi la descrizione:</p>
+    <ul>
+      <li><strong>Proprietà</strong>: scelto tra 7 fasce di valore del danno economico → classe automatica</li>
+      <li><strong>Occupazione</strong>: scelto tra 7 durate di presenza nell'area → classe automatica</li>
+      <li><strong>Pedoni/Ciclisti</strong>: inserire il flusso in <em>pedoni/ora</em> → classe calcolata automaticamente in base alle dimensioni dell'albero</li>
+      <li><strong>Traffico (30–110 km/h)</strong>: inserire il flusso in <em>auto/giorno</em> → classe calcolata automaticamente considerando velocità e dimensioni della chioma/ramo</li>
+    </ul>
+    <p style="color:var(--text-muted);font-size:12px;">Classe 1 = bersaglio sempre presente; Classe 7 = presenza rarissima.</p>
+
+    <h4>I — Impulso</h4>
+    <p>È la <strong>quantità di moto</strong> della parte che cade (massa × velocità di impatto), calcolata automaticamente dalle misure inserite:</p>
+    <ul>
+      <li><strong>Chioma/Tronco</strong>: usa altezza albero, circonferenza, diametro chioma</li>
+      <li><strong>Ramo</strong>: usa diametro, lunghezza e altezza del ramo</li>
+    </ul>
+    <p style="color:var(--text-muted);font-size:12px;">La classe I va da 1 (impulso ≥ 10 000 kg·m/s) a 7 (impulso &lt; 5 kg·m/s).</p>
+
+    <h4>P — Pericolo</h4>
+    <p>È la <strong>probabilità stimata di cedimento</strong>, valutata sul campo per ogni zona dell'albero (rami, tronco, colletto, zolla). Si sceglie tramite i menu a tendina nella sezione <em>Pericolo ORD</em>.</p>
+    <p style="color:var(--text-muted);font-size:12px;">Classe 1 = cedimento praticamente certo; Classe 7 = cedimento eccezionale. Valore 0 = valutazione sospesa.</p>
+
+    <h4>Matrice BIP → rischio</h4>
+    <p>Le tre classi B, I, P formano una chiave a tre cifre (es. <code>3 2 4</code>) che viene cercata in una <strong>matrice 7×7×7</strong>. Il risultato è una probabilità annua di danno espressa come rapporto (es. <em>1:10 000</em> = un evento ogni 10 000 anni).</p>
+
+    <h4>Moltiplicatore (n)</h4>
+    <p>Se nell'area di caduta sono presenti <strong>n bersagli simultanei</strong> (es. più persone o più veicoli), la probabilità base viene moltiplicata per n e il rischio viene ricalcolato sulla scala standard. Il risultato è indicato accanto al rischio con 1 solo bersaglio.</p>
+
+    <h4>Rischio residuo</h4>
+    <p>Se si compilano le <em>Misure post-intervento</em>, il calcolo viene ripetuto con i parametri ridotti per stimare il rischio dopo l'intervento di mitigazione.</p>
+  </div>
+</div>
 </body>
-
 </html>

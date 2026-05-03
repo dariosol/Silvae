@@ -1,0 +1,173 @@
+# Lookup tables from sheet A
+species_lookup = {
+    "COD": "PALME",
+    "ABE": "Abies nordmanniana (S.) Spach - abete del Caucaso",
+    "MIM": "Acacia dealbata Link - mimosa",
+    "ACE": "Acer saccharum Marsh. - acero del Canada",
+    "HIP": "Aesculus hippocastanum L. - ippocastano",
+    "AES": "Aesculus pavia L. - pavia",
+    "AIL": "Ailanthus altissima Swingle - ailanto",
+    "ALB": "Albizzia julibrissin Durazzo - gaggia",
+    "ONT": "Alnus spp. - ontano",
+    "ARA": "Araucaria cunninghamii Mudie  - araucaria",
+    "ARB": "Arbutus unedo L. - corbezzolo",
+    "BAU": "Bauhinia purpurea L.",
+    "BET": "Betula pubescens Ehrh. - betulla pelosa",
+    "BRA": "Brahea armata",
+    "BIO": "Biota orientalis - biota",
+    "BRO": "Broussonetia papyrifera Vent. - moro da carta",
+    "CAL": "Calocedrus decurrens - cedro della California",
+    "CAB": "Carpinus betulus L. - carpino bianco",
+    "CAR": "Carya ovata  (Mill.) - noce bianco",
+    "CAS": "Castanea sativa Miller - castagno",
+    "CAU": "Casuarina spp. - casuarina",
+    "CAT": "Catalpa bignonioides Walt. - catalpa",
+    "CED": "Cedrus libani Richard - cedro del Libano",
+    "CEL": "Celtis occidentalis L. - bagolaro occidentale",
+    "CER": "Quercus cerris - cerro",
+    "CJA": "Cercidiphyllum japonicum",
+    "SIL": "Cercis siliquastrum L. - albero di giuda",
+    "LAW": "Chamaecyparis lawsoniana - Lawson",
+    "NOT": "Chamaecyparis nootkatensis - cipresso di Nootka",
+    "CHO": "Chorisia speciosa",
+    "CAN": "Cinnamomum camphora - canfora",
+    "CIT": "Citrus reticulata",
+    "COR": "Cordia francisci",
+    "NOC": "Juglans regia L. - noce comune",
+    "CRY": "Cupressocyparis leylandi",
+    "ARZ": "Cupressus arizonica - cipresso dell'Arizona",
+    "CIP": "Cupressus sempervirens L. - cipresso",
+    "CYD": "Cydonia oblonga - cotogno",
+    "DIO": "Diospyros virginiana",
+    "ERJ": "Eryobotria japonica L. - nespolo giapponese",
+    "ERY": "Erythrina sp. (E. christa-galli, ecc.)",
+    "EUC": "Eucalyptus gunnii",
+    "FAG": "Fagus sylvatica L. - faggio",
+    "FIC": "Ficus microcarpa",
+    "FIR": "Firmiana simplex",
+    "FRA": "Quercus frainetto - farnetto",
+    "GIN": "Juniperus virginiana L. - ginepro della Virginia",
+    "GLE": "Gleditsia triacanthos L. - spino di Giuda",
+    "ILX": "Ilex aquifoliumL. - agrifoglio",
+    "GRE": "Grevillea robusta",
+    "HES": "Hesperocyparis glabra Bartel - cip.dell'Ariz. glabro",
+    "JAC": "Jacaranda mimosifolia",
+    "KOE": "Koelreuteria paniculata Laxm. - koelreuteria",
+    "LAB": "Laburnum anagyroides",
+    "LAP": "Lagunaria patersonii",
+    "LAG": "Lagerstroemia indica L. - albero San Bartolomeo",
+    "LAR": "Larix kaempferi (Lamb.) - larice giapponese",
+    "LAU": "Laurus nobilis L. - alloro",
+    "LIG": "Ligustrum lucidum Ait. - ligustro lucido",
+    "LIQ": "Liquidambar styraciflua L. - liquidambar",
+    "LIR": "Liriodendron tulipifera - albero dei tulipani",
+    "MAC": "Maclura pomifera - maclura",
+    "MAG": "Magnolia x soulangeana - magnolia",
+    "MAL": "Malus sylvestris - melo",
+    "MEL": "Melia azedarach - albero dei rosari",
+    "MES": "Mespilus germanica - nespolo",
+    "MET": "Metasequoia glyptostroboides - metasequoia",
+    "GEL": "Morus nigra - gelso nero",
+    "BAN": "Musa paradisiaca - banano",
+    "NER": "Nerium oleander - oleandro",
+    "NYS": "Nyssa sylvatica",
+    "OLI": "Olea europea - olivo",
+    "OST": "Ostrya carpinifolia - carpino nero",
+    "PAR": "Parrotia persica - parrozia",
+    "PAU": "Paulownia tomentosa - paulownia",
+    "PHI": "Phillirea latifolia - fillirea",
+    "PHE": "Phellodendron amurense",
+    "PHO": "Phoenix dactylifera L. - palma da datteri",
+    "PHY": "Phytolacca dioica - fitolacca",
+    "PIC": "Picea pungens - abete del Colorado",
+    "PIN": "Pinus wallichiana - pino dell'Himalaia",
+    "HAL": "Pinus halepensis - pino d'Aleppo",
+    "NIG": "Pinus nigra - pino nero",
+    "PPI": "Pinus pinea - pino domestico",
+    "SYL": "Pinus sylvestris - pino silvestre",
+    "PIS": "Pistacia terebinthus - terebinto",
+    "PLA": "Platanus x acerifolia - platano ibrido",
+    "PLO": "Platycladus orientalis",
+    "POP": "Populus tremula - pioppo tremolo",
+    "PRU": "Prunus subhirtella",
+    "DOU": "Pseudotsuga menziesii - abete di Douglas",
+    "PTE": "Ptelea trifoliata - olmo di Samaria",
+    "PTF": "Pterocarya fraxinifolia - noce del Caucaso",
+    "PYR": "Pyrus pyraster - pero selvatico",
+    "LEC": "Quercus ilex - leccio",
+    "QUE": "Quercus rubra - quercia rossa",
+    "ROV": "Quercus petraea - rovere",
+    "PUB": "Quercus pubescens - roverella",
+    "FAR": "Quercus robur - farnia",
+    "SUG": "Quercus suber - sughera",
+    "QTR": "Quercus trojana",
+    "RHA": "Rhamnus alaternus - alaterno",
+    "RHU": "Rhus typhina - sommaco",
+    "ROB": "Robinia pseudoacacia - robinia",
+    "SAL": "Salix spp. - salice",
+    "SEQ": "Sequoiadendron giganteum - sequoia gigante",
+    "SCH": "Schinus molle",
+    "SOF": "Sophora japonica - sofora",
+    "SOR": "Sorbus torminalis - ciavardello",
+    "STY": "Styphnolobium japonicum",
+    "TAM": "Tamarix gallica - tamerice",
+    "TAX": "Taxodium disticum - cipresso calvo",
+    "TAS": "Taxus baccata - tasso",
+    "THU": "Thuja plicata  - tuia gigante",
+    "TIG": "Tilia x vulgaris - tiglio ibrido",
+    "TRA": "Trachycarpus fortunei Wendl. - trachycarpus",
+    "TSU": "Tsuga canadensis - tsuga canadese",
+    "ULM": "Ulmus pumila - olmo siberiano",
+    "WAS": "Washingtonia robusta - washingtonia",
+    "JUC": "Yucca spp.",
+    "ZEL": "Zelkova spp.",
+    "ZIZ": "Ziziphus jujuba - giuggiolo comune",
+    "CHA": "Chamaerops humilis L. - palma nana",
+    "JUB": "Jubaea chilensis",
+}
+
+# Additional lookup lists
+monitoraggio = ['6 mesi', '1 anno', '2 anni', '3 anni', '4 anni', '5 anni', '6 anni', '10 anni', 'subito', 'stagionale', 'non definito']
+
+urgenza = ['subito', '< 6 mesi', '1 anno', '2 anni', '3 anni', '4 anni', 'al bisogno', 'opzionale', 'differibile', 'consigliato', 'non definito']
+
+conflitti = ['assenti', 'asfalto', 'pavimentazione', 'cavi storrenaei', 'cavi aerei', 'cordoli', 'fabbricati', 'lampioni', 'manufatti', 'marciapiedi', 'muri', 'oggetti inglobati', 'cartellonistica', 'veg. erbacea', 'arbusti', 'lianose', 'altri alberi', 'pedoni', 'veicoli', 'strutture a sbalzo', 'altro', 'altro', 'altro']
+
+agenti_di_carie = ['non segni cariogeni', 'carie non determin.', 'Abortiporus biennis', 'Agrocybe aegerita', 'Armillaria sp.', 'Cerrena unicolor', 'Collybia fusipes', 'Chondrostereum p.', 'Coniophora puteana', 'Daedalea quercina', 'Daldinia concentrica', 'Fistulina epatica', 'Fomes fomentarius', 'Fomitopsis hiberica', 'Fomitopsis pinicola', 'Ganoderma applanatum', 'Ganoderma australe', 'Ganoderma adspersum', 'Ganoderma lipsiense', 'Ganoderma lucidum', 'Ganoderma resinaceum', 'Grifola frondosa', 'Heterobasidion annosum', 'Inonotus cuticularis', 'Inonotus hispidus', 'Inonotus dryadeus', 'Inonotus rickii', 'Inonotus tamaricis', 'Laetiporus sulphureus', 'Meripilus giganteus', 'Oxyporus latemarginatus', 'Oxyporus populinus', 'Perenniporia fraxinea', 'Phaeolus schweinitzii', 'Phellinus igniarius', 'Phellinus pini', 'Phellinus pomaceus', 'Phellinus punctatus', 'Phellinus robustus', 'Phellinus torulosus', 'Pholiota spp.', 'Polyporus squamosus', 'Rigidoporus ulmarius', 'Spongipellis pachiodon', 'Spongipellis pumeus', 'Thielaviopsis paradoxa', 'Trametes gibbosa', 'Trametes versicolor', 'Tyromyces fissilis', 'Ustulina deusta', 'altro', 'altro', 'altro']
+
+altri_patogeni = ['non segni fitopatie', 'patog. non determinati', 'Processionaria', 'Tomicus', 'Punteruolo rosso', 'Paisandisia', 'Grafiosi', 'Tortrice', 'Cancro corticale', 'Cancro colorato', 'Scolitidi', 'Cerambicidi', 'altro', 'altro', 'altro']
+
+prescrizioni_valutative = ['controllo inclinazione', 'TRIAGE', 'valutaz ordinaria', 'valutazione in quota', 'valutazione avanzata strumentale', 'V. avanzata + penetrom. al colletto', 'V. avanzata + penetrom. sul tronco', 'V. avanzata + penetrom. in quota', 'V. avanzata + tomografia al colletto', 'V. avanzata + tomografia sul tronco', 'V. avanzata + tomografia in quota', 'V. avanzata + test trazione', 'Analisi radicale con scavo', 'altro da specificare', 'altro da specificare', 'altro da specificare']
+
+prescrizioni_valutative_per_popolamenti = ['Triage per popolamento', 'Triage', 'valutaz ordinaria', 'valutazione in quota', 'valutazione avanzata', 'Analisi radicale con scavo', 'altro da specificare']
+
+prescrizioni_mitigazione = ['da definire dopo la valutazione', 'foglio informativo', 'pannello informativo', 'delimitazione percorsi', 'cartello di pericolo', 'divieto di sosta temporaneo', 'divieto di sosta permanente', 'divieto di passaggio', 'delimitazione area a rischio', 'transennatura area a rischio', 'recinzione area a rischio', 'spostamento del bersaglio', 'altro da specificare', 'altro da specificare', 'altro da specificare']
+
+descrittore = {
+    1: "Segni, sintomi e difetti gravissimi - Probabilità di cedimento nell'anno 1/1-1/5",
+    2: "Segni, sintomi e difetti gravi - Probabilità di cedimento nell'anno 1/5-1/50",
+    3: "Segni, sintomi e difetti significativi - Probabilità di cedimento nell'anno 1/50-1/500",
+    4: "Segni, sintomi e difetti incerti - Probabilità di cedimento nell'anno 1/500-1/5K",
+    5: "Segni, sintomi e difetti moderati - Probabilità di cedimento nell'anno 1/5K-1/50K",
+    6: "Segni, sintomi e difetti bassi - Probabilità di cedimento nell'anno 1/50K-1/500k",
+    7: "Segni, sintomi e difetti trascurabili - Probabilità di cedimento nell'anno 1/500K-1/1M",
+    '0 x sospet': 'Segni, sintomi e difetti che vanno approfonditi ulteriormente - VALUTAZIONE SOSPESA',
+    '0 x difetto': 'Segni, sintomi e difetti che vanno approfonditi ulteriormente - VALUTAZIONE SOSPESA',
+    '0 x costituz': 'Segni, sintomi e difetti che vanno approfonditi ulteriormente - VALUTAZIONE SOSPESA',
+    'N.S.': 'Non significativo'
+}
+
+descrittore_per_triage = {
+    1: 'Segni sintomi e difetti molto gravi, connessi strettamente con un possibile cedimento immediato',
+    2: 'Segni sintomi e difetti gravi, connessi strettamente con un possibile cedimento imminente',
+    3: 'Segni sintomi e difetti significativi, connessi strett. con un possibile cedimento in cond. critiche',
+    4: 'Segni sintomi e difetti incerti, connessi occasionalmente con un possibile cedimento',
+    5: 'Segni sintomi e difetti moderati, non chiaramente connessi con un possibile cedimento',
+    6: 'Segni sintomi e difetti modesti, non connessi con un possibile cedimento',
+    7: 'Segni sintomi e difetti trascurabili o sostanzialmente assenti'
+}
+
+prescrizioni_colturali = ['da definire dopo la valutazione', 'abbattimento', 'abbattimento con sostituzione nel sito di vegetazione', 'abbattimento senza sostituzione nel sito di vegetazione', 'abbattamento nel medio periodo in un ottica di rinnovazione colturale', 'abbattimento non urgente per mancanza di idoneità, limitata aspettativa di vita, ecc.', '1A) potatura di formazione in alberi giovani (in conformità con EAS)', '1D) impostazione della forma obbligata su alberi giovani (in conformità con EAS)', '2A) potatura di mantenimento in alberi adulti (in conformità con EAS)', '2B) riduzione laterale in alberi adulti  (in conformità con EAS)', '2C) potatura di mantenimento della  forma condizionata in alberi adulti   (in conformità con EAS)', '2D) potatura di mantenimento della forma obbligata in alberi adulti  (in conformità con EAS)', '3A) potatura di mantenimento in alberi maturi (in conformità con EAS)', '3B) riduzione laterale in alberi maturi (in conformità con EAS)', '3C) riduzione in altezza in alberi maturi (in conformità con EAS)', '4) potatura di alberi veterani  (in conformità con EAS)', '5) restauro della forma naturaliforme  (in conformità con EAS)', '6) restauro di forma artificiale (in conformità con EAS)', '7) rimonda del seccume (in conformità con EAS)', '8) potatura di stabilizzazione o pre-abbattimento (in conformità con EAS)', 'Rimozione /riduzione ramificazioni compromesse', 'trattamento fitosanitario', 'trattamento nutrizionale', 'diserbo', 'supporto', 'ancoraggio', 'sostegno', 'progettazione e realizzazione di consolidamento', 'puntellamento', 'miglioramento del terreno', 'arieggiamento del terreno /decompattamento', 'drenaggio', 'mulching', 'riordino del sito di radicazione', "protezione dell'albero", 'costruzione parafulmine', 'Albero di scarso valore ornamentale. Abbattimento consigliato non urgente. Cure colturali antieconomiche e non risolutive.', 'Albero NON idoneo al contesto. Abbattimento prescritto non urgente.', 'Albero compromesso fisiologicamente (es. dominato, sovrannumerario o con poco spazio a disposizione). Abbattimento non urgente per motivi colturali.', 'Albero morto in piedi. Abbattimento non urgente.', 'Condizioni vegetative e/o fitosanitarie pessime. Albero compromesso ma abbattimento non urgente', 'Condizioni vegetative e/o fitosanitarie pessime. Albero compromesso e pericoloso. Abbattimento urgente', 'Albero morto in piedi. Porzioni in disfacimento. Abbattimento urgente.', 'Albero da sottoporre a interventi di trattamento selvicolturale.', 'altro da specificare', 'altro da specificare', 'altro da specificare']
+
+prescrizioni_colturali_per_popolamenti = ['da definire dopo la valutazione', 'abbattimento con sostituzione nel sito di vegetazione', 'abbattimento senza sostituzione nel sito di vegetazione', 'abbattamento nel medio periodo in un ottica di rinnovazione colturale', 'abbattimento non urgente per mancanza di idoneità, limitata aspettativa di vita, ecc.', '1A) potatura di formazione in alberi giovani (in conformità con EAS)', '1D) impostazione della forma obbligata su alberi giovani (in conformità con EAS)', '2A) potatura di mantenimento in alberi adulti (in conformità con EAS)', '2B) riduzione laterale in alberi adulti  (in conformità con EAS)', '2C) potatura di mantenimento della  forma condizionata in alberi adulti   (in conformità con EAS)', '2D) potatura di mantenimento della forma obbligata in alberi adulti  (in conformità con EAS)', '3A) potatura di mantenimento in alberi maturi (in conformità con EAS)', '3B) riduzione laterale in alberi maturi (in conformità con EAS)', '3C) riduzione in altezza in alberi maturi (in conformità con EAS)', '4) potatura di alberi veterani  (in conformità con EAS)', '5) restauro della forma naturaliforme  (in conformità con EAS)', '6) restauro di forma artificiale (in conformità con EAS)', '7) rimonda del seccume (in conformità con EAS)', '8) potatura di stabilizzazione o pre-abbattimento (in conformità con EAS)', 'Rimozione /riduzione ramificazioni compromesse', 'trattamento fitosanitario', 'trattamento nutrizionale', 'diserbo', 'supporto', 'ancoraggio', 'sostegno', 'progettazione e realizzazione di consolidamento', 'puntellamento', 'miglioramento del terreno', 'arieggiamento del terreno', 'drenaggio', 'mulching', 'riordino del sito di radicazione', "protezione dell'albero", 'costruzione parafulmine', 'popolamento da sottoporre a interventi di trattamento selvicolturale.', 'altro da specificare']
+

@@ -1,0 +1,54 @@
+dario@yoga:~$ sudo -u postgres psql trees_db
+psql (16.10 (Ubuntu 16.10-0ubuntu0.24.04.1))
+Type "help" for help.
+
+trees_db=# DROP TABLE IF EXISTS tree CASCADE;
+DROP TABLE
+trees_db=# DROP TABLE IF EXISTS "user" CASCADE;
+NOTICE:  table "user" does not exist, skipping
+DROP TABLE
+trees_db=# DROP TABLE IF EXISTS city CASCADE;
+NOTICE:  table "city" does not exist, skipping
+DROP TABLE
+trees_db=# CREATE TABLE city (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(120) UNIQUE NOT NULL
+);
+CREATE TABLE
+trees_db=# CREATE TABLE "user" (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(80) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(20) NOT NULL,  -- 'superuser', 'city', or 'user'
+    city VARCHAR(100)
+);
+CREATE TABLE
+trees_db=# CREATE EXTENSION IF NOT EXISTS postgis;
+NOTICE:  extension "postgis" already exists, skipping
+CREATE EXTENSION
+trees_db=# CREATE TABLE tree (
+    id SERIAL PRIMARY KEY,
+    custom_id VARCHAR(50) UNIQUE NOT NULL,
+    latitude DOUBLE PRECISION,
+    longitude DOUBLE PRECISION,
+    address VARCHAR(255),
+    city VARCHAR(100) NOT NULL,
+    species VARCHAR(100) NOT NULL,
+    condition VARCHAR(50) NOT NULL,
+    comments TEXT,
+    actions TEXT,
+    height VARCHAR(50),
+    trunk_diameter_cm DOUBLE PRECISION,
+    crown_diameter_m DOUBLE PRECISION,
+    age VARCHAR(50),
+    location VARCHAR(255),
+    cpc VARCHAR(50),
+    next_check DATE,
+    geom geometry(Point, 4326),
+    owner_id INTEGER REFERENCES "user"(id) ON DELETE SET NULL
+);
+CREATE TABLE
+trees_db=# 
+CREATE INDEX tree_geom_idx ON tree USING GIST (geom);
+
+
