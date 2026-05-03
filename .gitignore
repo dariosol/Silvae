@@ -1,0 +1,13 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+flaskenv/
+*.xlsm
+*.zip
+*.bin
+*.save
+*.pdf
+instance/
+.DS_Store
+calculus.md
