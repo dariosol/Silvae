@@ -198,6 +198,8 @@ class Inspection(db.Model):
 # DB init + migrate new columns
 # -----------------------
 with app.app_context():
+    db.session.execute(text('CREATE EXTENSION IF NOT EXISTS postgis'))
+    db.session.commit()
     db.create_all()
     # Add any new columns that don't exist yet (safe for existing DBs)
     insp = inspect(db.engine)
