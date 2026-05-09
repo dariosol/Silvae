@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import sys, os, io, json, secrets
+import sys, os, io, json, secrets, struct, tempfile, sqlite3
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from dotenv import load_dotenv
@@ -1203,9 +1203,85 @@ def export_excel():
     return send_file(buf, download_name='alberi.xlsx', as_attachment=True,
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
-@app.route('/export/geojson', methods=['GET'])
+# Canonical column list shared by export and import.
+# Format: (gpkg_column_name, sql_type, export_getter, tree_attr_or_None)
+# tree_attr is the Tree model attribute name for import; None = skip on import.
+# Multi-value fields (conflitti etc.) use a special prefix 'CSV:' handled below.
+_GPKG_COLS = [
+    ('id',                    'INTEGER', lambda t: t.id,                          None),
+    ('custom_id',             'TEXT',    lambda t: t.custom_id,                   'custom_id'),
+    ('city',                  'TEXT',    lambda t: t.city,                        None),  # city comes from the form
+    ('address',               'TEXT',    lambda t: t.address or '',               'address'),
+    ('latitude',              'REAL',    lambda t: t.latitude,                    'latitude'),
+    ('longitude',             'REAL',    lambda t: t.longitude,                   'longitude'),
+    ('species',               'TEXT',    lambda t: t.species,                     'species'),
+    ('condition',             'TEXT',    lambda t: t.condition or '',             'condition'),
+    ('age',                   'TEXT',    lambda t: t.age or '',                   'age'),
+    ('cpc',                   'TEXT',    lambda t: t.cpc or '',                   'cpc'),
+    ('location',              'TEXT',    lambda t: t.location or '',              'location'),
+    ('height',                'TEXT',    lambda t: t.height or '',               'height'),
+    ('dimora',                'TEXT',    lambda t: t.dimora or '',               'dimora'),
+    ('stadio_sviluppo',       'TEXT',    lambda t: t.stadio_sviluppo or '',      'stadio_sviluppo'),
+    ('posizione_sociale',     'TEXT',    lambda t: t.posizione_sociale or '',    'posizione_sociale'),
+    ('localizzazione',        'TEXT',    lambda t: t.localizzazione or '',       'localizzazione'),
+    ('vincoli',               'TEXT',    lambda t: t.vincoli or '',              'vincoli'),
+    ('tree_height_m',         'REAL',    lambda t: t.tree_height_m,              'tree_height_m'),
+    ('circonferenza_cm',      'REAL',    lambda t: t.circonferenza_cm,           'circonferenza_cm'),
+    ('trunk_diameter_cm',     'REAL',    lambda t: t.trunk_diameter_cm,          'trunk_diameter_cm'),
+    ('crown_diameter_m',      'REAL',    lambda t: t.crown_diameter_m,           'crown_diameter_m'),
+    ('branch_diam_cm',        'REAL',    lambda t: t.branch_diam_cm,             'branch_diam_cm'),
+    ('branch_length_m',       'REAL',    lambda t: t.branch_length_m,            'branch_length_m'),
+    ('branch_height_m',       'REAL',    lambda t: t.branch_height_m,            'branch_height_m'),
+    ('target_height_m',       'REAL',    lambda t: t.target_height_m,            'target_height_m'),
+    ('post_tree_height_m',    'REAL',    lambda t: t.post_tree_height_m,         'post_tree_height_m'),
+    ('post_circonferenza_cm', 'REAL',    lambda t: t.post_circonferenza_cm,      'post_circonferenza_cm'),
+    ('post_branch_diam_cm',   'REAL',    lambda t: t.post_branch_diam_cm,        'post_branch_diam_cm'),
+    ('post_branch_length_m',  'REAL',    lambda t: t.post_branch_length_m,       'post_branch_length_m'),
+    ('post_branch_height_m',  'REAL',    lambda t: t.post_branch_height_m,       'post_branch_height_m'),
+    ('post_target_height_m',  'REAL',    lambda t: t.post_target_height_m,       'post_target_height_m'),
+    ('pericolo_rami',         'TEXT',    lambda t: t.pericolo_rami or '',        'pericolo_rami'),
+    ('pericolo_tronco',       'TEXT',    lambda t: t.pericolo_tronco or '',      'pericolo_tronco'),
+    ('pericolo_colletto',     'TEXT',    lambda t: t.pericolo_colletto or '',    'pericolo_colletto'),
+    ('pericolo_zolla',        'TEXT',    lambda t: t.pericolo_zolla or '',       'pericolo_zolla'),
+    ('bersaglio_chioma_tipo', 'TEXT',    lambda t: t.bersaglio_chioma_tipo or '', 'bersaglio_chioma_tipo'),
+    ('bersaglio_chioma_value','TEXT',    lambda t: t.bersaglio_chioma_value or '','bersaglio_chioma_value'),
+    ('bersaglio_chioma_flow', 'REAL',    lambda t: t.bersaglio_chioma_flow,      'bersaglio_chioma_flow'),
+    ('bersaglio_chioma',      'INTEGER', lambda t: t.bersaglio_chioma,           'bersaglio_chioma'),
+    ('bersaglio_ramo_tipo',   'TEXT',    lambda t: t.bersaglio_ramo_tipo or '',  'bersaglio_ramo_tipo'),
+    ('bersaglio_ramo_value',  'TEXT',    lambda t: t.bersaglio_ramo_value or '', 'bersaglio_ramo_value'),
+    ('bersaglio_ramo_flow',   'REAL',    lambda t: t.bersaglio_ramo_flow,        'bersaglio_ramo_flow'),
+    ('bersaglio_ramo',        'INTEGER', lambda t: t.bersaglio_ramo,             'bersaglio_ramo'),
+    ('moltiplicatore',        'INTEGER', lambda t: t.moltiplicatore,             'moltiplicatore'),
+    ('monitoraggio',          'TEXT',    lambda t: t.monitoraggio or '',         'monitoraggio'),
+    ('urgenza',               'TEXT',    lambda t: t.urgenza or '',              'urgenza'),
+    ('next_check',            'TEXT',    lambda t: t.next_check.strftime('%Y-%m-%d') if t.next_check else '', 'next_check'),
+    ('comments',              'TEXT',    lambda t: t.comments or '',             'comments'),
+    ('actions',               'TEXT',    lambda t: t.actions or '',              'actions'),
+    ('conflitti',             'TEXT',    None,                                    'CSV:conflitti_list'),
+    ('agenti_carie',          'TEXT',    None,                                    'CSV:agenti_carie'),
+    ('altri_patogeni',        'TEXT',    None,                                    'CSV:altri_patogeni'),
+    ('prescrizioni_val',      'TEXT',    None,                                    'CSV:prescrizioni_val'),
+    ('prescrizioni_mit',      'TEXT',    None,                                    'CSV:prescrizioni_mit'),
+    ('prescrizioni_col',      'TEXT',    None,                                    'CSV:prescrizioni_col'),
+]
+
+def _gpkg_jlist(val):
+    """DB JSON array → comma-separated string for GPKG storage."""
+    if not val: return ''
+    try:
+        lst = json.loads(val) if isinstance(val, str) else val
+        return ', '.join(str(x) for x in lst) if isinstance(lst, list) else str(lst)
+    except: return ''
+
+def _gpkg_csv_to_json(val):
+    """Comma-separated GPKG string → DB JSON array string."""
+    if not val or not str(val).strip(): return None
+    items = [x.strip() for x in str(val).split(',') if x.strip()]
+    return json.dumps(items, ensure_ascii=False) if items else None
+
+@app.route('/export/gpkg', methods=['GET'])
 @auth_required
-def export_geojson():
+def export_gpkg():
     role, user_id, user_city = (request.user.get(k) for k in ('role','user_id','city'))
     query = Tree.query
     if role == 'user':   query = query.filter(Tree.owner_id == user_id)
@@ -1214,19 +1290,399 @@ def export_geojson():
     if ids_param:
         id_list = [int(x) for x in ids_param.split(',') if x.strip().isdigit()]
         query = query.filter(Tree.id.in_(id_list))
-    features = []
-    for t in query.all():
-        if t.latitude is None or t.longitude is None: continue
-        features.append({
-            "type": "Feature",
-            "geometry": {"type": "Point", "coordinates": [t.longitude, t.latitude]},
-            "properties": tree_to_dict(t)
-        })
-    buf = io.BytesIO(json.dumps({"type":"FeatureCollection","features":features},
-                                ensure_ascii=False).encode('utf-8'))
-    buf.seek(0)
-    return send_file(buf, download_name='trees.geojson', as_attachment=True,
-                     mimetype='application/geo+json')
+    trees = [t for t in query.all() if t.latitude is not None and t.longitude is not None]
+
+    def make_point(lon, lat):
+        return b'GP\x00\x01' + struct.pack('<i', 4326) + struct.pack('<BIdd', 1, 1, lon, lat)
+
+    # CSV multi-value getters (not in _GPKG_COLS lambdas to avoid closure issues)
+    _csv_getters = {
+        'conflitti':       lambda t: _gpkg_jlist(t.conflitti_list),
+        'agenti_carie':    lambda t: _gpkg_jlist(t.agenti_carie),
+        'altri_patogeni':  lambda t: _gpkg_jlist(t.altri_patogeni),
+        'prescrizioni_val':lambda t: _gpkg_jlist(t.prescrizioni_val),
+        'prescrizioni_mit':lambda t: _gpkg_jlist(t.prescrizioni_mit),
+        'prescrizioni_col':lambda t: _gpkg_jlist(t.prescrizioni_col),
+    }
+
+    def get_val(col_name, getter, t):
+        if getter is not None:
+            return getter(t)
+        return _csv_getters[col_name](t)
+
+    col_defs = ', '.join(f'{n} {typ}' for n, typ, _, _ in _GPKG_COLS)
+    col_names = ', '.join(n for n, _, _, _ in _GPKG_COLS)
+    placeholders = ', '.join(['?'] * len(_GPKG_COLS))
+
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix='.gpkg', delete=False) as tmp:
+            tmp_path = tmp.name
+
+        conn = sqlite3.connect(tmp_path)
+        cur  = conn.cursor()
+
+        cur.execute('PRAGMA application_id = 1196444487')
+        cur.execute('PRAGMA user_version   = 10200')
+        conn.commit()
+
+        cur.executescript(f"""
+            CREATE TABLE gpkg_spatial_ref_sys (
+                srs_name TEXT NOT NULL, srs_id INTEGER NOT NULL PRIMARY KEY,
+                organization TEXT NOT NULL, organization_coordsys_id INTEGER NOT NULL,
+                definition TEXT NOT NULL, description TEXT
+            );
+            INSERT INTO gpkg_spatial_ref_sys VALUES
+                ('Undefined cartesian SRS', -1, 'NONE', -1, 'undefined', NULL),
+                ('Undefined geographic SRS', 0, 'NONE', 0, 'undefined', NULL),
+                ('WGS 84 geodetic', 4326, 'EPSG', 4326,
+                 'GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433]]',
+                 'WGS 84');
+            CREATE TABLE gpkg_contents (
+                table_name TEXT NOT NULL PRIMARY KEY, data_type TEXT NOT NULL,
+                identifier TEXT, description TEXT DEFAULT '',
+                last_change DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+                min_x REAL, min_y REAL, max_x REAL, max_y REAL, srs_id INTEGER
+            );
+            CREATE TABLE gpkg_geometry_columns (
+                table_name TEXT NOT NULL, column_name TEXT NOT NULL,
+                geometry_type_name TEXT NOT NULL, srs_id INTEGER NOT NULL,
+                z TINYINT NOT NULL, m TINYINT NOT NULL,
+                CONSTRAINT pk_geom_cols PRIMARY KEY (table_name, column_name)
+            );
+            CREATE TABLE alberi (
+                fid INTEGER PRIMARY KEY AUTOINCREMENT,
+                geom BLOB,
+                {col_defs}
+            );
+        """)
+
+        lons = [t.longitude for t in trees]
+        lats = [t.latitude  for t in trees]
+        cur.execute(
+            "INSERT INTO gpkg_contents (table_name,data_type,identifier,srs_id,min_x,min_y,max_x,max_y) "
+            "VALUES ('alberi','features','alberi',4326,?,?,?,?)",
+            (min(lons) if lons else None, min(lats) if lats else None,
+             max(lons) if lons else None, max(lats) if lats else None)
+        )
+        cur.execute("INSERT INTO gpkg_geometry_columns VALUES ('alberi','geom','POINT',4326,0,0)")
+
+        INSERT = f"INSERT INTO alberi (geom, {col_names}) VALUES (?, {placeholders})"
+        for t in trees:
+            cur.execute(INSERT,
+                [make_point(t.longitude, t.latitude)] +
+                [get_val(n, g, t) for n, _, g, _ in _GPKG_COLS])
+
+        conn.commit()
+        conn.close()
+
+        buf = io.BytesIO()
+        with open(tmp_path, 'rb') as f:
+            buf.write(f.read())
+        buf.seek(0)
+        return send_file(buf, download_name='alberi.gpkg', as_attachment=True,
+                         mimetype='application/geopackage+sqlite3')
+    finally:
+        if tmp_path:
+            try: os.unlink(tmp_path)
+            except Exception: pass
+
+# -----------------------
+# Import GPKG
+# -----------------------
+
+def _gpkg_parse_float(val):
+    if val is None:
+        return None
+    try:
+        return float(str(val).replace(',', '.').strip())
+    except (ValueError, TypeError):
+        return None
+
+def _gpkg_parse_date(val):
+    if not val:
+        return None
+    for fmt in ('%d/%m/%Y', '%Y-%m-%d', '%d-%m-%Y'):
+        try:
+            return datetime.strptime(str(val).strip(), fmt).date()
+        except (ValueError, AttributeError):
+            continue
+    return None
+
+def _gpkg_point(blob):
+    """Decode a GeoPackage binary geometry blob and return (lon, lat)."""
+    if not blob or len(blob) < 8:
+        return None, None
+    try:
+        if bytes(blob[:2]) != b'GP':
+            return None, None
+        flags = blob[3]
+        env_code = (flags >> 1) & 0x07
+        env_size = {0: 0, 1: 32, 2: 48, 3: 48, 4: 64}.get(env_code, 0)
+        wkb = bytes(blob[8 + env_size:])
+        if len(wkb) < 21:
+            return None, None
+        endian = '<' if wkb[0] == 1 else '>'
+        x, y = struct.unpack(f'{endian}dd', wkb[5:21])
+        return x, y
+    except Exception:
+        return None, None
+
+@app.route('/import/gpkg', methods=['POST'])
+@auth_required
+def import_gpkg_route():
+    user_id   = request.user.get('user_id')
+    role      = request.user.get('role')
+    user_city = request.user.get('city')
+
+    if 'file' not in request.files:
+        return jsonify({'message': 'Nessun file inviato'}), 400
+
+    f           = request.files['file']
+    city        = (request.form.get('city') or '').strip()
+    on_conflict = request.form.get('on_conflict', 'skip')
+
+    if not city:
+        if role in ('user', 'city') and user_city:
+            city = user_city
+        else:
+            return jsonify({'message': 'Il campo comune è obbligatorio'}), 400
+
+    if not f.filename:
+        return jsonify({'message': 'Nessun file selezionato'}), 400
+
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix='.gpkg', delete=False) as tmp:
+            f.save(tmp.name)
+            tmp_path = tmp.name
+
+        src = sqlite3.connect(tmp_path)
+        src.row_factory = sqlite3.Row
+        cur = src.cursor()
+
+        try:
+            cur.execute("SELECT table_name FROM gpkg_contents WHERE data_type='features' LIMIT 1")
+            r = cur.fetchone()
+            table_name = r[0] if r else None
+        except Exception:
+            table_name = None
+
+        if not table_name:
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                        "AND name NOT LIKE 'gpkg_%' AND name NOT LIKE 'rtree_%' "
+                        "AND name NOT LIKE 'sqlite_%'")
+            rows_t = cur.fetchall()
+            table_name = rows_t[0][0] if rows_t else None
+
+        if not table_name:
+            src.close()
+            return jsonify({'message': 'Nessuna tabella features trovata nel file GPKG'}), 400
+
+        cur.execute(f"PRAGMA table_info('{table_name}')")
+        cols = [r[1] for r in cur.fetchall()]
+        cur.execute(f"SELECT * FROM '{table_name}'")
+        rows = [dict(r) for r in cur.fetchall()]
+        src.close()
+
+    except Exception as e:
+        return jsonify({'message': f'Errore lettura GPKG: {e}'}), 400
+    finally:
+        if tmp_path:
+            try: os.unlink(tmp_path)
+            except Exception: pass
+
+    # --- Column detection ------------------------------------------------
+    # Tries candidate names in order; returns the first that exists in cols.
+    # Silvae Pro exports use the canonical name (first candidate); external
+    # census files use legacy names (subsequent candidates).
+    def dcol(*candidates):
+        lc = {c.lower(): c for c in cols}
+        for cand in candidates:
+            if cand.lower() in lc:
+                return lc[cand.lower()]
+        return None
+
+    # All _GPKG_COLS canonical names are tried first, then legacy aliases.
+    C = {
+        'custom_id':          dcol('custom_id', 'name', '_numero', 'id_albero', 'numero'),
+        'species':            dcol('species', '_tassonomi', 'specie', 'nome_scientifico', 'taxon'),
+        'species_ita':        dcol('_nome ital', '_nome_ital', 'nome_italiano', 'nome_comune'),
+        'condition':          dcol('condition', '_classe vt', '_classe_vt', 'condizione'),
+        'condition_fb':       dcol('_f. fisiol', '_f_fisiol', 'stato_fitosanitario'),
+        'address':            dcol('address', "_localita'", '_localita', 'localita', 'indirizzo', 'via'),
+        'height':             dcol('height', '_altezza', 'altezza', 'h_albero'),
+        'crown_diameter_m':   dcol('crown_diameter_m', '_diametro', 'diametro_chioma'),
+        'circonferenza_cm':   dcol('circonferenza_cm', '_circonfer', '_circonferenza', 'circonferenza'),
+        'localizzazione':     dcol('localizzazione', '_stazione', 'stazione'),
+        'location':           dcol('location'),
+        'next_check':         dcol('next_check', '_da contro', '_da_contro', 'prossima_ispezione', 'data_controllo'),
+        'longitude':          dcol('longitude', 'xcoord', 'x', 'lon'),
+        'latitude':           dcol('latitude', 'ycoord', 'y', 'lat'),
+        'geom':               dcol('geom', 'geometry', 'the_geom', 'shape'),
+        # Silvae Pro full-attribute fields
+        'age':                dcol('age'),
+        'cpc':                dcol('cpc'),
+        'dimora':             dcol('dimora'),
+        'stadio_sviluppo':    dcol('stadio_sviluppo'),
+        'posizione_sociale':  dcol('posizione_sociale'),
+        'vincoli':            dcol('vincoli'),
+        'tree_height_m':      dcol('tree_height_m'),
+        'trunk_diameter_cm':  dcol('trunk_diameter_cm'),
+        'branch_diam_cm':     dcol('branch_diam_cm'),
+        'branch_length_m':    dcol('branch_length_m'),
+        'branch_height_m':    dcol('branch_height_m'),
+        'target_height_m':    dcol('target_height_m'),
+        'post_tree_height_m':    dcol('post_tree_height_m'),
+        'post_circonferenza_cm': dcol('post_circonferenza_cm'),
+        'post_branch_diam_cm':   dcol('post_branch_diam_cm'),
+        'post_branch_length_m':  dcol('post_branch_length_m'),
+        'post_branch_height_m':  dcol('post_branch_height_m'),
+        'post_target_height_m':  dcol('post_target_height_m'),
+        'pericolo_rami':      dcol('pericolo_rami'),
+        'pericolo_tronco':    dcol('pericolo_tronco'),
+        'pericolo_colletto':  dcol('pericolo_colletto'),
+        'pericolo_zolla':     dcol('pericolo_zolla'),
+        'bersaglio_chioma_tipo':  dcol('bersaglio_chioma_tipo'),
+        'bersaglio_chioma_value': dcol('bersaglio_chioma_value'),
+        'bersaglio_chioma_flow':  dcol('bersaglio_chioma_flow'),
+        'bersaglio_chioma':       dcol('bersaglio_chioma'),
+        'bersaglio_ramo_tipo':    dcol('bersaglio_ramo_tipo'),
+        'bersaglio_ramo_value':   dcol('bersaglio_ramo_value'),
+        'bersaglio_ramo_flow':    dcol('bersaglio_ramo_flow'),
+        'bersaglio_ramo':         dcol('bersaglio_ramo'),
+        'moltiplicatore':     dcol('moltiplicatore'),
+        'monitoraggio':       dcol('monitoraggio'),
+        'urgenza':            dcol('urgenza'),
+        'comments':           dcol('comments'),
+        'actions':            dcol('actions'),
+        'conflitti_list':     dcol('conflitti'),
+        'agenti_carie':       dcol('agenti_carie'),
+        'altri_patogeni':     dcol('altri_patogeni'),
+        'prescrizioni_val':   dcol('prescrizioni_val'),
+        'prescrizioni_mit':   dcol('prescrizioni_mit'),
+        'prescrizioni_col':   dcol('prescrizioni_col'),
+    }
+
+    # --- Row helpers -------------------------------------------------------
+    def gs(key):
+        col = C.get(key)
+        if not col: return None
+        v = row.get(col)
+        return str(v).strip() or None if v is not None else None
+
+    def gf(key):
+        col = C.get(key)
+        return _gpkg_parse_float(row.get(col)) if col else None
+
+    def gi(key):
+        col = C.get(key)
+        if not col: return None
+        try: return int(str(row.get(col)).strip())
+        except: return None
+
+    def gcsvjson(key):
+        col = C.get(key)
+        return _gpkg_csv_to_json(row.get(col)) if col else None
+
+    # --- Apply all detected fields to a Tree instance ----------------------
+    def apply_fields(tree):
+        if gf('latitude') is not None:
+            tree.latitude  = gf('latitude')
+            tree.longitude = gf('longitude')
+            tree.geom = f"SRID=4326;POINT({tree.longitude} {tree.latitude})"
+
+        sp = gs('species') or gs('species_ita') or 'Sconosciuta'
+        tree.species = sp
+
+        cond = gs('condition') or gs('condition_fb') or '—'
+        tree.condition = cond
+
+        for key in ('address','height','age','cpc','location',
+                    'dimora','stadio_sviluppo','posizione_sociale',
+                    'localizzazione','vincoli',
+                    'pericolo_rami','pericolo_tronco',
+                    'pericolo_colletto','pericolo_zolla',
+                    'bersaglio_chioma_tipo','bersaglio_chioma_value',
+                    'bersaglio_ramo_tipo','bersaglio_ramo_value',
+                    'monitoraggio','urgenza','comments','actions'):
+            v = gs(key)
+            if v is not None:
+                setattr(tree, key, v)
+
+        for key in ('tree_height_m','circonferenza_cm','trunk_diameter_cm',
+                    'crown_diameter_m','branch_diam_cm','branch_length_m',
+                    'branch_height_m','target_height_m',
+                    'post_tree_height_m','post_circonferenza_cm',
+                    'post_branch_diam_cm','post_branch_length_m',
+                    'post_branch_height_m','post_target_height_m',
+                    'bersaglio_chioma_flow','bersaglio_ramo_flow'):
+            v = gf(key)
+            if v is not None:
+                setattr(tree, key, v)
+
+        for key in ('bersaglio_chioma','bersaglio_ramo','moltiplicatore'):
+            v = gi(key)
+            if v is not None:
+                setattr(tree, key, v)
+
+        for key in ('conflitti_list','agenti_carie','altri_patogeni',
+                    'prescrizioni_val','prescrizioni_mit','prescrizioni_col'):
+            v = gcsvjson(key)
+            if v is not None:
+                setattr(tree, key, v)
+
+        nd = _gpkg_parse_date(gs('next_check'))
+        if nd is not None:
+            tree.next_check = nd
+
+    # --- Main loop ---------------------------------------------------------
+    inserted = skipped = errors = 0
+
+    for row in rows:
+        # Coordinates: prefer explicit x/y columns, fall back to geometry blob
+        lon = lat = None
+        if C['longitude'] and C['latitude']:
+            lon = _gpkg_parse_float(row.get(C['longitude']))
+            lat = _gpkg_parse_float(row.get(C['latitude']))
+        if (lon is None or lat is None) and C['geom']:
+            blob = row.get(C['geom'])
+            if blob:
+                lon, lat = _gpkg_point(blob)
+
+        # Override row coords so apply_fields() picks them up
+        if lon is not None and C['longitude']:
+            row[C['longitude']] = lon
+        if lat is not None and C['latitude']:
+            row[C['latitude']] = lat
+
+        custom_id = gs('custom_id') or str(row.get('fid') or '').strip()
+        if not custom_id:
+            skipped += 1
+            continue
+
+        try:
+            existing = Tree.query.filter_by(custom_id=custom_id, city=city).first()
+            if existing:
+                if on_conflict == 'update':
+                    apply_fields(existing)
+                    db.session.commit()
+                    inserted += 1
+                else:
+                    skipped += 1
+                continue
+
+            tree = Tree(custom_id=custom_id, city=city, owner_id=user_id,
+                        species='Sconosciuta', condition='—')
+            apply_fields(tree)
+            db.session.add(tree)
+            db.session.commit()
+            inserted += 1
+        except Exception:
+            db.session.rollback()
+            errors += 1
+
+    return jsonify({'inserted': inserted, 'skipped': skipped, 'errors': errors, 'total': len(rows)})
 
 # -----------------------
 # Bootstrap

@@ -58,9 +58,13 @@ function populateStaticDropdowns() {
     const d = state.dropdowns;
     if (!d || !Object.keys(d).length) return;
 
-    // Species
-    populateSelect('species', d.species || [],
-        x => x.name, x => `${x.code} — ${x.name}`);
+    // Species — datalist (consente anche valore libero)
+    const dl = document.getElementById('species-datalist');
+    if (dl) {
+        dl.innerHTML = (d.species || [])
+            .map(x => `<option value="${x.name}">${x.code} — ${x.name}</option>`)
+            .join('');
+    }
 
     // Dati generali
     ['dimora','stadio_sviluppo','posizione_sociale','localizzazione','vincoli'].forEach(k =>
@@ -1366,15 +1370,88 @@ async function exportSelectedExcel() {
     URL.revokeObjectURL(a.href); showStatus('File Excel scaricato', 'success');
 }
 
-async function exportSelectedGeoJSON() {
-    if (state.exportSelected.size === 0) { showStatus('Nessun albero selezionato', 'warning'); return; }
-    showStatus('Preparazione GeoJSON…', 'info');
-    const ids = [...state.exportSelected].join(',');
-    const res = await fetch(`${API_BASE}/export/geojson?ids=${ids}`, {headers: authHeader()});
-    if (!res.ok) return showStatus('Esportazione fallita', 'danger');
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(await res.blob()); a.download = 'alberi.geojson'; a.click();
-    URL.revokeObjectURL(a.href); showStatus('GeoJSON scaricato', 'success');
+// ─── Import GPKG ─────────────────────────────────────────
+
+function initImportDropZone() {
+    const zone  = document.getElementById('importDropZone');
+    const input = document.getElementById('importFileInput');
+    const label = document.getElementById('importFileName');
+    if (!zone || !input) return;
+
+    function setFile(file) {
+        if (!file) return;
+        input.files = (() => { const dt = new DataTransfer(); dt.items.add(file); return dt.files; })();
+        label.textContent = file.name;
+        zone.style.borderColor = 'var(--g600)';
+        zone.style.background  = 'var(--g50)';
+    }
+
+    zone.addEventListener('click', e => { if (e.target.tagName !== 'LABEL') input.click(); });
+    input.addEventListener('change', () => { if (input.files[0]) setFile(input.files[0]); });
+    zone.addEventListener('dragover',  e => { e.preventDefault(); zone.style.borderColor = '#7c3aed'; });
+    zone.addEventListener('dragleave', ()  => { zone.style.borderColor = 'var(--border)'; zone.style.background = ''; });
+    zone.addEventListener('drop', e => {
+        e.preventDefault();
+        zone.style.borderColor = 'var(--border)'; zone.style.background = '';
+        const file = e.dataTransfer.files[0];
+        if (file && file.name.endsWith('.gpkg')) setFile(file);
+        else showStatus('Il file deve essere in formato .gpkg', 'warning');
+    });
+}
+
+async function submitImportGPKG() {
+    const input = document.getElementById('importFileInput');
+    const city  = document.getElementById('importCity').value.trim();
+    const conflict = document.getElementById('importConflict').value;
+    const btn   = document.getElementById('importSubmitBtn');
+    const result = document.getElementById('importResult');
+
+    if (!input.files[0]) { showStatus('Seleziona un file .gpkg', 'warning'); return; }
+    if (!city)            { showStatus('Il comune è obbligatorio', 'warning'); return; }
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Importazione in corso…';
+    result.style.display = 'none';
+
+    const fd = new FormData();
+    fd.append('file', input.files[0]);
+    fd.append('city', city);
+    fd.append('on_conflict', conflict);
+
+    try {
+        const res  = await fetch(`${API_BASE}/import/gpkg`, { method: 'POST', headers: authHeader(), body: fd });
+        const data = await res.json();
+        if (!res.ok) {
+            showStatus(data.message || 'Errore durante l\'importazione', 'danger');
+        } else {
+            const { inserted, skipped, errors, total } = data;
+            result.style.display = 'block';
+            result.innerHTML = `
+                <div style="font-weight:700;color:var(--g800);margin-bottom:8px;"><i class="fa-solid fa-circle-check" style="color:#16a34a;margin-right:6px;"></i>Importazione completata</div>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center;">
+                  <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:var(--r);padding:10px;">
+                    <div style="font-size:22px;font-weight:700;color:#16a34a;">${inserted}</div>
+                    <div style="font-size:11px;color:var(--text-muted);">Inseriti</div>
+                  </div>
+                  <div style="background:var(--g50);border:1px solid var(--border);border-radius:var(--r);padding:10px;">
+                    <div style="font-size:22px;font-weight:700;color:var(--g600);">${skipped}</div>
+                    <div style="font-size:11px;color:var(--text-muted);">Saltati</div>
+                  </div>
+                  <div style="background:${errors > 0 ? '#fef2f2' : 'var(--g50)'};border:1px solid ${errors > 0 ? '#fecaca' : 'var(--border)'};border-radius:var(--r);padding:10px;">
+                    <div style="font-size:22px;font-weight:700;color:${errors > 0 ? '#dc2626' : 'var(--g600)'};">${errors}</div>
+                    <div style="font-size:11px;color:var(--text-muted);">Errori</div>
+                  </div>
+                </div>
+                <div style="font-size:12px;color:var(--text-muted);margin-top:8px;text-align:center;">Totale righe nel file: ${total}</div>`;
+            showStatus(`Importazione completata: ${inserted} alberi inseriti`, 'success');
+            fetchTrees();
+        }
+    } catch (e) {
+        showStatus('Errore di connessione durante l\'importazione', 'danger');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-upload"></i> Avvia Importazione';
+    }
 }
 
 // ─── Export ───────────────────────────────────────────────
@@ -1389,14 +1466,25 @@ async function exportExcel() {
     URL.revokeObjectURL(a.href); showStatus('File Excel scaricato','success');
 }
 
-async function exportGeoJSON() {
+async function exportGPKG() {
     if (!state.token) return showStatus('Effettua prima il login','danger');
-    showStatus('Preparazione GeoJSON…','info');
-    const res = await fetch(`${API_BASE}/export/geojson`, {headers: authHeader()});
+    showStatus('Preparazione GPKG…','info');
+    const res = await fetch(`${API_BASE}/export/gpkg`, {headers: authHeader()});
     if (!res.ok) return showStatus('Esportazione fallita','danger');
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(await res.blob()); a.download = 'trees.geojson'; a.click();
-    URL.revokeObjectURL(a.href); showStatus('GeoJSON scaricato','success');
+    a.href = URL.createObjectURL(await res.blob()); a.download = 'alberi.gpkg'; a.click();
+    URL.revokeObjectURL(a.href); showStatus('GPKG scaricato','success');
+}
+
+async function exportSelectedGPKG() {
+    if (state.exportSelected.size === 0) { showStatus('Nessun albero selezionato', 'warning'); return; }
+    showStatus('Preparazione GPKG…', 'info');
+    const ids = [...state.exportSelected].join(',');
+    const res = await fetch(`${API_BASE}/export/gpkg?ids=${ids}`, {headers: authHeader()});
+    if (!res.ok) return showStatus('Esportazione fallita', 'danger');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(await res.blob()); a.download = 'alberi.gpkg'; a.click();
+    URL.revokeObjectURL(a.href); showStatus('GPKG scaricato','success');
 }
 
 // ─── Status toast ─────────────────────────────────────────
@@ -1438,7 +1526,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('openFormBtn').addEventListener('click', () => { resetForm(); showTreeView('edit'); });
     initComuneAutocomplete('city');
     initComuneAutocomplete('newCity');
+    initComuneAutocomplete('importCity');
+    initImportDropZone();
     document.getElementById('exportExcelBtn').addEventListener('click', exportExcel);
-    document.getElementById('exportGeoJSONBtn').addEventListener('click', exportGeoJSON);
+    document.getElementById('exportGPKGBtn').addEventListener('click', exportGPKG);
     init();
 });

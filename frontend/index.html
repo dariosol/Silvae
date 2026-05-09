@@ -32,6 +32,9 @@
     .comune-dropdown li:hover{background:var(--g50);}
     .comune-dropdown li .cd-sigla{font-size:11px;color:var(--text-muted);margin-left:6px;}
     .comune-dropdown li.ac-active{background:var(--g100);}
+  .app-footer{text-align:center;font-size:11px;color:var(--text-muted);padding:10px 16px;border-top:1px solid var(--border);background:var(--g50);}
+  .app-footer a{color:var(--text-muted);text-decoration:none;}
+  .app-footer a:hover{text-decoration:underline;}
   .locate-ctrl-btn{width:30px;height:30px;background:#fff;border:none;cursor:pointer;font-size:14px;color:#333;display:flex;align-items:center;justify-content:center;}
   .locate-ctrl-btn:hover{background:var(--g50);}
   .user-dot{width:20px;height:20px;position:relative;}
@@ -191,6 +194,7 @@
     <button class="tab-btn" data-tab="map"><i class="fa-solid fa-map-location-dot"></i><span>Mappa</span></button>
     <button class="tab-btn" data-tab="manage" id="tabManageBtn" style="display:none"><i class="fa-solid fa-users-gear"></i><span>Gestione</span></button>
     <button class="tab-btn" data-tab="export"><i class="fa-solid fa-download"></i><span>Esporta</span></button>
+    <button class="tab-btn" data-tab="import"><i class="fa-solid fa-upload"></i><span>Importa</span></button>
     <button class="tab-btn" data-tab="algoritmo"><i class="fa-solid fa-square-root-variable"></i><span>Algoritmo</span></button>
   </div>
 
@@ -227,7 +231,7 @@
         <div id="exportBar" style="display:none;align-items:center;gap:10px;padding:8px 18px;background:#eff6ff;border-bottom:1px solid #bfdbfe;flex-shrink:0;">
           <span id="exportCount" style="font-size:13px;font-weight:600;color:#1d4ed8;"></span>
           <button class="btn btn-excel btn-sm" onclick="exportSelectedExcel()"><i class="fa-solid fa-file-excel"></i> Esporta Excel</button>
-          <button class="btn btn-qgis btn-sm" onclick="exportSelectedGeoJSON()"><i class="fa-solid fa-globe"></i> Esporta GeoJSON</button>
+          <button class="btn btn-gpkg btn-sm" onclick="exportSelectedGPKG()"><i class="fa-solid fa-database"></i> Esporta GPKG</button>
           <button class="btn btn-outline btn-sm" onclick="toggleExportMode()" style="margin-left:auto;"><i class="fa-solid fa-xmark"></i> Annulla</button>
         </div>
         <div class="section-card">
@@ -329,9 +333,9 @@
                 <div class="fs-title"><i class="fa-solid fa-leaf"></i> Dati Generali</div>
                 <div class="fgrp">
                   <label class="flabel" for="species">Specie *</label>
-                  <select id="species" class="fc" required>
-                    <option value="">— seleziona specie —</option>
-                  </select>
+                  <input type="text" id="species" class="fc" list="species-datalist"
+                         placeholder="— seleziona o digita specie —" autocomplete="off" required>
+                  <datalist id="species-datalist"></datalist>
                 </div>
                 <div class="fc-grid2">
                   <div class="fgrp">
@@ -833,11 +837,60 @@
             </div>
           </div>
           <div class="export-card">
-            <div class="export-card-icon" style="background:#589632;"><i class="fa-solid fa-globe"></i></div>
+            <div class="export-card-icon" style="background:#4a5568;"><i class="fa-solid fa-database"></i></div>
             <div class="export-card-body">
-              <h3>GeoJSON — QGIS</h3>
-              <p>Raccolta di elementi geografici in formato <code>.geojson</code>.</p>
-              <button id="exportGeoJSONBtn" class="btn btn-qgis"><i class="fa-solid fa-file-arrow-down"></i> Scarica .geojson</button>
+              <h3>GeoPackage — GPKG</h3>
+              <p>Tutti gli attributi + geometria in formato <code>.gpkg</code>. Compatibile con QGIS e altri GIS.</p>
+              <button id="exportGPKGBtn" class="btn btn-gpkg"><i class="fa-solid fa-file-arrow-down"></i> Scarica .gpkg</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- IMPORT tab -->
+    <section id="tab-import" class="tab-section">
+      <div class="scroll-area">
+        <h2 class="section-heading"><i class="fa-solid fa-upload"></i> Importa Dati</h2>
+        <p class="section-sub">Importa alberi da un file GeoPackage (.gpkg). I campi ARETE non presenti nel file potranno essere completati successivamente.</p>
+        <div class="export-grid">
+          <div class="export-card">
+            <div class="export-card-icon" style="background:#7c3aed;"><i class="fa-solid fa-file-import"></i></div>
+            <div class="export-card-body">
+              <h3>GeoPackage (.gpkg)</h3>
+              <p>Seleziona un file <code>.gpkg</code>. Le coordinate, la specie e la condizione vengono acquisite automaticamente dai campi disponibili.</p>
+
+              <div id="importDropZone" style="border:2px dashed var(--border);border-radius:var(--r);padding:24px 16px;text-align:center;cursor:pointer;margin:12px 0;transition:border-color .2s,background .2s;">
+                <i class="fa-solid fa-cloud-arrow-up" style="font-size:28px;color:var(--text-muted);margin-bottom:8px;display:block;"></i>
+                <p style="font-size:13px;color:var(--text-muted);margin:0 0 10px;">Trascina il file <code>.gpkg</code> qui oppure</p>
+                <label for="importFileInput" class="btn btn-outline btn-sm" style="cursor:pointer;">
+                  <i class="fa-solid fa-folder-open"></i> Scegli file
+                </label>
+                <input type="file" id="importFileInput" accept=".gpkg" style="display:none;">
+                <p id="importFileName" style="margin:8px 0 0;font-size:12px;font-weight:600;color:var(--g700);"></p>
+              </div>
+
+              <div class="fgrp">
+                <label class="flabel" for="importCity">Comune *</label>
+                <div class="comune-ac-wrap">
+                  <input id="importCity" class="fc" type="text" autocomplete="off" placeholder="Cerca comune…">
+                  <ul id="importCity-dropdown" class="comune-dropdown"></ul>
+                </div>
+              </div>
+
+              <div class="fgrp" style="margin-top:8px;">
+                <label class="flabel" for="importConflict">In caso di ID duplicato</label>
+                <select id="importConflict" class="fc">
+                  <option value="skip">Salta (mantieni l'albero esistente)</option>
+                  <option value="update">Aggiorna (sovrascrivi con i dati del file)</option>
+                </select>
+              </div>
+
+              <button class="btn btn-primary" id="importSubmitBtn" style="width:100%;margin-top:14px;" onclick="submitImportGPKG()">
+                <i class="fa-solid fa-upload"></i> Avvia Importazione
+              </button>
+
+              <div id="importResult" style="display:none;margin-top:14px;background:var(--g50);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;"></div>
             </div>
           </div>
         </div>
@@ -1073,6 +1126,12 @@ rischio_finale   = lookup_inverso(probabilità_n)    ← foglio A, colonne AR:AS
     </section><!-- /tab-algoritmo -->
 
   </div><!-- /tab-content -->
+
+  <footer class="app-footer">
+    Sviluppato da <strong>Dario Soldi</strong> &nbsp;·&nbsp;
+    <a href="mailto:dario.soldi@proton.me">dario.soldi@proton.me</a>
+  </footer>
+
 </div><!-- /appPage -->
 
 <div id="status"></div>
