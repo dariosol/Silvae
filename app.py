@@ -8,7 +8,6 @@ load_dotenv()  # loads .env when running locally; no-op on Railway
 from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
-from geoalchemy2 import Geometry
 from geopy.geocoders import Nominatim
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.exc import IntegrityError
@@ -117,7 +116,6 @@ class Tree(db.Model):
     location         = db.Column(db.String(255))
     cpc              = db.Column(db.String(50))
     next_check       = db.Column(db.Date)
-    geom             = db.Column(Geometry('POINT', srid=4326))
     owner_id         = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
 
     # --- ARETE dati generali ---
@@ -198,8 +196,6 @@ class Inspection(db.Model):
 # DB init + migrate new columns
 # -----------------------
 with app.app_context():
-    db.session.execute(text('CREATE EXTENSION IF NOT EXISTS postgis'))
-    db.session.commit()
     db.create_all()
     # Add any new columns that don't exist yet (safe for existing DBs)
     insp = inspect(db.engine)
@@ -850,7 +846,6 @@ def update_tree(tree_id):
         try:
             tree.latitude  = float(data['latitude'])
             tree.longitude = float(data['longitude'])
-            tree.geom = f'SRID=4326;POINT({float(data["longitude"])} {float(data["latitude"])})'
         except (ValueError, TypeError):
             return jsonify({'message': 'Invalid lat/lon'}), 400
 
@@ -909,7 +904,6 @@ def add_tree():
         crown_diameter_m=data.get('crown_diameter_m'), age=data.get('age',''),
         location=data.get('location',''), cpc=data.get('cpc',''),
         next_check=next_check_date,
-        geom=f'SRID=4326;POINT({float(data["longitude"])} {float(data["latitude"])})',
         owner_id=user_id
     )
     apply_tree_fields(new_tree, data)
@@ -1592,7 +1586,6 @@ def import_gpkg_route():
         if gf('latitude') is not None:
             tree.latitude  = gf('latitude')
             tree.longitude = gf('longitude')
-            tree.geom = f"SRID=4326;POINT({tree.longitude} {tree.latitude})"
 
         sp = gs('species') or gs('species_ita') or 'Sconosciuta'
         tree.species = sp
