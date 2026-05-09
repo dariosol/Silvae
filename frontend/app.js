@@ -1,4 +1,4 @@
-const API_BASE = 'http://localhost:5000';
+const API_BASE = '';
 //const API_BASE = 'https://height-parking-robots-enjoying.trycloudflare.com';
 let state = {
     token: localStorage.getItem('token') || null,
