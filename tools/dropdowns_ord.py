@@ -494,7 +494,7 @@ giudizio_severita: list[str] = [
 # BERSAGLIO – target type and description dropdowns  (ORD sheet, C32 / N32)
 # Re-exported from ord_calculator so both modules share one source of truth.
 # ---------------------------------------------------------------------------
-from Schede_Rilevamento_ARETE.ord_calculator import (
+from tools.ord_calculator import (
     BERSAGLIO_TIPI,
     BERSAGLIO_PROPRIETA_VALUES,
     BERSAGLIO_OCCUPAZIONE_VALUES,

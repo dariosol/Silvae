@@ -45,7 +45,7 @@ import math
 from typing import Literal
 
 # Re-use the shared risk matrix and impulso helpers from ord_calculator
-from ord_calculator import (
+from tools.ord_calculator import (
     RISK_MATRIX,
     RISK_PROBABILITY,
     impulso_to_class,

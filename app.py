@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dotenv import load_dotenv
 load_dotenv()  # loads .env when running locally; no-op on Railway
 
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from geoalchemy2 import Geometry
@@ -20,8 +20,8 @@ import openpyxl
 from openpyxl.styles import PatternFill, Font, Alignment
 from openpyxl.utils import get_column_letter
 
-from Schede_Rilevamento_ARETE import dropdowns_ord as dd
-from Schede_Rilevamento_ARETE.lookup_tables import (
+from tools import dropdowns_ord as dd
+from tools.lookup_tables import (
     species_lookup, monitoraggio as lt_monitoraggio, urgenza as lt_urgenza,
     conflitti as lt_conflitti, agenti_di_carie as lt_agenti_carie,
     altri_patogeni as lt_altri_patogeni,
@@ -29,7 +29,7 @@ from Schede_Rilevamento_ARETE.lookup_tables import (
     prescrizioni_mitigazione as lt_prescrizioni_mit,
     prescrizioni_colturali as lt_prescrizioni_col,
 )
-from Schede_Rilevamento_ARETE.ord_calculator import (
+from tools.ord_calculator import (
     assess_tree, bersaglio_value_to_class, bersaglio_flow_to_class,
 )
 
@@ -1683,6 +1683,17 @@ def import_gpkg_route():
             errors += 1
 
     return jsonify({'inserted': inserted, 'skipped': skipped, 'errors': errors, 'total': len(rows)})
+
+# -----------------------
+# Frontend static serving
+# -----------------------
+@app.route('/')
+def serve_index():
+    return send_from_directory('frontend', 'index.html')
+
+@app.route('/<path:path>')
+def serve_static(path):
+    return send_from_directory('frontend', path)
 
 # -----------------------
 # Bootstrap
