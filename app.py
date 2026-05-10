@@ -1703,7 +1703,18 @@ def import_gpkg_route():
             continue
 
         try:
-            existing = Tree.query.filter_by(custom_id=custom_id, city=city).first()
+            # Deduplicate by coordinates (trees don't move); fall back to
+            # custom_id+city only when coordinates are unavailable.
+            existing = None
+            if lat is not None and lon is not None:
+                existing = Tree.query.filter_by(
+                    city=city,
+                    latitude=round(lat, 6),
+                    longitude=round(lon, 6)
+                ).first()
+            else:
+                existing = Tree.query.filter_by(custom_id=custom_id, city=city).first()
+
             if existing:
                 if on_conflict == 'update':
                     apply_fields(existing)
