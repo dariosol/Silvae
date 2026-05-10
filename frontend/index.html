@@ -221,13 +221,15 @@
             <select id="pageSizeSelect" class="inp" style="width:80px;" title="Righe per pagina">
               <option value="25">25</option><option value="50">50</option><option value="100">100</option>
             </select>
-            <button class="btn btn-outline btn-sm" id="nearbyBtn" onclick="toggleNearby()" title="Ordina per distanza dalla posizione attuale">
-              <i class="fa-solid fa-location-crosshairs"></i> Vicino a me
+            <button class="btn btn-outline btn-sm" id="nearbyBtn" onclick="toggleNearby()" title="Vicino a me">
+              <i class="fa-solid fa-location-crosshairs"></i><span class="btn-txt"> Vicino a me</span>
             </button>
-            <button class="btn btn-outline btn-sm" id="exportModeBtn" onclick="toggleExportMode()">
-              <i class="fa-solid fa-download"></i> Seleziona per esportare
+            <button class="btn btn-outline btn-sm" id="exportModeBtn" onclick="toggleExportMode()" title="Seleziona per esportare">
+              <i class="fa-solid fa-download"></i><span class="btn-txt"> Seleziona per esportare</span>
             </button>
-            <button class="btn btn-primary" id="openFormBtn"><i class="fa-solid fa-plus"></i> Aggiungi Albero</button>
+            <button class="btn btn-primary" id="openFormBtn" title="Aggiungi Albero">
+              <i class="fa-solid fa-plus"></i><span class="btn-txt"> Aggiungi Albero</span>
+            </button>
           </div>
         </div>
         <div id="exportBar" style="display:none;align-items:center;gap:10px;padding:8px 18px;background:#eff6ff;border-bottom:1px solid #bfdbfe;flex-shrink:0;">
@@ -1147,7 +1149,6 @@ rischio_finale   = lookup_inverso(probabilità_n)    ← foglio A, colonne AR:AS
 
   <footer class="app-footer">
     Sviluppato da <strong>Dario Soldi</strong> &nbsp;·&nbsp;
-    <a href="mailto:dario.soldi@proton.me">dario.soldi@proton.me</a>
   </footer>
 
 </div><!-- /appPage -->
