@@ -1545,7 +1545,7 @@ def import_gpkg_route():
         'geom':               dcol('geom', 'geometry', 'the_geom', 'shape'),
         # Silvae Pro full-attribute fields
         'age':                dcol('age'),
-        'cpc':                dcol('cpc'),
+        'cpc':                dcol('cpc', '_classe vt', '_classe_vt'),
         'dimora':             dcol('dimora'),
         'stadio_sviluppo':    dcol('stadio_sviluppo'),
         'posizione_sociale':  dcol('posizione_sociale'),
@@ -1617,9 +1617,7 @@ def import_gpkg_route():
         sp = gs('species') or gs('species_ita') or 'Sconosciuta'
         tree.species = sp
 
-        cond = gs('condition') or '—'
-        _VTA_MAP = {'a':'Ottimo','b':'Buono','c':'Discreto','c/d':'Scarso','d':'Critico','abbattuo':'Abbattuto'}
-        tree.condition = _VTA_MAP.get(cond.strip().lower(), cond)
+        tree.condition = gs('condition') or '—'
 
         for key in ('address','height','age','cpc','location',
                     'dimora','stadio_sviluppo','posizione_sociale',
@@ -1632,6 +1630,8 @@ def import_gpkg_route():
             v = gs(key)
             if v is not None:
                 setattr(tree, key, v)
+        if tree.cpc and tree.cpc.upper() == 'ABBATTUO':
+            tree.cpc = 'ABBATTUTO'
 
         for key in ('tree_height_m','circonferenza_cm','trunk_diameter_cm',
                     'crown_diameter_m','branch_diam_cm','branch_length_m',
