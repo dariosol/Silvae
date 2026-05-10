@@ -195,6 +195,23 @@ web: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
 
 ---
 
+## Condizione dell'albero
+
+Il campo **Condizione** (campo `condition` nel database) rappresenta lo stato vegetativo/fitosanitario dell'albero ed è visualizzato tramite badge colorati in tabella, schede e popup della mappa.
+
+Il rilevamento avviene per corrispondenza sul testo (case-insensitive):
+
+| Categoria | Parole chiave | Colore |
+|-----------|--------------|--------|
+| **Buono** | `buono`, `eccellente`, `ottimo` | Verde |
+| **Discreto** | `discreto`, `mediocre` | Giallo |
+| **Scarso / Critico** | `scarso`, `critico`, `morto` | Rosso |
+| **Non classificato** | qualsiasi altro valore | Grigio |
+
+I valori consigliati da inserire nel form ispezioni sono: **Buono**, **Discreto**, **Scarso**.
+
+---
+
 ## API principali
 
 | Metodo | Endpoint | Descrizione |

@@ -698,7 +698,7 @@ async function fetchTrees() {
 
 // ─── Trees: sort ─────────────────────────────────────────
 
-const COND_ORDER = {good:0,excellent:0,fair:1,moderate:1,poor:2,critical:2,dead:3};
+const COND_ORDER = {buono:0,eccellente:0,ottimo:0,discreto:1,mediocre:1,scarso:2,critico:2,morto:3};
 function condSortVal(cond) {
     if (!cond) return 99;
     const c = cond.toLowerCase();
@@ -840,27 +840,27 @@ function renderPagination() {
 
 function condClass(cond) {
     if (!cond) return 'tr-other'; const c = cond.toLowerCase();
-    if (c.includes('good')||c.includes('excel')) return 'tr-good';
-    if (c.includes('fair')||c.includes('moder')) return 'tr-fair';
-    if (c.includes('poor')||c.includes('crit')||c.includes('dead')) return 'tr-poor';
+    if (c.includes('buono')||c.includes('eccellente')||c.includes('ottimo')) return 'tr-good';
+    if (c.includes('discreto')||c.includes('mediocre')) return 'tr-fair';
+    if (c.includes('scarso')||c.includes('critico')||c.includes('morto')) return 'tr-poor';
     return 'tr-other';
 }
 
 function condBadge(cond) {
     if (!cond) return `<span class="cond-badge cb-other">—</span>`;
     const c = cond.toLowerCase(); let cls='cb-other', icon='fa-circle';
-    if (c.includes('good')||c.includes('excel')) { cls='cb-good'; icon='fa-circle-check'; }
-    else if (c.includes('fair')||c.includes('moder')) { cls='cb-fair'; icon='fa-circle-exclamation'; }
-    else if (c.includes('poor')||c.includes('crit')||c.includes('dead')) { cls='cb-poor'; icon='fa-circle-xmark'; }
+    if (c.includes('buono')||c.includes('eccellente')||c.includes('ottimo')) { cls='cb-good'; icon='fa-circle-check'; }
+    else if (c.includes('discreto')||c.includes('mediocre')) { cls='cb-fair'; icon='fa-circle-exclamation'; }
+    else if (c.includes('scarso')||c.includes('critico')||c.includes('morto')) { cls='cb-poor'; icon='fa-circle-xmark'; }
     return `<span class="cond-badge ${cls}"><i class="fa-solid ${icon}"></i> ${cond}</span>`;
 }
 
 function condDot(cond) {
     if (!cond) return `<span class="cond-dot dot-other" title="—"></span>`;
     const c = cond.toLowerCase();
-    if (c.includes('good')||c.includes('excel')) return `<span class="cond-dot dot-good" title="${cond}"></span>`;
-    if (c.includes('fair')||c.includes('moder')) return `<span class="cond-dot dot-fair" title="${cond}"></span>`;
-    if (c.includes('poor')||c.includes('crit')||c.includes('dead')) return `<span class="cond-dot dot-poor" title="${cond}"></span>`;
+    if (c.includes('buono')||c.includes('eccellente')||c.includes('ottimo')) return `<span class="cond-dot dot-good" title="${cond}"></span>`;
+    if (c.includes('discreto')||c.includes('mediocre')) return `<span class="cond-dot dot-fair" title="${cond}"></span>`;
+    if (c.includes('scarso')||c.includes('critico')||c.includes('morto')) return `<span class="cond-dot dot-poor" title="${cond}"></span>`;
     return `<span class="cond-dot dot-other" title="${cond}"></span>`;
 }
 

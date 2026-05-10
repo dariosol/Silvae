@@ -926,7 +926,7 @@ def add_tree():
         db.session.commit()
     except IntegrityError:
         db.session.rollback()
-        return jsonify({'message': f"Custom ID '{data['custom_id']}' already exists in {data['city']}"}), 409
+        return jsonify({'message': 'Errore durante il salvataggio. Riprova.'}), 409
 
     db.session.add(_make_inspection(new_tree, user_id, request.user.get('username')))
     db.session.commit()
