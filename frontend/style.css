@@ -606,6 +606,79 @@ th.sort-active .sort-ico { opacity: 1; color: var(--g700); }
 
 .act-cell { display: flex; gap: 5px; justify-content: flex-end; }
 
+/* ── Condition dot (mobile) ── */
+.cond-dot {
+  display: inline-block;
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+.cond-dot.dot-good  { background: #2d6a4f; }
+.cond-dot.dot-fair  { background: #e67e22; }
+.cond-dot.dot-poor  { background: #c0392b; }
+.cond-dot.dot-other { background: #adb5bd; }
+
+/* ── Mobile sort bar ── */
+.mobile-sort-bar {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--g50);
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.mobile-sort-bar label { color: var(--text-muted); font-weight: 600; white-space: nowrap; }
+.mobile-sort-bar select { flex: 1; }
+
+/* ── Mobile card list ── */
+#treeCardList { display: none; flex: 1; overflow-y: auto; }
+.tree-card { border-bottom: 1px solid #eef2ee; background: var(--surface); }
+.tree-card-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background .1s;
+}
+.tree-card-main:active { background: var(--g50); }
+.tree-card-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.tree-card-info {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 6px;
+  overflow: hidden;
+}
+.tree-card-info .species {
+  font-size: 13px; color: var(--text-mid);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tree-card-chevron { flex-shrink: 0; font-size: 11px; color: var(--text-muted); transition: transform .2s; }
+.tree-card-detail {
+  padding: 10px 14px 14px 14px;
+  background: var(--g50);
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+.tree-card-detail-grid { display: flex; flex-direction: column; gap: 7px; color: var(--text-mid); margin-bottom: 10px; }
+.tree-card-detail-grid i { width: 16px; color: var(--g600); }
+
+/* condition left accent on cards */
+.tr-good  .tree-card-main { border-left: 4px solid #2d6a4f; }
+.tr-fair  .tree-card-main { border-left: 4px solid #e67e22; }
+.tr-poor  .tree-card-main { border-left: 4px solid #c0392b; }
+.tr-other .tree-card-main { border-left: 4px solid #adb5bd; }
+
+@media (max-width: 1024px) {
+  .tbl-wrap { display: none; }
+  #treeCardList { display: block; }
+  .mobile-sort-bar { display: flex; }
+}
+
 .empty-state {
   text-align: center; padding: 56px 24px; color: var(--text-muted);
 }

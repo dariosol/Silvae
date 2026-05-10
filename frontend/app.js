@@ -789,7 +789,9 @@ function renderPage() {
     }
     const {currentPage, pageSize} = state;
     const start = (currentPage - 1) * pageSize;
-    renderTreeList(trees.slice(start, start + pageSize));
+    const pageSlice = trees.slice(start, start + pageSize);
+    renderTreeList(pageSlice);
+    renderTreeCards(pageSlice);
     renderPagination(); updateSortHeaders();
     const total = state.allTrees.length, filtered = state.filteredTrees.length;
     document.getElementById('treeCount').textContent = filtered < total ? `${filtered} / ${total}` : total;
@@ -851,6 +853,84 @@ function condBadge(cond) {
     else if (c.includes('fair')||c.includes('moder')) { cls='cb-fair'; icon='fa-circle-exclamation'; }
     else if (c.includes('poor')||c.includes('crit')||c.includes('dead')) { cls='cb-poor'; icon='fa-circle-xmark'; }
     return `<span class="cond-badge ${cls}"><i class="fa-solid ${icon}"></i> ${cond}</span>`;
+}
+
+function condDot(cond) {
+    if (!cond) return `<span class="cond-dot dot-other" title="—"></span>`;
+    const c = cond.toLowerCase();
+    if (c.includes('good')||c.includes('excel')) return `<span class="cond-dot dot-good" title="${cond}"></span>`;
+    if (c.includes('fair')||c.includes('moder')) return `<span class="cond-dot dot-fair" title="${cond}"></span>`;
+    if (c.includes('poor')||c.includes('crit')||c.includes('dead')) return `<span class="cond-dot dot-poor" title="${cond}"></span>`;
+    return `<span class="cond-dot dot-other" title="${cond}"></span>`;
+}
+
+function renderTreeCards(trees) {
+    const container = document.getElementById('treeCardList');
+    container.innerHTML = '';
+    if (trees.length === 0) {
+        container.innerHTML = `<div class="empty-state"><i class="fa-solid fa-tree"></i><p>Nessun albero trovato.</p></div>`;
+        return;
+    }
+    trees.forEach(t => {
+        const addr = [t.address, t.city].filter(Boolean).join(' — ');
+        const coords = (t.latitude && t.longitude)
+            ? `${parseFloat(t.latitude).toFixed(4)}, ${parseFloat(t.longitude).toFixed(4)}`
+            : '—';
+        const distLine = (state.nearbyMode && state.userLat !== null && t.latitude && t.longitude)
+            ? `<div><i class="fa-solid fa-location-dot"></i> ${fmtDist(haversine(state.userLat, state.userLon, parseFloat(t.latitude), parseFloat(t.longitude)))}</div>`
+            : '';
+        const div = document.createElement('div');
+        div.className = `tree-card ${condClass(t.condition)}`;
+        div.innerHTML = `
+            <div class="tree-card-main" onclick="toggleCardDetail(this)">
+                <div class="tree-card-actions">
+                    <button class="btn btn-edit btn-sm" onclick="event.stopPropagation();openHistory(${t.id},'${t.custom_id}')" title="Storico"><i class="fa-solid fa-clock-rotate-left"></i></button>
+                    <button class="btn btn-edit btn-sm" onclick="event.stopPropagation();openEditForm(${t.id})" title="Modifica"><i class="fa-solid fa-pen-to-square"></i></button>
+                </div>
+                <div class="tree-card-info">
+                    ${condDot(t.condition)}
+                    <span class="id-chip">${t.custom_id}</span>
+                    <span class="species">${t.species}</span>
+                </div>
+                <i class="fa-solid fa-chevron-down tree-card-chevron"></i>
+            </div>
+            <div class="tree-card-detail" hidden>
+                <div class="tree-card-detail-grid">
+                    <div><i class="fa-solid fa-location-dot"></i> ${addr || '—'}</div>
+                    <div><i class="fa-solid fa-map-pin"></i> ${coords}</div>
+                    <div><i class="fa-solid fa-calendar-days"></i> ${t.next_check || '—'}</div>
+                    ${distLine}
+                </div>
+                <button class="btn btn-danger btn-sm" onclick="deleteTreeById(${t.id})">
+                    <i class="fa-solid fa-trash"></i> Elimina
+                </button>
+            </div>`;
+        container.appendChild(div);
+    });
+}
+
+function toggleCardDetail(mainEl) {
+    const detail = mainEl.nextElementSibling;
+    const chevron = mainEl.querySelector('.tree-card-chevron');
+    if (detail.hasAttribute('hidden')) {
+        detail.removeAttribute('hidden');
+        chevron.style.transform = 'rotate(180deg)';
+    } else {
+        detail.setAttribute('hidden', '');
+        chevron.style.transform = '';
+    }
+}
+
+function mobileSort(field) {
+    state.sortField = field; state.sortDir = 'asc'; state.currentPage = 1; renderPage();
+}
+
+function toggleMobileSortDir() {
+    state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+    const btn = document.getElementById('mobileSortDirBtn');
+    if (btn) btn.querySelector('i').className = state.sortDir === 'asc'
+        ? 'fa-solid fa-arrow-up-short-wide' : 'fa-solid fa-arrow-down-wide-short';
+    renderPage();
 }
 
 function renderTreeList(trees) {

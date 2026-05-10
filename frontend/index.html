@@ -243,6 +243,20 @@
               Seleziona un comune nella barra superiore, poi usa il filtro ID per trovare un albero specifico.
             </span>
           </div>
+          <!-- Mobile sort bar (hidden on desktop) -->
+          <div class="mobile-sort-bar">
+            <label>Ordina per:</label>
+            <select id="mobileSortSelect" onchange="mobileSort(this.value)">
+              <option value="custom_id">ID</option>
+              <option value="species">Specie</option>
+              <option value="condition">Condizione</option>
+              <option value="address">Indirizzo</option>
+              <option value="next_check">Prossima Ispezione</option>
+            </select>
+            <button class="btn btn-outline btn-sm" id="mobileSortDirBtn" onclick="toggleMobileSortDir()" title="Inverti ordine">
+              <i class="fa-solid fa-arrow-up-short-wide"></i>
+            </button>
+          </div>
           <div class="tbl-wrap">
             <table class="tbl">
               <thead>
@@ -260,6 +274,8 @@
               <tbody id="treeList"></tbody>
             </table>
           </div>
+          <!-- Mobile card list (hidden on desktop) -->
+          <div id="treeCardList"></div>
           <div id="paginationBar" style="display:none;align-items:center;justify-content:space-between;padding:10px 18px;border-top:1px solid var(--border);background:var(--g50);flex-shrink:0;">
             <span id="pagingInfo" style="font-size:13px;color:var(--text-muted);"></span>
             <div id="pagination" style="display:flex;gap:4px;align-items:center;"></div>
