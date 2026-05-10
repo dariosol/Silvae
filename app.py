@@ -97,9 +97,7 @@ class Comune(db.Model):
 
 class Tree(db.Model):
     __tablename__ = 'tree'
-    __table_args__ = (
-        db.UniqueConstraint('custom_id', 'city', name='uq_tree_custom_id_city'),
-    )
+    __table_args__ = ()
     # --- existing fields ---
     id               = db.Column(db.Integer, primary_key=True)
     custom_id        = db.Column(db.String(50), nullable=False)
@@ -249,6 +247,12 @@ with app.app_context():
             if col_name not in existing_user_cols:
                 conn.execute(text(f'ALTER TABLE "user" ADD COLUMN {col_name} {col_type}'))
         conn.commit()
+    with db.engine.connect() as conn:
+        try:
+            conn.execute(text('ALTER TABLE tree DROP CONSTRAINT uq_tree_custom_id_city'))
+            conn.commit()
+        except Exception:
+            conn.rollback()
     existing_comune_cols = {c['name'] for c in insp.get_columns('comune')}
     comune_new_cols = [('latitude', 'DOUBLE PRECISION'), ('longitude', 'DOUBLE PRECISION')]
     with db.engine.connect() as conn:
@@ -1524,8 +1528,7 @@ def import_gpkg_route():
 
     # All _GPKG_COLS canonical names are tried first, then legacy aliases.
     C = {
-        'custom_id':          dcol('custom_id', '_numero', 'id_albero', 'numero'),
-        'custom_id_name':     dcol('name'),
+        'custom_id':          dcol('custom_id', '_numero', 'name', 'id_albero', 'numero'),
         'species':            dcol('species', '_tassonomi', 'specie', 'nome_scientifico', 'taxon'),
         'species_ita':        dcol('_nome ital', '_nome_ital', 'nome_italiano', 'nome_comune'),
         'condition':          dcol('condition', '_classe vt', '_classe_vt', 'condizione'),
@@ -1694,7 +1697,7 @@ def import_gpkg_route():
         if lat is not None and C['latitude']:
             row[C['latitude']] = lat
 
-        custom_id = gs('custom_id') or gs('custom_id_name') or str(row.get('fid') or '').strip()
+        custom_id = gs('custom_id') or str(row.get('fid') or '').strip()
         if not custom_id:
             skipped += 1
             continue
