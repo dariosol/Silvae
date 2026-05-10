@@ -1501,7 +1501,8 @@ def import_gpkg_route():
 
     # All _GPKG_COLS canonical names are tried first, then legacy aliases.
     C = {
-        'custom_id':          dcol('custom_id', 'name', '_numero', 'id_albero', 'numero'),
+        'custom_id':          dcol('custom_id', '_numero', 'id_albero', 'numero'),
+        'custom_id_name':     dcol('name'),
         'species':            dcol('species', '_tassonomi', 'specie', 'nome_scientifico', 'taxon'),
         'species_ita':        dcol('_nome ital', '_nome_ital', 'nome_italiano', 'nome_comune'),
         'condition':          dcol('condition', '_classe vt', '_classe_vt', 'condizione'),
@@ -1651,7 +1652,7 @@ def import_gpkg_route():
         if lat is not None and C['latitude']:
             row[C['latitude']] = lat
 
-        custom_id = gs('custom_id') or str(row.get('fid') or '').strip()
+        custom_id = gs('custom_id') or gs('custom_id_name') or str(row.get('fid') or '').strip()
         if not custom_id:
             skipped += 1
             continue
