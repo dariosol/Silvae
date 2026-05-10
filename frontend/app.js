@@ -1494,7 +1494,6 @@ async function submitImportGPKG() {
     const result = document.getElementById('importResult');
 
     if (!input.files[0]) { showStatus('Seleziona un file .gpkg', 'warning'); return; }
-    if (!city)            { showStatus('Il comune è obbligatorio', 'warning'); return; }
 
     btn.disabled = true;
     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Importazione in corso…';
@@ -1511,7 +1510,12 @@ async function submitImportGPKG() {
         if (!res.ok) {
             showStatus(data.message || 'Errore durante l\'importazione', 'danger');
         } else {
-            const { inserted, skipped, errors, total } = data;
+            const { inserted, skipped, errors, total, city: detectedCity, city_autodetected } = data;
+            const cityLine = detectedCity
+                ? `<div style="font-size:12px;color:var(--text-muted);margin-top:8px;text-align:center;">
+                     <i class="fa-solid fa-location-dot" style="color:var(--g600);margin-right:4px;"></i>
+                     Comune: <strong>${detectedCity}</strong>${city_autodetected ? ' <span style="font-size:11px;">(auto-rilevato)</span>' : ''}
+                   </div>` : '';
             result.style.display = 'block';
             result.innerHTML = `
                 <div style="font-weight:700;color:var(--g800);margin-bottom:8px;"><i class="fa-solid fa-circle-check" style="color:#16a34a;margin-right:6px;"></i>Importazione completata</div>
@@ -1529,7 +1533,8 @@ async function submitImportGPKG() {
                     <div style="font-size:11px;color:var(--text-muted);">Errori</div>
                   </div>
                 </div>
-                <div style="font-size:12px;color:var(--text-muted);margin-top:8px;text-align:center;">Totale righe nel file: ${total}</div>`;
+                ${cityLine}
+                <div style="font-size:12px;color:var(--text-muted);margin-top:4px;text-align:center;">Totale righe nel file: ${total}</div>`;
             showStatus(`Importazione completata: ${inserted} alberi inseriti`, 'success');
             fetchTrees();
         }

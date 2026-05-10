@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import sys, os, io, json, secrets, struct, tempfile, sqlite3
+import sys, os, io, json, secrets, struct, tempfile, sqlite3, urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from dotenv import load_dotenv
@@ -92,6 +92,8 @@ class Comune(db.Model):
     sigla     = db.Column(db.String(2))
     regione   = db.Column(db.String(100))
     codice    = db.Column(db.String(10), unique=True)
+    latitude  = db.Column(db.Float)
+    longitude = db.Column(db.Float)
 
 class Tree(db.Model):
     __tablename__ = 'tree'
@@ -246,6 +248,13 @@ with app.app_context():
         for col_name, col_type in user_new_cols:
             if col_name not in existing_user_cols:
                 conn.execute(text(f'ALTER TABLE "user" ADD COLUMN {col_name} {col_type}'))
+        conn.commit()
+    existing_comune_cols = {c['name'] for c in insp.get_columns('comune')}
+    comune_new_cols = [('latitude', 'DOUBLE PRECISION'), ('longitude', 'DOUBLE PRECISION')]
+    with db.engine.connect() as conn:
+        for col_name, col_type in comune_new_cols:
+            if col_name not in existing_comune_cols:
+                conn.execute(text(f'ALTER TABLE comune ADD COLUMN {col_name} {col_type}'))
         conn.commit()
 
 # -----------------------
@@ -1424,6 +1433,21 @@ def _gpkg_point(blob):
     except Exception:
         return None, None
 
+def _reverse_geocode_comune(lat, lon):
+    """Return Italian comune name from coordinates via Nominatim (1 call per import)."""
+    url = (f'https://nominatim.openstreetmap.org/reverse'
+           f'?lat={lat}&lon={lon}&format=json&zoom=10&addressdetails=1&accept-language=it')
+    req = urllib.request.Request(url, headers={'User-Agent': 'SilvaePro/1.0 (tree-inventory)'})
+    try:
+        with urllib.request.urlopen(req, timeout=6) as r:
+            data = json.loads(r.read().decode())
+        addr = data.get('address', {})
+        return (addr.get('city') or addr.get('town') or
+                addr.get('village') or addr.get('municipality') or
+                addr.get('county') or '').strip()
+    except Exception:
+        return ''
+
 @app.route('/import/gpkg', methods=['POST'])
 @auth_required
 def import_gpkg_route():
@@ -1441,8 +1465,7 @@ def import_gpkg_route():
     if not city:
         if role in ('user', 'city') and user_city:
             city = user_city
-        else:
-            return jsonify({'message': 'Il campo comune è obbligatorio'}), 400
+        # else: city will be auto-detected from coordinates after parsing the file
 
     if not f.filename:
         return jsonify({'message': 'Nessun file selezionato'}), 400
@@ -1632,6 +1655,25 @@ def import_gpkg_route():
         if nd is not None:
             tree.next_check = nd
 
+    # --- Auto-detect comune from first valid coordinate if city not provided ---
+    city_autodetected = False
+    if not city:
+        for row in rows:
+            lat = lon = None
+            if C['latitude'] and C['longitude']:
+                lat = _gpkg_parse_float(row.get(C['latitude']))
+                lon = _gpkg_parse_float(row.get(C['longitude']))
+            if (lat is None or lon is None) and C['geom']:
+                blob = row.get(C['geom'])
+                if blob:
+                    lon, lat = _gpkg_point(blob)
+            if lat is not None and lon is not None:
+                city = _reverse_geocode_comune(lat, lon)
+                city_autodetected = bool(city)
+                break
+        if not city:
+            return jsonify({'message': 'Comune non rilevabile dalle coordinate. Inseriscilo manualmente.'}), 400
+
     # --- Main loop ---------------------------------------------------------
     inserted = skipped = errors = 0
 
@@ -1678,7 +1720,8 @@ def import_gpkg_route():
             db.session.rollback()
             errors += 1
 
-    return jsonify({'inserted': inserted, 'skipped': skipped, 'errors': errors, 'total': len(rows)})
+    return jsonify({'inserted': inserted, 'skipped': skipped, 'errors': errors,
+                    'total': len(rows), 'city': city, 'city_autodetected': city_autodetected})
 
 # -----------------------
 # Frontend static serving
