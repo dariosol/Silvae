@@ -925,6 +925,13 @@ function mobileSort(field) {
     state.sortField = field; state.sortDir = 'asc'; state.currentPage = 1; renderPage();
 }
 
+function changeMobilePageSize(val) {
+    state.pageSize = parseInt(val);
+    const desktop = document.getElementById('pageSizeSelect');
+    if (desktop) desktop.value = val;
+    state.currentPage = 1; renderPage();
+}
+
 function toggleMobileSortDir() {
     state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
     const btn = document.getElementById('mobileSortDirBtn');
