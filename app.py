@@ -1617,8 +1617,9 @@ def import_gpkg_route():
         sp = gs('species') or gs('species_ita') or 'Sconosciuta'
         tree.species = sp
 
-        cond = gs('condition') or gs('condition_fb') or '—'
-        tree.condition = cond
+        cond = gs('condition') or '—'
+        _VTA_MAP = {'a':'Ottimo','b':'Buono','c':'Discreto','c/d':'Scarso','d':'Critico','abbattuo':'Abbattuto'}
+        tree.condition = _VTA_MAP.get(cond.strip().lower(), cond)
 
         for key in ('address','height','age','cpc','location',
                     'dimora','stadio_sviluppo','posizione_sociale',

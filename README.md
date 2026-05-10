@@ -205,10 +205,23 @@ Il rilevamento avviene per corrispondenza sul testo (case-insensitive):
 |-----------|--------------|--------|
 | **Buono** | `buono`, `eccellente`, `ottimo` | Verde |
 | **Discreto** | `discreto`, `mediocre` | Giallo |
-| **Scarso / Critico** | `scarso`, `critico`, `morto` | Rosso |
+| **Scarso / Critico** | `scarso`, `critico`, `morto`, `abbattuto` | Rosso |
 | **Non classificato** | qualsiasi altro valore | Grigio |
 
 I valori consigliati da inserire nel form ispezioni sono: **Buono**, **Discreto**, **Scarso**.
+
+Durante l'importazione da file `.gpkg`, le classi VTA nel campo `_CLASSE VT` vengono convertite automaticamente:
+
+| Classe VTA | Condizione salvata |
+|---|---|
+| `A` | Ottimo |
+| `B` | Buono |
+| `C` | Discreto |
+| `C/D` | Scarso |
+| `D` | Critico |
+| `ABBATTUTO` | Abbattuto (invariato) |
+
+Valori già in forma testuale (es. file esportati da Silvae Pro) vengono lasciati invariati.
 
 ---
 

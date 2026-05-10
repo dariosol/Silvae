@@ -698,7 +698,7 @@ async function fetchTrees() {
 
 // ─── Trees: sort ─────────────────────────────────────────
 
-const COND_ORDER = {buono:0,eccellente:0,ottimo:0,discreto:1,mediocre:1,scarso:2,critico:2,morto:3};
+const COND_ORDER = {buono:0,eccellente:0,ottimo:0,discreto:1,mediocre:1,scarso:2,critico:2,morto:3,abbattuto:3};
 function condSortVal(cond) {
     if (!cond) return 99;
     const c = cond.toLowerCase();
@@ -842,7 +842,7 @@ function condClass(cond) {
     if (!cond) return 'tr-other'; const c = cond.toLowerCase();
     if (c.includes('buono')||c.includes('eccellente')||c.includes('ottimo')) return 'tr-good';
     if (c.includes('discreto')||c.includes('mediocre')) return 'tr-fair';
-    if (c.includes('scarso')||c.includes('critico')||c.includes('morto')) return 'tr-poor';
+    if (c.includes('scarso')||c.includes('critico')||c.includes('morto')||c.includes('abbattuto')) return 'tr-poor';
     return 'tr-other';
 }
 
@@ -851,7 +851,7 @@ function condBadge(cond) {
     const c = cond.toLowerCase(); let cls='cb-other', icon='fa-circle';
     if (c.includes('buono')||c.includes('eccellente')||c.includes('ottimo')) { cls='cb-good'; icon='fa-circle-check'; }
     else if (c.includes('discreto')||c.includes('mediocre')) { cls='cb-fair'; icon='fa-circle-exclamation'; }
-    else if (c.includes('scarso')||c.includes('critico')||c.includes('morto')) { cls='cb-poor'; icon='fa-circle-xmark'; }
+    else if (c.includes('scarso')||c.includes('critico')||c.includes('morto')||c.includes('abbattuto')) { cls='cb-poor'; icon='fa-circle-xmark'; }
     return `<span class="cond-badge ${cls}"><i class="fa-solid ${icon}"></i> ${cond}</span>`;
 }
 
@@ -860,7 +860,7 @@ function condDot(cond) {
     const c = cond.toLowerCase();
     if (c.includes('buono')||c.includes('eccellente')||c.includes('ottimo')) return `<span class="cond-dot dot-good" title="${cond}"></span>`;
     if (c.includes('discreto')||c.includes('mediocre')) return `<span class="cond-dot dot-fair" title="${cond}"></span>`;
-    if (c.includes('scarso')||c.includes('critico')||c.includes('morto')) return `<span class="cond-dot dot-poor" title="${cond}"></span>`;
+    if (c.includes('scarso')||c.includes('critico')||c.includes('morto')||c.includes('abbattuto')) return `<span class="cond-dot dot-poor" title="${cond}"></span>`;
     return `<span class="cond-dot dot-other" title="${cond}"></span>`;
 }
 
