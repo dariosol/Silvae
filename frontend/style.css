@@ -814,6 +814,11 @@ textarea.fc { resize: vertical; min-height: 72px; }
   padding: 2px 7px; border-radius: 20px;
 }
 .tl-body { font-size: 13px; color: var(--text-mid); margin-bottom: 6px; line-height: 1.5; }
+.tl-card-summary { margin: 4px 0 6px; display: flex; flex-direction: column; gap: 3px; }
+.tl-summary-id { font-size: 12px; font-weight: 600; color: var(--text-mid); display: flex; align-items: center; gap: 5px; }
+.tl-summary-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.tl-chip { font-size: 11px; background: var(--bg-main); border: 1px solid var(--border); color: var(--text-mid); padding: 1px 6px; border-radius: 10px; white-space: nowrap; }
+.tl-chip-p { background: #eef3ff; border-color: #c5d3f5; color: #3050a0; }
 .tl-actions {
   font-size: 12px; color: var(--text-muted);
   display: flex; align-items: center; gap: 6px;

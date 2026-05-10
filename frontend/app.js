@@ -1296,6 +1296,30 @@ function rischioClass(desc) {
     return 'risk-unknown';
 }
 
+function renderCardSummary(snap) {
+    if (!snap) return '';
+    const dim = [
+        snap.tree_height_m      ? `H ${snap.tree_height_m} m`           : null,
+        snap.circonferenza_cm   ? `Circ. ${snap.circonferenza_cm} cm`    : null,
+        snap.crown_diameter_m   ? `Øchioma ${snap.crown_diameter_m} m`   : null,
+        snap.branch_diam_cm     ? `Øramo ${snap.branch_diam_cm} cm`      : null,
+        snap.branch_length_m    ? `Lramo ${snap.branch_length_m} m`      : null,
+        snap.branch_height_m    ? `Hramo ${snap.branch_height_m} m`      : null,
+        snap.target_height_m    ? `Hbers. ${snap.target_height_m} m`     : null,
+    ].filter(Boolean);
+    const per = [
+        snap.pericolo_rami      != null ? `P.rami ${snap.pericolo_rami}`         : null,
+        snap.pericolo_tronco    != null ? `P.tronco ${snap.pericolo_tronco}`     : null,
+        snap.pericolo_colletto  != null ? `P.colletto ${snap.pericolo_colletto}` : null,
+        snap.pericolo_zolla     != null ? `P.zolla ${snap.pericolo_zolla}`       : null,
+    ].filter(Boolean);
+    const idLine = snap.custom_id ? `<div class="tl-summary-id"><i class="fa-solid fa-tag"></i> ${snap.custom_id}</div>` : '';
+    const dimLine = dim.length ? `<div class="tl-summary-row">${dim.map(d=>`<span class="tl-chip">${d}</span>`).join('')}</div>` : '';
+    const perLine = per.length ? `<div class="tl-summary-row">${per.map(p=>`<span class="tl-chip tl-chip-p">${p}</span>`).join('')}</div>` : '';
+    if (!idLine && !dimLine && !perLine) return '';
+    return `<div class="tl-card-summary">${idLine}${dimLine}${perLine}</div>`;
+}
+
 function renderSnapshotDetails(snap) {
     if (!snap) return '<em style="color:var(--text-muted);font-size:12px;">Nessun dato disponibile</em>';
     const rows = [];
@@ -1315,6 +1339,12 @@ function renderSnapshotDetails(snap) {
     add('L ramo', snap.branch_length_m ? snap.branch_length_m + ' m' : null);
     add('H ramo', snap.branch_height_m ? snap.branch_height_m + ' m' : null);
     add('H bersaglio', snap.target_height_m ? snap.target_height_m + ' m' : null);
+    add('H albero post-interv.', snap.post_tree_height_m ? snap.post_tree_height_m + ' m' : null);
+    add('Circ. post-interv.', snap.post_circonferenza_cm ? snap.post_circonferenza_cm + ' cm' : null);
+    add('Ø ramo post-interv.', snap.post_branch_diam_cm ? snap.post_branch_diam_cm + ' cm' : null);
+    add('L ramo post-interv.', snap.post_branch_length_m ? snap.post_branch_length_m + ' m' : null);
+    add('H ramo post-interv.', snap.post_branch_height_m ? snap.post_branch_height_m + ' m' : null);
+    add('H bersaglio post-interv.', snap.post_target_height_m ? snap.post_target_height_m + ' m' : null);
     add('Pericolo rami', snap.pericolo_rami);
     add('Pericolo tronco', snap.pericolo_tronco);
     add('Pericolo colletto', snap.pericolo_colletto);
@@ -1366,6 +1396,7 @@ function renderTimeline(inspections) {
                     ${idx===0?'<span class="tl-latest-tag">Ultima</span>':''}
                 </div>
                 ${rischioBadge(insp.rischio)}
+                ${renderCardSummary(insp.snapshot)}
                 ${treatment}
                 ${insp.comments?`<div class="tl-body">${insp.comments}</div>`:''}
                 <div class="tl-footer-row">

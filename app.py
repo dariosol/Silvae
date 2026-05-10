@@ -1531,7 +1531,7 @@ def import_gpkg_route():
         'custom_id':          dcol('custom_id', '_numero', 'name', 'id_albero', 'numero'),
         'species':            dcol('species', '_tassonomi', 'specie', 'nome_scientifico', 'taxon'),
         'species_ita':        dcol('_nome ital', '_nome_ital', 'nome_italiano', 'nome_comune'),
-        'condition':          dcol('condition', '_classe vt', '_classe_vt', 'condizione'),
+        'condition':          dcol('condition', 'condizione'),
         'condition_fb':       dcol('_f. fisiol', '_f_fisiol', 'stato_fitosanitario'),
         'address':            dcol('address', "_localita'", '_localita', 'localita', 'indirizzo', 'via'),
         'height':             dcol('height', '_altezza', 'altezza', 'h_albero'),
