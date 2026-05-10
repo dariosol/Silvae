@@ -1411,7 +1411,7 @@ def _gpkg_parse_float(val):
 def _gpkg_parse_date(val):
     if not val:
         return None
-    for fmt in ('%d/%m/%Y', '%Y-%m-%d', '%d-%m-%Y'):
+    for fmt in ('%d/%m/%Y', '%Y-%m-%d', '%d-%m-%Y', '%m/%y'):
         try:
             return datetime.strptime(str(val).strip(), fmt).date()
         except (ValueError, AttributeError):
@@ -1539,7 +1539,7 @@ def import_gpkg_route():
         'circonferenza_cm':   dcol('circonferenza_cm', '_circonfer', '_circonferenza', 'circonferenza'),
         'localizzazione':     dcol('localizzazione', '_stazione', 'stazione'),
         'location':           dcol('location'),
-        'next_check':         dcol('next_check', '_da contro', '_da_contro', 'prossima_ispezione', 'data_controllo'),
+        'next_check':         dcol('next_check', '_da contro', '_da_contro', 'prossima_ispezione', 'data_controllo', '_rivedere'),
         'longitude':          dcol('longitude', 'xcoord', 'x', 'lon'),
         'latitude':           dcol('latitude', 'ycoord', 'y', 'lat'),
         'geom':               dcol('geom', 'geometry', 'the_geom', 'shape'),
