@@ -516,7 +516,8 @@ function switchTab(name) {
             });
             new LocateControl().addTo(state.map);
         } else { state.map.invalidateSize(); }
-        showOnMap(state.allTrees);
+        populateMapAddressFilter();
+        applyMapAddressFilter();
     }
 }
 
@@ -693,7 +694,11 @@ async function fetchTrees() {
     state.currentPage = 1;
     document.getElementById('idFilter').value = '';
     applyIdFilter();
-    if (state.activeTab === 'map') showOnMap(state.allTrees);
+    if (state.activeTab === 'map') {
+        document.getElementById('mapAddressFilter').value = '';
+        populateMapAddressFilter();
+        showOnMap(state.allTrees);
+    }
 }
 
 // ─── Trees: sort ─────────────────────────────────────────
@@ -1201,6 +1206,28 @@ function locateMe() {
         state.map.setView([lat, lon], 16);
     }, () => showStatus('Impossibile ottenere la posizione', 'danger'));
 }
+
+function populateMapAddressFilter() {
+    const sel = document.getElementById('mapAddressFilter');
+    const current = sel.value;
+    const addresses = [...new Set(state.allTrees.map(t => t.address).filter(Boolean))].sort();
+    sel.innerHTML = '<option value="">Tutti gli indirizzi</option>' +
+        addresses.map(a => `<option value="${encodeHTML(a)}">${a}</option>`).join('');
+    if (addresses.includes(current)) sel.value = current;
+}
+
+function applyMapAddressFilter() {
+    const addr = document.getElementById('mapAddressFilter').value;
+    const trees = addr ? state.allTrees.filter(t => t.address === addr) : state.allTrees;
+    showOnMap(trees);
+}
+
+function resetMapAddressFilter() {
+    document.getElementById('mapAddressFilter').value = '';
+    showOnMap(state.allTrees);
+}
+
+function encodeHTML(s) { return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 function showOnMap(trees) {
     state.markers.forEach(m => state.map.removeLayer(m));

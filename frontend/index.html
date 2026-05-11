@@ -787,6 +787,15 @@
 
     <!-- MAP tab -->
     <section id="tab-map" class="tab-section">
+      <div id="mapFilterBar">
+        <i class="fa-solid fa-road" style="color:var(--g600);font-size:14px;"></i>
+        <select id="mapAddressFilter" class="map-addr-sel" onchange="applyMapAddressFilter()">
+          <option value="">Tutti gli indirizzi</option>
+        </select>
+        <button class="btn btn-sm btn-outline" onclick="resetMapAddressFilter()" title="Mostra tutti">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
       <div id="map"></div>
     </section>
 

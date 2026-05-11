@@ -707,7 +707,21 @@ th.sort-active .sort-ico { opacity: 1; color: var(--g700); }
 
 /* ── Map tab ── */
 #tab-map { padding: 0; }
-#tab-map #map { height: 100%; display: block; }
+#mapFilterBar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 14px; background: #fff;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0; z-index: 1;
+}
+.map-addr-sel {
+  flex: 1; max-width: 360px;
+  padding: 5px 10px; border-radius: 8px;
+  border: 1px solid var(--border); font-size: 13px;
+  background: var(--bg-light); color: var(--text);
+  cursor: pointer;
+}
+.map-addr-sel:focus { outline: none; border-color: var(--g500); }
+#tab-map #map { flex: 1; min-height: 0; display: block; }
 
 /* ── Status toast ── */
 #status {
