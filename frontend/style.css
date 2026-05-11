@@ -711,16 +711,30 @@ th.sort-active .sort-ico { opacity: 1; color: var(--g700); }
   display: flex; align-items: center; gap: 8px;
   padding: 8px 14px; background: #fff;
   border-bottom: 1px solid var(--border);
-  flex-shrink: 0; z-index: 1;
+  flex-shrink: 0; z-index: 401;
 }
-.map-addr-sel {
-  flex: 1; max-width: 360px;
-  padding: 5px 10px; border-radius: 8px;
+.map-addr-wrap { position: relative; flex: 1; max-width: 380px; }
+.map-addr-input {
+  width: 100%; padding: 5px 10px; border-radius: 8px;
   border: 1px solid var(--border); font-size: 13px;
   background: var(--bg-light); color: var(--text);
-  cursor: pointer;
+  box-sizing: border-box;
 }
-.map-addr-sel:focus { outline: none; border-color: var(--g500); }
+.map-addr-input:focus { outline: none; border-color: var(--g500); }
+.map-addr-suggestions {
+  display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+  background: #fff; border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.14); list-style: none;
+  margin: 0; padding: 4px 0; max-height: 220px; overflow-y: auto; z-index: 500;
+}
+.map-addr-suggestions.open { display: block; }
+.map-addr-suggestions li {
+  padding: 7px 12px; font-size: 13px; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.map-addr-suggestions li:hover,
+.map-addr-suggestions li.kbd-active { background: var(--g100); }
+.map-addr-suggestions li strong { color: var(--g700); font-weight: 700; }
 #tab-map #map { flex: 1; min-height: 0; display: block; }
 
 /* ── Status toast ── */

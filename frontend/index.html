@@ -788,11 +788,13 @@
     <!-- MAP tab -->
     <section id="tab-map" class="tab-section">
       <div id="mapFilterBar">
-        <i class="fa-solid fa-road" style="color:var(--g600);font-size:14px;"></i>
-        <select id="mapAddressFilter" class="map-addr-sel" onchange="applyMapAddressFilter()">
-          <option value="">Tutti gli indirizzi</option>
-        </select>
-        <button class="btn btn-sm btn-outline" onclick="resetMapAddressFilter()" title="Mostra tutti">
+        <i class="fa-solid fa-road" style="color:var(--g600);font-size:14px;flex-shrink:0;"></i>
+        <div class="map-addr-wrap">
+          <input id="mapAddressInput" class="map-addr-input" type="text"
+                 placeholder="Filtra per indirizzo…" autocomplete="off">
+          <ul id="mapAddrSuggestions" class="map-addr-suggestions"></ul>
+        </div>
+        <button id="mapAddrClearBtn" class="btn btn-sm btn-outline" onclick="resetMapAddressFilter()" title="Mostra tutti" style="display:none">
           <i class="fa-solid fa-xmark"></i>
         </button>
       </div>

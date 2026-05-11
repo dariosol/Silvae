@@ -516,8 +516,7 @@ function switchTab(name) {
             });
             new LocateControl().addTo(state.map);
         } else { state.map.invalidateSize(); }
-        populateMapAddressFilter();
-        applyMapAddressFilter();
+        showOnMap(state.allTrees);
     }
 }
 
@@ -694,11 +693,7 @@ async function fetchTrees() {
     state.currentPage = 1;
     document.getElementById('idFilter').value = '';
     applyIdFilter();
-    if (state.activeTab === 'map') {
-        document.getElementById('mapAddressFilter').value = '';
-        populateMapAddressFilter();
-        showOnMap(state.allTrees);
-    }
+    if (state.activeTab === 'map') { resetMapAddressFilter(); showOnMap(state.allTrees); }
 }
 
 // ─── Trees: sort ─────────────────────────────────────────
@@ -1207,27 +1202,110 @@ function locateMe() {
     }, () => showStatus('Impossibile ottenere la posizione', 'danger'));
 }
 
-function populateMapAddressFilter() {
-    const sel = document.getElementById('mapAddressFilter');
-    const current = sel.value;
-    const addresses = [...new Set(state.allTrees.map(t => t.address).filter(Boolean))].sort();
-    sel.innerHTML = '<option value="">Tutti gli indirizzi</option>' +
-        addresses.map(a => `<option value="${encodeHTML(a)}">${a}</option>`).join('');
-    if (addresses.includes(current)) sel.value = current;
+function encodeHTML(s) { return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function _mapAddrPairs() {
+    const seen = new Set();
+    const pairs = [];
+    for (const t of state.allTrees) {
+        if (!t.address) continue;
+        const key = `${t.address}||${t.city||''}`;
+        if (!seen.has(key)) { seen.add(key); pairs.push({address: t.address, city: t.city||''}); }
+    }
+    return pairs.sort((a, b) => a.address.localeCompare(b.address));
 }
 
-function applyMapAddressFilter() {
-    const addr = document.getElementById('mapAddressFilter').value;
-    const trees = addr ? state.allTrees.filter(t => t.address === addr) : state.allTrees;
+function _mapAddrLabel(pair) {
+    return pair.city ? `${pair.address} — ${pair.city}` : pair.address;
+}
+
+let _mapAddrKbd = -1;
+
+function _mapAddrShowSuggestions(matches) {
+    const ul = document.getElementById('mapAddrSuggestions');
+    const q  = document.getElementById('mapAddressInput').value.trim().toLowerCase();
+    _mapAddrKbd = -1;
+    if (!matches.length) { ul.innerHTML = ''; ul.classList.remove('open'); return; }
+    ul.innerHTML = matches.map(p => {
+        const label = _mapAddrLabel(p);
+        const i = label.toLowerCase().indexOf(q);
+        const hi = i >= 0
+            ? encodeHTML(label.slice(0,i)) + '<strong>' + encodeHTML(label.slice(i, i+q.length)) + '</strong>' + encodeHTML(label.slice(i+q.length))
+            : encodeHTML(label);
+        return `<li data-address="${encodeHTML(p.address)}" data-city="${encodeHTML(p.city)}">${hi}</li>`;
+    }).join('');
+    ul.classList.add('open');
+}
+
+function _mapAddrSelectFromInput() {
+    const q = document.getElementById('mapAddressInput').value.trim().toLowerCase();
+    if (!q) { resetMapAddressFilter(); return; }
+    const exact = _mapAddrPairs().find(p => _mapAddrLabel(p).toLowerCase() === q);
+    if (exact) _mapAddrCommit(exact.address, exact.city);
+}
+
+function _mapAddrCommit(address, city) {
+    const pair = {address, city};
+    document.getElementById('mapAddressInput').value = _mapAddrLabel(pair);
+    document.getElementById('mapAddrSuggestions').classList.remove('open');
+    document.getElementById('mapAddrClearBtn').style.display = '';
+    _mapAddrKbd = -1;
+    const trees = state.allTrees.filter(t => t.address === address && (t.city||'') === city);
     showOnMap(trees);
 }
 
 function resetMapAddressFilter() {
-    document.getElementById('mapAddressFilter').value = '';
+    document.getElementById('mapAddressInput').value = '';
+    document.getElementById('mapAddrSuggestions').classList.remove('open');
+    document.getElementById('mapAddrClearBtn').style.display = 'none';
+    _mapAddrKbd = -1;
     showOnMap(state.allTrees);
 }
 
-function encodeHTML(s) { return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function initMapAddressAutocomplete() {
+    const inp = document.getElementById('mapAddressInput');
+    const ul  = document.getElementById('mapAddrSuggestions');
+
+    inp.addEventListener('input', () => {
+        const q = inp.value.trim().toLowerCase();
+        document.getElementById('mapAddrClearBtn').style.display = inp.value ? '' : 'none';
+        if (!q) { ul.innerHTML = ''; ul.classList.remove('open'); showOnMap(state.allTrees); return; }
+        const matches = _mapAddrPairs().filter(p => _mapAddrLabel(p).toLowerCase().includes(q));
+        _mapAddrShowSuggestions(matches);
+    });
+
+    inp.addEventListener('keydown', e => {
+        const items = ul.querySelectorAll('li');
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            items[_mapAddrKbd]?.classList.remove('kbd-active');
+            _mapAddrKbd = Math.min(_mapAddrKbd + 1, items.length - 1);
+            items[_mapAddrKbd]?.classList.add('kbd-active');
+            items[_mapAddrKbd]?.scrollIntoView({block:'nearest'});
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            items[_mapAddrKbd]?.classList.remove('kbd-active');
+            _mapAddrKbd = Math.max(_mapAddrKbd - 1, 0);
+            items[_mapAddrKbd]?.classList.add('kbd-active');
+            items[_mapAddrKbd]?.scrollIntoView({block:'nearest'});
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (_mapAddrKbd >= 0 && items[_mapAddrKbd]) {
+                const li = items[_mapAddrKbd];
+                _mapAddrCommit(li.dataset.address, li.dataset.city);
+            } else { _mapAddrSelectFromInput(); }
+        } else if (e.key === 'Escape') {
+            ul.classList.remove('open');
+        }
+    });
+
+    inp.addEventListener('blur', () => setTimeout(() => ul.classList.remove('open'), 150));
+
+    ul.addEventListener('click', e => {
+        const li = e.target.closest('li');
+        if (li) _mapAddrCommit(li.dataset.address, li.dataset.city);
+    });
+}
 
 function showOnMap(trees) {
     state.markers.forEach(m => state.map.removeLayer(m));
@@ -1677,6 +1755,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initComuneAutocomplete('city');
     initComuneAutocomplete('newCity');
     initComuneAutocomplete('importCity');
+    initMapAddressAutocomplete();
     initImportDropZone();
     document.getElementById('exportExcelBtn').addEventListener('click', exportExcel);
     document.getElementById('exportGPKGBtn').addEventListener('click', exportGPKG);
