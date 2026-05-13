@@ -9,7 +9,7 @@ let state = {
     sortField: null, sortDir: 'asc',
     nearbyMode: false, userLat: null, userLon: null, nearbyRadius: null,
     exportMode: false, exportSelected: new Set(),
-    map: null, markers: [], userMarker: null,
+    map: null, markers: [], clusterGroup: null, userMarker: null,
     dropdowns: {}
 };
 
@@ -1333,22 +1333,38 @@ function initMapAddressAutocomplete() {
 }
 
 function showOnMap(trees) {
-    state.markers.forEach(m => state.map.removeLayer(m));
+    if (state.clusterGroup) state.map.removeLayer(state.clusterGroup);
     state.markers = [];
+
+    state.clusterGroup = L.markerClusterGroup({
+        maxClusterRadius: 60,
+        iconCreateFunction(cluster) {
+            const n = cluster.getChildCount();
+            return L.divIcon({
+                className: '',
+                html: `<div style="background:var(--g800);color:#fff;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.35)">${n}</div>`,
+                iconSize: [36, 36], iconAnchor: [18, 18]
+            });
+        }
+    });
+
     trees.forEach(t => {
         if (!t.latitude || !t.longitude) return;
         const icon = L.divIcon({
             className: '',
             html: `<div style="background:var(--g800);color:#fff;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,.3)"><i class="fa-solid fa-tree"></i></div>`,
-            iconSize: [30,30], iconAnchor: [15,15]
+            iconSize: [30, 30], iconAnchor: [15, 15]
         });
-        const m = L.marker([t.latitude, t.longitude], {icon}).addTo(state.map)
+        const m = L.marker([t.latitude, t.longitude], {icon})
             .bindPopup(`<strong>${t.custom_id}</strong><br><em>${t.species}</em><br>${condBadge(t.condition)}<br><span style="font-size:12px;color:#555">${t.address||t.city||''}</span><br><br><button class="btn btn-sm btn-primary" onclick="openEditForm(${t.id})"><i class="fa-solid fa-pen-to-square"></i> Modifica</button>`);
         m.treeId = t.id;
         state.markers.push(m);
+        state.clusterGroup.addLayer(m);
     });
+
+    state.map.addLayer(state.clusterGroup);
     if (state.markers.length > 0)
-        state.map.fitBounds(L.featureGroup(state.markers).getBounds().pad(0.12));
+        state.map.fitBounds(state.clusterGroup.getBounds().pad(0.12));
 }
 
 // ─── Inspection history ───────────────────────────────────
