@@ -9,7 +9,7 @@ let state = {
     sortField: null, sortDir: 'asc',
     nearbyMode: false, userLat: null, userLon: null, nearbyRadius: null,
     exportMode: false, exportSelected: new Set(),
-    map: null, markers: [], clusterGroup: null, userMarker: null,
+    map: null, markers: [], clusterGroup: null, userMarker: null, satelliteActive: false,
     dropdowns: {}
 };
 
@@ -515,6 +515,10 @@ function switchTab(name) {
                 null,
                 { position: 'topright', collapsed: false }
             ).addTo(state.map);
+            state.map.on('baselayerchange', e => {
+                state.satelliteActive = e.name === 'Satellite';
+                showOnMap(state.allTrees);
+            });
             const LocateControl = L.Control.extend({
                 options: { position: 'topleft' },
                 onAdd() {
@@ -1332,6 +1336,29 @@ function initMapAddressAutocomplete() {
     });
 }
 
+const COND_COLOR = {
+    'tr-good': '#2d6a4f',
+    'tr-fair': '#e67e22',
+    'tr-poor': '#c0392b',
+    'tr-other': '#888888',
+};
+
+function treeMarkerIcon(t) {
+    if (state.satelliteActive) {
+        const color = COND_COLOR[condClass(t.condition)] || COND_COLOR['tr-other'];
+        return L.divIcon({
+            className: '',
+            html: `<div style="border-radius:50%;width:18px;height:18px;border:3px solid ${color};background:transparent;box-sizing:border-box;"></div>`,
+            iconSize: [18, 18], iconAnchor: [9, 9]
+        });
+    }
+    return L.divIcon({
+        className: '',
+        html: `<div style="background:var(--g800);color:#fff;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,.3)"><i class="fa-solid fa-tree"></i></div>`,
+        iconSize: [30, 30], iconAnchor: [15, 15]
+    });
+}
+
 function showOnMap(trees) {
     if (state.clusterGroup) state.map.removeLayer(state.clusterGroup);
     state.markers = [];
@@ -1350,12 +1377,7 @@ function showOnMap(trees) {
 
     trees.forEach(t => {
         if (!t.latitude || !t.longitude) return;
-        const icon = L.divIcon({
-            className: '',
-            html: `<div style="background:var(--g800);color:#fff;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,.3)"><i class="fa-solid fa-tree"></i></div>`,
-            iconSize: [30, 30], iconAnchor: [15, 15]
-        });
-        const m = L.marker([t.latitude, t.longitude], {icon})
+        const m = L.marker([t.latitude, t.longitude], { icon: treeMarkerIcon(t) })
             .bindPopup(`<strong>${t.custom_id}</strong><br><em>${t.species}</em><br>${condBadge(t.condition)}<br><span style="font-size:12px;color:#555">${t.address||t.city||''}</span><br><br><button class="btn btn-sm btn-primary" onclick="openEditForm(${t.id})"><i class="fa-solid fa-pen-to-square"></i> Modifica</button>`);
         m.treeId = t.id;
         state.markers.push(m);

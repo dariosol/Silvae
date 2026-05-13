@@ -111,14 +111,43 @@
         return s;
     }
 
-    function findTree(customId) {
-        if (!customId) return null;
+    function findAllTrees(customId) {
+        if (!customId) return [];
         const up = customId.toUpperCase();
         const bare = up.replace(/-/g, '');
-        return (state.allTrees || []).find(t => {
+        return (state.allTrees || []).filter(t => {
             const tid = t.custom_id.toUpperCase();
             return tid === up || tid.replace(/-/g, '') === bare;
-        }) || null;
+        });
+    }
+
+    function closestTree(trees, lat, lon) {
+        return trees.reduce((best, t) => {
+            if (!t.latitude || !t.longitude) return best;
+            const dlat = lat - parseFloat(t.latitude), dlon = lon - parseFloat(t.longitude);
+            const d = dlat * dlat + dlon * dlon;
+            return (!best || d < best.d) ? { t, d } : best;
+        }, null)?.t || trees[0];
+    }
+
+    // Returns Promise<tree|null>. If multiple matches, picks the closest to user.
+    function resolveTree(customId) {
+        const matches = findAllTrees(customId);
+        if (!matches.length) return Promise.resolve(null);
+        if (matches.length === 1) return Promise.resolve(matches[0]);
+
+        // Use already-known position if available
+        if (state.userLat && state.userLon)
+            return Promise.resolve(closestTree(matches, state.userLat, state.userLon));
+
+        // Otherwise request geolocation; fall back to first on denial
+        return new Promise(resolve => {
+            if (!navigator.geolocation) { resolve(matches[0]); return; }
+            navigator.geolocation.getCurrentPosition(
+                pos => resolve(closestTree(matches, pos.coords.latitude, pos.coords.longitude)),
+                ()  => resolve(matches[0])
+            );
+        });
     }
 
     // ── Intent definitions ────────────────────────────────────────────────────
@@ -275,34 +304,37 @@
         }
 
         if (intent === 'OPEN_TREE' || intent === 'EDIT_TREE') {
-            const tree = findTree(params.customId);
-            if (!tree) { voiceFeedback('Albero ' + params.customId + ' non trovato', 'warning'); return; }
-            openEditForm(tree.id);
-            voiceFeedback('Apro ' + tree.custom_id);
+            resolveTree(params.customId).then(tree => {
+                if (!tree) { voiceFeedback('Albero ' + params.customId + ' non trovato', 'warning'); return; }
+                openEditForm(tree.id);
+                voiceFeedback('Apro ' + tree.custom_id);
+            });
             return;
         }
 
         if (intent === 'OPEN_HISTORY') {
-            const tree = findTree(params.customId);
-            if (!tree) { voiceFeedback('Albero ' + params.customId + ' non trovato', 'warning'); return; }
-            openHistory(tree.id, tree.custom_id);
-            voiceFeedback('Storico di ' + tree.custom_id);
+            resolveTree(params.customId).then(tree => {
+                if (!tree) { voiceFeedback('Albero ' + params.customId + ' non trovato', 'warning'); return; }
+                openHistory(tree.id, tree.custom_id);
+                voiceFeedback('Storico di ' + tree.custom_id);
+            });
             return;
         }
 
         if (intent === 'LOCATE_TREE') {
-            const tree = findTree(params.customId);
-            if (!tree) { voiceFeedback('Albero ' + params.customId + ' non trovato', 'warning'); return; }
-            if (!tree.latitude || !tree.longitude) { voiceFeedback(tree.custom_id + ': coordinate non disponibili', 'warning'); return; }
-            switchTab('map');
-            setTimeout(() => {
-                const m = state.map;
-                if (!m) return;
-                m.setView([parseFloat(tree.latitude), parseFloat(tree.longitude)], 18);
-                const mk = state.markers.find(x => x.treeId === tree.id);
-                if (mk) mk.openPopup();
-            }, 350);
-            voiceFeedback('Trovo ' + tree.custom_id + ' sulla mappa');
+            resolveTree(params.customId).then(tree => {
+                if (!tree) { voiceFeedback('Albero ' + params.customId + ' non trovato', 'warning'); return; }
+                if (!tree.latitude || !tree.longitude) { voiceFeedback(tree.custom_id + ': coordinate non disponibili', 'warning'); return; }
+                switchTab('map');
+                setTimeout(() => {
+                    const m = state.map;
+                    if (!m) return;
+                    m.setView([parseFloat(tree.latitude), parseFloat(tree.longitude)], 18);
+                    const mk = state.markers.find(x => x.treeId === tree.id);
+                    if (mk) mk.openPopup();
+                }, 350);
+                voiceFeedback('Trovo ' + tree.custom_id + ' sulla mappa');
+            });
             return;
         }
 
