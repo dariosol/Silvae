@@ -1364,7 +1364,7 @@ function showOnMap(trees) {
     state.markers = [];
 
     state.clusterGroup = L.markerClusterGroup({
-        maxClusterRadius: 60,
+        maxClusterRadius: 30,
         iconCreateFunction(cluster) {
             const n = cluster.getChildCount();
             return L.divIcon({
