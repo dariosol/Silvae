@@ -1173,9 +1173,14 @@ rischio_finale   = lookup_inverso(probabilità_n)    ← foglio A, colonne AR:AS
 
 <div id="status"></div>
 
+<button id="voiceBtn" class="voice-fab" onclick="startListening()" title="Comando vocale (it)">
+  <i class="fa-solid fa-microphone"></i>
+</button>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="app.js"></script>
+<script src="voice.js"></script>
 
 <!-- Modale: Come funziona il calcolo del rischio ORD -->
 <div class="info-modal-overlay" id="riskInfoModal" onclick="if(event.target===this)this.classList.remove('open')">

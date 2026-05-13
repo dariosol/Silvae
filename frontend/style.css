@@ -958,3 +958,34 @@ textarea.fc { resize: vertical; min-height: 72px; }
   .section-toolbar { flex-direction: column; align-items: stretch; }
   .toolbar-left, .toolbar-right { width: 100%; }
 }
+
+/* ── Voice FAB ──────────────────────────────────────────────── */
+.voice-fab {
+  position: fixed;
+  bottom: 24px;
+  right: 20px;
+  z-index: 9999;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: none;
+  background: var(--g800);
+  color: #fff;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(0,0,0,.35);
+  cursor: pointer;
+  transition: background .15s, transform .1s;
+}
+.voice-fab:hover  { background: var(--g700); transform: scale(1.06); }
+.voice-fab:active { transform: scale(.96); }
+.voice-fab.voice-listening {
+  background: #dc2626;
+  animation: voice-pulse 1.2s ease-in-out infinite;
+}
+@keyframes voice-pulse {
+  0%, 100% { box-shadow: 0 4px 14px rgba(220,38,38,.4); }
+  50%       { box-shadow: 0 4px 28px rgba(220,38,38,.75); }
+}

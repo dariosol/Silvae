@@ -18,6 +18,7 @@ from functools import wraps
 import openpyxl
 from openpyxl.styles import PatternFill, Font, Alignment
 from openpyxl.utils import get_column_letter
+from groq import Groq as GroqClient
 
 from tools import dropdowns_ord as dd
 from tools.lookup_tables import (
@@ -1737,6 +1738,56 @@ def import_gpkg_route():
 
     return jsonify({'inserted': inserted, 'skipped': skipped, 'errors': errors,
                     'total': len(rows), 'city': city, 'city_autodetected': city_autodetected})
+
+# -----------------------
+# Voice intent (Groq NLU fallback)
+# -----------------------
+GROQ_SYSTEM = """Sei un assistente per un'app di censimento alberi urbani.
+Estrai intent e parametri dalla frase italiana dell'utente.
+Intent possibili:
+  OPEN_TREE       params: { customId }
+  EDIT_TREE       params: { customId }
+  OPEN_HISTORY    params: { customId }
+  LOCATE_TREE     params: { customId }
+  NEARBY_RADIUS   params: { radius }   (radius in metres, integer)
+  NEARBY_TOGGLE   params: {}
+  FILTER_CONDITION params: { label }   (Ottimo|Buono|Discreto|Scarso|Critico|Morto)
+  RESET_FILTERS   params: {}
+  ADD_TREE        params: {}
+  SWITCH_MAP      params: {}
+  SWITCH_LIST     params: {}
+  COUNT_TREES     params: {}
+Rispondi SOLO con JSON valido: {"intent":"...","params":{...}}
+Se non riesci a determinare l'intent rispondi: {"intent":null,"params":{}}"""
+
+@app.route('/api/voice_intent', methods=['POST'])
+@auth_required
+def voice_intent():
+    data = request.get_json()
+    transcript = (data or {}).get('transcript', '').strip()
+    if not transcript:
+        return jsonify({'intent': None, 'params': {}}), 200
+
+    api_key = os.environ.get('GROQ_API_KEY')
+    if not api_key:
+        return jsonify({'error': 'GROQ_API_KEY not set'}), 503
+
+    try:
+        client = GroqClient(api_key=api_key)
+        resp = client.chat.completions.create(
+            model='llama-3.1-8b-instant',
+            messages=[
+                {'role': 'system', 'content': GROQ_SYSTEM},
+                {'role': 'user',   'content': transcript},
+            ],
+            temperature=0,
+            max_tokens=80,
+        )
+        raw = resp.choices[0].message.content.strip()
+        result = json.loads(raw)
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # -----------------------
 # Frontend static serving

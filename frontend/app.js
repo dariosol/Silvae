@@ -7,7 +7,7 @@ let state = {
     currentPage: 1, pageSize: 25,
     activeTab: 'trees',
     sortField: null, sortDir: 'asc',
-    nearbyMode: false, userLat: null, userLon: null,
+    nearbyMode: false, userLat: null, userLon: null, nearbyRadius: null,
     exportMode: false, exportSelected: new Set(),
     map: null, markers: [], userMarker: null,
     dropdowns: {}
@@ -354,6 +354,7 @@ async function init() {
     await Promise.all([populateCities(), fetchDropdowns()]);
     setupAuthUI();
     if (state.token && state.user) fetchTrees();
+    voiceInit();
 }
 
 function setupAuthUI() {
@@ -763,7 +764,7 @@ function fmtDist(m) {
 function toggleNearby() {
     const btn = document.getElementById('nearbyBtn');
     if (state.nearbyMode) {
-        state.nearbyMode = false; state.userLat = null; state.userLon = null;
+        state.nearbyMode = false; state.userLat = null; state.userLon = null; state.nearbyRadius = null;
         btn.classList.remove('btn-primary'); btn.classList.add('btn-outline');
         renderPage(); return;
     }
@@ -790,6 +791,10 @@ function goToPage(page) { state.currentPage = page; renderPage(); }
 function renderPage() {
     let trees = state.filteredTrees;
     if (state.nearbyMode && state.userLat !== null) {
+        if (state.nearbyRadius !== null) {
+            trees = trees.filter(t => t.latitude && t.longitude &&
+                haversine(state.userLat, state.userLon, parseFloat(t.latitude), parseFloat(t.longitude)) <= state.nearbyRadius);
+        }
         trees = [...trees].sort((a, b) => {
             const da = (a.latitude && a.longitude) ? haversine(state.userLat, state.userLon, parseFloat(a.latitude), parseFloat(a.longitude)) : Infinity;
             const db = (b.latitude && b.longitude) ? haversine(state.userLat, state.userLon, parseFloat(b.latitude), parseFloat(b.longitude)) : Infinity;
@@ -1339,6 +1344,7 @@ function showOnMap(trees) {
         });
         const m = L.marker([t.latitude, t.longitude], {icon}).addTo(state.map)
             .bindPopup(`<strong>${t.custom_id}</strong><br><em>${t.species}</em><br>${condBadge(t.condition)}<br><span style="font-size:12px;color:#555">${t.address||t.city||''}</span><br><br><button class="btn btn-sm btn-primary" onclick="openEditForm(${t.id})"><i class="fa-solid fa-pen-to-square"></i> Modifica</button>`);
+        m.treeId = t.id;
         state.markers.push(m);
     });
     if (state.markers.length > 0)

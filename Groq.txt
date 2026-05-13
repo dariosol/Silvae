@@ -1,0 +1,171 @@
+GROQ NLU FALLBACK — DESIGN NOTE
+Silvae Pro — voice command intent extraction
+Date: 2026-05-13
+
+═══════════════════════════════════════════════════════════════
+WHY GROQ
+═══════════════════════════════════════════════════════════════
+
+- Free tier: 14,400 requests/day, 30 req/min — more than enough for field use
+- Speed: ~150ms (LPU hardware, not GPU) — acceptable for voice UX
+- Model: llama-3.1-8b-instant — good Italian comprehension, cheap prompt
+- API format: OpenAI-compatible (easy to integrate)
+- No credit card required for free tier
+- Sign up: console.groq.com
+
+Alternative if Groq is down or rate-limited:
+  Google Gemini Flash — free tier 15 req/min, 1M tokens/day
+  API key at aistudio.google.com
+
+For local dev only (zero latency, zero cost, no internet):
+  Ollama + llama3.2:3b — not viable on Railway (no GPU/resources)
+
+═══════════════════════════════════════════════════════════════
+ARCHITECTURE
+═══════════════════════════════════════════════════════════════
+
+Regex parser runs first (zero cost, zero latency).
+Groq is called ONLY when regex returns null (unrecognised phrase).
+In practice this means Groq fires on maybe 10% of commands.
+
+  browser transcript
+      │
+      ▼
+  parseIntent(text)   ← regex, instant
+      │ null
+      ▼
+  POST /api/voice_intent   ← Flask, JWT-protected
+      │
+      ▼
+  Groq API (llama-3.1-8b-instant)
+      │
+      ▼
+  { intent, params }   ← structured JSON
+      │
+      ▼
+  dispatchIntent()
+
+Calling through the Flask backend keeps the Groq API key
+server-side (never exposed in the browser bundle).
+
+═══════════════════════════════════════════════════════════════
+ENV VAR
+═══════════════════════════════════════════════════════════════
+
+Add to .env (local) and Railway environment variables:
+
+  GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxx
+
+═══════════════════════════════════════════════════════════════
+FLASK ENDPOINT  (app.py)
+═══════════════════════════════════════════════════════════════
+
+Add this route (requires: pip install groq):
+
+  from groq import Groq as GroqClient
+
+  GROQ_SYSTEM = """Sei un assistente per un'app di censimento alberi urbani.
+  Estrai intent e parametri dalla frase italiana dell'utente.
+  Intent possibili:
+    OPEN_TREE       params: { customId }
+    EDIT_TREE       params: { customId }
+    OPEN_HISTORY    params: { customId }
+    LOCATE_TREE     params: { customId }
+    NEARBY_RADIUS   params: { radius }   (radius in metres, integer)
+    NEARBY_TOGGLE   params: {}
+    FILTER_CONDITION params: { label }   (Ottimo|Buono|Discreto|Scarso|Critico|Morto)
+    RESET_FILTERS   params: {}
+    ADD_TREE        params: {}
+    SWITCH_MAP      params: {}
+    SWITCH_LIST     params: {}
+    COUNT_TREES     params: {}
+  Rispondi SOLO con JSON valido: {"intent":"...","params":{...}}
+  Se non riesci a determinare l'intent rispondi: {"intent":null,"params":{}}"""
+
+  @app.route('/api/voice_intent', methods=['POST'])
+  @token_required
+  def voice_intent(current_user):
+      data = request.get_json()
+      transcript = (data or {}).get('transcript', '').strip()
+      if not transcript:
+          return jsonify({'intent': None, 'params': {}}), 200
+
+      api_key = os.environ.get('GROQ_API_KEY')
+      if not api_key:
+          return jsonify({'error': 'GROQ_API_KEY not set'}), 503
+
+      try:
+          client = GroqClient(api_key=api_key)
+          resp = client.chat.completions.create(
+              model='llama-3.1-8b-instant',
+              messages=[
+                  {'role': 'system', 'content': GROQ_SYSTEM},
+                  {'role': 'user',   'content': transcript},
+              ],
+              temperature=0,
+              max_tokens=80,
+          )
+          raw = resp.choices[0].message.content.strip()
+          result = json.loads(raw)
+          return jsonify(result), 200
+      except Exception as e:
+          return jsonify({'error': str(e)}), 500
+
+═══════════════════════════════════════════════════════════════
+VOICE.JS FALLBACK  (frontend/voice.js)
+═══════════════════════════════════════════════════════════════
+
+Replace the "no match" branch in recognition.onresult:
+
+  recognition.onresult = e => {
+      for (let i = 0; i < e.results[0].length; i++) {
+          const transcript = e.results[0][i].transcript.trim();
+          const intent = parseIntent(transcript);
+          if (intent) { dispatchIntent(intent); return; }
+      }
+      // regex missed — try Groq fallback
+      const raw = e.results[0][0].transcript.trim();
+      callGroqFallback(raw);
+  };
+
+  async function callGroqFallback(transcript) {
+      showStatus('🎤 …', 'info');
+      try {
+          const res = await fetch('/api/voice_intent', {
+              method: 'POST',
+              headers: Object.assign({ 'Content-Type': 'application/json' }, authHeader()),
+              body: JSON.stringify({ transcript }),
+          });
+          if (!res.ok) throw new Error('server error');
+          const data = await res.json();
+          if (data.intent) {
+              dispatchIntent({ intent: data.intent, params: data.params || {}, raw: transcript });
+          } else {
+              showStatus('Non capito: "' + transcript + '"', 'warning');
+          }
+      } catch (_) {
+          showStatus('Non capito: "' + transcript + '"', 'warning');
+      }
+  }
+
+Note: authHeader() is already defined in app.js and available globally.
+
+═══════════════════════════════════════════════════════════════
+REQUIREMENTS.TXT
+═══════════════════════════════════════════════════════════════
+
+Add:
+  groq
+
+(The groq Python package wraps the OpenAI-compatible REST API.)
+
+═══════════════════════════════════════════════════════════════
+EFFORT ESTIMATE
+═══════════════════════════════════════════════════════════════
+
+  app.py endpoint:        ~30 min (copy template above, adjust token_required decorator)
+  voice.js fallback:      ~15 min (copy template above)
+  requirements + env var: ~5 min
+  Testing on device:      ~30 min
+
+Total: roughly one focused hour.

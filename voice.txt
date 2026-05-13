@@ -1,0 +1,432 @@
+VOICE COMMANDS — DESIGN NOTE
+Silvae Pro — tree mapping app
+Date: 2026-05-13
+Author: note drafted by Claude
+
+═══════════════════════════════════════════════════════════════
+WHY THIS IS FEASIBLE (NO EXTERNAL COST)
+═══════════════════════════════════════════════════════════════
+
+The browser already ships SpeechRecognition (Web Speech API), natively
+supported in Chrome/Edge/Android WebView with lang='it-IT'. No server
+calls, no API key, no cost. On mobile (where the fieldwork happens),
+Chrome for Android works well. Safari on iOS has it too but behind a
+permission prompt.
+
+This means the entire voice pipeline lives in ~150 lines of JavaScript
+added to frontend/app.js (or a new frontend/voice.js).
+
+═══════════════════════════════════════════════════════════════
+EXISTING HOOKS WE CAN CALL
+═══════════════════════════════════════════════════════════════
+
+The functions needed already exist in app.js:
+
+  toggleNearby()          — activates geolocation + nearby mode
+  applyIdFilter(q)        — filters tree list by custom_id
+  openEditForm(id)        — opens edit/detail panel for tree by DB id
+  fetchTreeById(id)       — fetches a tree (returns data)
+  showOnMap(trees)        — renders markers on Leaflet map
+  switchTab('trees'|'map')— switches main tab
+  haversine(lat,lon,lat2,lon2) — returns distance in metres
+  state.allTrees          — full tree list in memory
+
+The one gap: nearbyMode sorts by distance but does NOT filter by radius.
+We'd need a small addition: state.nearbyRadius (default null) checked
+inside renderPage() to hide trees beyond that radius.
+
+═══════════════════════════════════════════════════════════════
+COMMAND VOCABULARY (ITALIAN)
+═══════════════════════════════════════════════════════════════
+
+Below are the intents and their trigger phrases.
+Regex matching is forgiving (ignores filler words, case-insensitive).
+
+--- PROXIMITY FILTER ---
+"mostrami gli alberi in un raggio di 500 metri da me"
+"alberi entro 200 metri"
+"vicino a me nel raggio di 1 chilometro"
+→ ACTION: get GPS position → set nearbyMode=true, nearbyRadius=<N>m
+         → renderPage() with distance filter applied
+         → toast: "Mostro gli alberi entro 500 m da te"
+
+--- OPEN TREE CARD / DETAIL ---
+"mostrami la scheda dell'albero T001"
+"mostrami l'albero T001"
+"scheda T001"
+→ ACTION: find tree in state.allTrees where custom_id === 'T001'
+         → openEditForm(tree.id)
+         → toast: "Apro la scheda di T001"
+
+--- EDIT TREE ---
+"modifica l'albero T001"
+"modifica T001"
+→ ACTION: same as above (openEditForm already opens in edit mode)
+         → toast: "Apro il modulo di modifica per T001"
+
+--- LOCATE TREE ON MAP ---
+"mostrami sulla mappa l'albero T001"
+"dov'è T001"
+"posizione T001"
+→ ACTION: find tree → switchTab('map') → map.setView([lat,lon], 18)
+         → open popup on that marker
+         → toast: "Cerco T001 sulla mappa"
+
+--- FILTER BY CONDITION ---
+"mostrami gli alberi critici"
+"filtra per condizione critica / scarsa / discreta / buona"
+"alberi in stato scarso"
+→ ACTION: filter state.filteredTrees by condition value
+         → renderPage()
+         → toast: "Filtro: condizione critica"
+
+--- RESET FILTERS ---
+"rimuovi filtri"
+"mostrami tutti gli alberi"
+"reset"
+→ ACTION: state.filteredTrees = state.allTrees
+         state.nearbyMode = false, state.nearbyRadius = null
+         → renderPage()
+
+--- ADD NEW TREE ---
+"aggiungi un albero"
+"nuovo albero"
+"inserisci albero"
+→ ACTION: resetForm() → showTreeView('form') → focus on first field
+         → toast: "Apro il modulo per un nuovo albero"
+
+--- SWITCH TO MAP ---
+"mostrami la mappa"
+"vai alla mappa"
+→ ACTION: switchTab('map')
+
+--- SWITCH TO LIST ---
+"vai alla lista"
+"mostrami la lista"
+→ ACTION: switchTab('trees') → showTreeView('list')
+
+--- HOW MANY TREES ---
+"quanti alberi ci sono"
+"quanti alberi sono stati censiti"
+→ ACTION: read state.allTrees.length, speak + toast the count
+
+═══════════════════════════════════════════════════════════════
+TREE PARAMETER MODIFICATION BY VOICE
+═══════════════════════════════════════════════════════════════
+
+The form has ~40 fields split into groups. Voice can pre-fill them,
+but the user must confirm with "salva" or tap Save — never auto-save,
+because arborist data is safety-critical (ARETE scores affect risk).
+
+The flow is always:
+  1. Open the tree form by voice (openEditForm)
+  2. Pre-fill the spoken field
+  3. Announce what was set and wait for "salva" or manual confirm
+
+--- SIMPLE NUMERIC MEASUREMENTS ---
+Fields: tree_height_m, circonferenza_cm, crown_diameter_m,
+        trunk_diameter_cm, branch_diam_cm, branch_length_m,
+        branch_height_m, target_height_m, age
+
+Examples:
+  "imposta l'altezza dell'albero T001 a 12 metri"
+  "la circonferenza è 85 centimetri"
+  "altezza chioma 8 virgola 5 metri"          ← handle "virgola" → "."
+  "diametro del tronco 42 cm"
+  "età stimata 60 anni"
+
+Regex skeleton:
+  /\b(altezza|height)\b.*?([\d]+(?:[,.][\d]+)?)\s*(m|metr)/i  → tree_height_m
+  /\b(circonferenza)\b.*?([\d]+(?:[,.][\d]+)?)\s*(cm|centim)/i → circonferenza_cm
+  /\b(diametro corona|chioma)\b.*?([\d]+(?:[,.][\d]+)?)/i      → crown_diameter_m
+  /\b(et[àa]|anni)\b.*?([\d]+)/i                               → age
+
+Note: Italian TTS often says "dodici virgola cinque" (12.5) — the parser
+must convert spoken decimals: "virgola" → ".".
+Numbers-as-words ("dodici") are also possible but rare in technical
+contexts; start with digit-only matching and add word-to-number later.
+
+--- CONDITION (QUICK UPDATE VIA INSPECTION) ---
+Fields: inspCondition (on the inspection form, NOT the tree form)
+
+  "l'albero T001 è in condizione scarsa"
+  "segna condizione critica per T001"
+  "condizione buona albero T002"
+→ ACTION: openHistory(tree.id, customId)
+         → pre-fill inspCondition with normalized value
+         → set inspDate to today
+         → announce: "Pronto. Aggiungi un commento e poi di' 'salva ispezione'."
+
+Accepted values and their normalizations:
+  "ottimo"/"eccellente"  → "Ottimo"
+  "buono"/"buona"        → "Buono"
+  "discreto"/"discreta"  → "Discreto"
+  "scarso"/"scarsa"      → "Scarso"
+  "critico"/"critica"    → "Critico"
+
+--- INSPECTION COMMENT BY VOICE ---
+  "nota: presenza di cancro sul tronco"
+  "osservazione: cavità basale visibile"
+  "aggiungi nota albero T001: lesione da impatto"
+→ ACTION: if history view is already open for T001,
+         pre-fill inspComments with the spoken text
+         → announce: "Nota aggiunta. Di' 'salva ispezione' per confermare."
+  If history is not open, open it first, then fill.
+
+--- PRESCRIBED ACTIONS (INSPECTION) ---
+  "azione: potatura di rimonda"
+  "intervento: consolidamento con tiranti"
+→ ACTION: pre-fill inspActions with the spoken text
+
+--- PERICOLO (ARETE RISK FACTORS) ---
+Fields: pericolo_rami, pericolo_tronco, pericolo_colletto, pericolo_zolla
+These are single <select> dropdowns. Accepted values come from the
+lookup tables (1 = Molto basso … 5 = Molto alto, or similar codes).
+
+  "pericolo rami: alto"
+  "pericolo tronco: molto alto"
+  "pericolo colletto: basso"
+  "pericolo zolla: trascurabile"
+→ ACTION: open editForm for target tree
+         → map spoken word → dropdown value
+         → highlight the changed field
+         → announce: "Pericolo tronco impostato su 'Alto'. Salva per confermare."
+
+Voice → value mapping (approximate, must be verified against actual
+lookup_tables.py values):
+  "trascurabile"/"assente"   → lowest code
+  "basso"                    → low code
+  "medio"/"moderato"         → mid code
+  "alto"/"elevato"           → high code
+  "molto alto"/"critico"     → highest code
+
+--- MONITORAGGIO & URGENZA ---
+  "monitoraggio: mensile"
+  "urgenza: entro tre mesi"
+  "prossima verifica: entro sei mesi"
+→ ACTION: set monitoraggio / urgenza select to the matching option
+         (options come from lt_monitoraggio / lt_urgenza in lookup_tables.py)
+
+--- PROSSIMA DATA DI CONTROLLO ---
+  "prossima verifica il 15 settembre 2026"
+  "controlla tra sei mesi"
+→ ACTION: compute date → pre-fill next_check (YYYY-MM-DD)
+         → announce: "Prossima verifica impostata al 15/09/2026"
+
+Months in Italian: gennaio=1, febbraio=2, marzo=3, aprile=4,
+maggio=5, giugno=6, luglio=7, agosto=8, settembre=9,
+ottobre=10, novembre=11, dicembre=12
+
+--- COMMENTS / NOTE LIBERE ---
+  "aggiungi nota: radici che sollevano il marciapiede"
+  "osservazioni: chioma asimmetrica, rami secchi sul lato nord"
+→ ACTION: pre-fill the comments textarea with the spoken text
+         (append if already has content, don't overwrite)
+
+--- SALVA / ANNULLA ---
+  "salva"  /  "salva modifiche"  /  "conferma"
+→ ACTION: trigger form submit (document.getElementById('addTreeForm').requestSubmit())
+
+  "salva ispezione"  /  "registra ispezione"
+→ ACTION: call submitInspection()
+
+  "annulla"  /  "cancella"
+→ ACTION: resetForm() or navigate back without saving
+
+═══════════════════════════════════════════════════════════════
+TREE HISTORY (STORICO) BY VOICE
+═══════════════════════════════════════════════════════════════
+
+--- VIEW HISTORY ---
+  "mostrami lo storico dell'albero T001"
+  "storico T001"
+  "cronologia T001"
+  "ispezioni passate albero T001"
+→ ACTION: find tree → openHistory(tree.id, customId)
+         → this calls switchTab('trees') + showTreeView('history') + loadHistory()
+         → the timeline renders with most recent inspection first
+         → toast + speak: "Storico di T001: N ispezioni registrate"
+
+--- READ BACK LAST INSPECTION (spoken summary) ---
+  "com'era l'albero T001 all'ultima ispezione"
+  "ultima verifica T001"
+  "quando è stato controllato T001"
+→ ACTION: fetch /tree/{id}/inspections → take inspections[0] (most recent)
+         → compose spoken summary:
+           "Albero T001. Ultima ispezione il {date} da {inspector}.
+            Condizione: {condition}. {comments truncated to 50 chars}"
+         → SpeechSynthesis speaks it + shows toast
+
+This is the most useful field command: hands-free, eyes-free readout
+while standing in front of the tree.
+
+--- ADD QUICK INSPECTION ---
+  "aggiungi ispezione albero T001 condizione scarsa nota: seccume diffuso"
+→ ACTION (compound command, parsed in order):
+    1. find T001
+    2. openHistory(tree.id, customId)
+    3. pre-fill inspDate = today, inspCondition = "Scarso",
+       inspComments = "seccume diffuso"
+    4. announce: "Ispezione pronta. Di' 'salva ispezione' per registrare."
+
+This compound form is the highest-value field command — one breath
+adds a complete inspection record without touching the screen.
+
+--- COMPARE LAST TWO INSPECTIONS ---
+  "com'è cambiato T001"
+  "confronta le ultime due ispezioni di T001"
+→ ACTION: fetch inspections → if >= 2, read back:
+         "T001: passato da {cond[1]} ({date[1]}) a {cond[0]} ({date[0]}).
+          Rischio: {rischio[0]}."
+
+═══════════════════════════════════════════════════════════════
+IMPORTANT: WHAT NOT TO SET BY VOICE
+═══════════════════════════════════════════════════════════════
+
+Some fields are too complex or risky to set reliably by voice alone:
+
+- Diagnosi rows (diag_tronco, diag_chioma, etc.) — multi-row dynamic
+  structures with paired (caratteristica, giudizio) values. Too many
+  options to parse reliably. Better: open the form by voice, then
+  fill manually.
+
+- Bersaglio (chioma/ramo tipo+value+flow) — three linked fields that
+  trigger cascading visibility changes (onBersaglioTipoChange). The
+  dependency chain is tricky to replicate in voice alone. Open by
+  voice, fill manually.
+
+- Multi-selects (agenti_carie, altri_patogeni, conflitti_list,
+  prescrizioni_*) — too many possible values. Voice could add a
+  single item: "aggiungi agente carie: Ganoderma applanatum", but
+  this requires exact string matching against the lookup list.
+
+- CPC (codice posizione catastale) — too technical, always manual.
+
+- GPS coordinates — use "rileva posizione" to trigger getLocation()
+  and auto-fill from the device GPS. Never dictate coordinates.
+
+═══════════════════════════════════════════════════════════════
+IMPLEMENTATION PLAN (3 STEPS)
+═══════════════════════════════════════════════════════════════
+
+STEP 1 — Add nearbyRadius support to renderPage() (5 lines in app.js)
+  Inside the sort/filter block, after nearbyMode check:
+    if (state.nearbyRadius !== null) {
+        trees = trees.filter(t => t.latitude && t.longitude &&
+            haversine(state.userLat, state.userLon,
+                      parseFloat(t.latitude), parseFloat(t.longitude))
+            <= state.nearbyRadius);
+    }
+
+STEP 2 — Create frontend/voice.js
+  Structure:
+    - voiceInit()          called from init() on page load
+    - startListening()     called when mic button pressed
+    - parseIntent(text)    returns { intent, params } or null
+    - dispatchIntent(intent, params)  calls the right function
+    - voiceFeedback(msg)   shows toast + optionally speaks back
+
+  Intent parser uses an ordered list of regex patterns, e.g.:
+    { re: /raggio\s+di\s+(\d+)\s*(m|metr|km|chilo)/i,
+      intent: 'NEARBY_RADIUS',
+      extract: m => ({ radius: parseFloat(m[1]) * (m[2].startsWith('k') ? 1000 : 1) }) }
+
+    { re: /\b(scheda|albero|modifica)\s+(T\d+)\b/i,
+      intent: 'OPEN_TREE',
+      extract: m => ({ customId: m[2].toUpperCase() }) }
+
+STEP 3 — Add mic button to index.html
+  A floating button (bottom-right, above the Leaflet attribution):
+    <button id="voiceBtn" class="voice-fab" onclick="startListening()" title="Comando vocale">
+      <i class="fa-solid fa-microphone"></i>
+    </button>
+  Pulse animation while listening (CSS class 'listening' toggle).
+  Visual + audio feedback: a small toast showing what was heard,
+  then what action was taken.
+
+═══════════════════════════════════════════════════════════════
+SPOKEN FEEDBACK (OPTIONAL)
+═══════════════════════════════════════════════════════════════
+
+The browser SpeechSynthesis API can speak back in Italian:
+    const u = new SpeechSynthesisUtterance("Mostro 12 alberi entro 500 metri");
+    u.lang = 'it-IT';
+    speechSynthesis.speak(u);
+
+This is useful in the field when you can't look at the screen.
+Can be toggled on/off with a settings checkbox.
+
+═══════════════════════════════════════════════════════════════
+LIMITATIONS TO KNOW IN ADVANCE
+═══════════════════════════════════════════════════════════════
+
+1. HTTPS required — SpeechRecognition is blocked on plain HTTP.
+   Railway (production) serves HTTPS, so no problem there.
+   Local dev: use `flask run --cert=adhoc` or ngrok for testing.
+
+2. Chrome on Android is the most reliable runtime. Firefox does
+   not support SpeechRecognition at all (as of 2026).
+
+3. Background noise in the field (traffic, wind) degrades accuracy.
+   Keep commands short and structured. The parser should tolerate
+   partial matches and ask for confirmation on ambiguous input.
+
+4. Tree ID recognition: speech engines sometimes misread "T001" as
+   "ti zero zero uno" or "trecento uno". The parser should handle
+   both "T001" and spelled-out variants: "t zero zero uno" → "T001".
+   Alternatively use phonetic hints: accept "Teo" as "T0", "Tea" etc.
+
+5. The SpeechRecognition session is short (browser cuts off ~5-8 sec
+   of silence). Use continuous=false and re-arm on button press.
+
+═══════════════════════════════════════════════════════════════
+POSSIBLE EXTENSION: Claude API AS NLU FALLBACK
+═══════════════════════════════════════════════════════════════
+
+If regex patterns miss too many real utterances, the raw transcript
+could be sent to the Claude API (claude-haiku-4-5 for speed/cost)
+with a structured prompt:
+
+  "Sei un assistente per un'app di censimento alberi.
+   Estrai l'intento e i parametri da questa frase in italiano.
+   Rispondi SOLO con JSON: {intent, params}.
+   Frase: '<transcript>'"
+
+This adds latency (~300ms) and cost, but makes the parser much more
+robust to natural speech variation. Use only as fallback when regex
+returns null.
+
+═══════════════════════════════════════════════════════════════
+EFFORT ESTIMATE
+═══════════════════════════════════════════════════════════════
+
+Step 1 (nearbyRadius filter):          ~15 min
+Step 2 (voice.js, navigation/filter):  ~2-3 hours
+Step 3 (UI button + CSS):              ~30 min
+Spoken feedback (SpeechSynthesis):     ~30 min
+Parameter pre-fill (numeric fields,
+  pericolo, monitoraggio, urgenza):    ~2 hours
+History commands + readback:           ~1.5 hours
+Compound inspection command:           ~1 hour
+Testing on Android Chrome:             ~1-2 hours
+
+Total: roughly one focused full day of work.
+
+Recommended order: navigation/filter first (Step 2), then history
+readback (highest field value), then parameter pre-fill, then compound
+inspection command.
+
+═══════════════════════════════════════════════════════════════
+QUICK START PROTOTYPE (can be done right now)
+═══════════════════════════════════════════════════════════════
+
+To test feasibility immediately, paste this in the browser console
+while on the app page:
+
+  const r = new webkitSpeechRecognition();
+  r.lang = 'it-IT'; r.interimResults = false;
+  r.onresult = e => console.log('Sentito:', e.results[0][0].transcript);
+  r.start();
+
+Speak a command and check the transcript. This confirms the browser
+and microphone work before any real implementation.
