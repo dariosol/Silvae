@@ -500,9 +500,20 @@ function switchTab(name) {
     if (name === 'map') {
         if (!state.map) {
             state.map = L.map('map').setView([45.4642, 9.19], 12);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19, attribution: '© OpenStreetMap'
-            }).addTo(state.map);
+            });
+            const satelliteLayer = L.tileLayer(
+                'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                maxZoom: 19,
+                attribution: 'Tiles © Esri — Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+            });
+            osmLayer.addTo(state.map);
+            L.control.layers(
+                { 'Mappa stradale': osmLayer, 'Satellite': satelliteLayer },
+                null,
+                { position: 'topright', collapsed: false }
+            ).addTo(state.map);
             const LocateControl = L.Control.extend({
                 options: { position: 'topleft' },
                 onAdd() {
@@ -1241,7 +1252,16 @@ function _mapAddrSelectFromInput() {
     const q = document.getElementById('mapAddressInput').value.trim().toLowerCase();
     if (!q) { resetMapAddressFilter(); return; }
     const exact = _mapAddrPairs().find(p => _mapAddrLabel(p).toLowerCase() === q);
-    if (exact) _mapAddrCommit(exact.address, exact.city);
+    if (exact) { _mapAddrCommit(exact.address, exact.city); return; }
+    const words = q.split(/\s+/).filter(Boolean);
+    const trees = state.allTrees.filter(t => {
+        const label = `${t.address || ''} ${t.city || ''}`.toLowerCase();
+        return words.every(w => label.includes(w));
+    });
+    document.getElementById('mapAddrSuggestions').classList.remove('open');
+    document.getElementById('mapAddrClearBtn').style.display = '';
+    _mapAddrKbd = -1;
+    showOnMap(trees.length ? trees : []);
 }
 
 function _mapAddrCommit(address, city) {
