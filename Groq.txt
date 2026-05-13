@@ -169,3 +169,17 @@ EFFORT ESTIMATE
   Testing on device:      ~30 min
 
 Total: roughly one focused hour.
+
+ESEMPIO IMPLEMENTATO
+
+Intento	Esempio frase libera
+OPEN_TREE	"fammi vedere l'albero ROM007" / "voglio vedere ROM007"
+EDIT_TREE	"devo aggiornare ROM007" / "cambio i dati di ROM007"
+LOCATE_TREE	"trovami ROM007 sulla mappa" / "dove si trova ROM007"
+OPEN_HISTORY	"le ispezioni passate di ROM007" / "storico di ROM007"
+NEARBY_RADIUS	"mostrami gli alberi a meno di 300 metri" / "quelli vicino a me entro 1 km"
+FILTER_CONDITION	"voglio vedere solo gli alberi critici" / "alberi in cattivo stato"
+RESET_FILTERS	"riporta tutto alla normalità" / "togli tutto"
+ADD_TREE	"devo registrare un nuovo albero"
+COUNT_TREES	"quanti alberi ci sono?" / "dimmi il totale"
+SWITCH_MAP	"portami alla mappa"

@@ -165,6 +165,13 @@
             }
         },
 
+        // FILTER BY ADDRESS
+        {
+            re: /(?:(?:fammi\s+vedere|mostrami|cerca|filtra)\s+(?:gli\s+)?)?alberi\s+(?:con\s+indirizzo\s+|in\s+via\s+|in\s+piazza\s+|in\s+corso\s+|a\s+|in\s+)(.{2,})/i,
+            intent: 'FILTER_ADDRESS',
+            params: m => ({ address: m[1].trim() })
+        },
+
         // FILTER BY CONDITION
         {
             re: /(?:filtra|mostrami|alberi|condizione)\s+(?:per\s+condizione\s+|condizione\s+|in\s+stato\s+)?(ottim[oi]|eccellent\w+|buon[oia]|discret[oi]|mediocer\w+|scars[aoi]|critic[oi]|mort[oi]|abbattut[oi])/i,
@@ -296,6 +303,14 @@
                 if (mk) mk.openPopup();
             }, 350);
             voiceFeedback('Trovo ' + tree.custom_id + ' sulla mappa');
+            return;
+        }
+
+        if (intent === 'FILTER_ADDRESS') {
+            const el = document.getElementById('streetSearch');
+            if (!el) { voiceFeedback('Ricerca per indirizzo non disponibile', 'warning'); return; }
+            el.value = params.address;
+            fetchTrees().then(() => voiceFeedback('Indirizzo: ' + params.address));
             return;
         }
 

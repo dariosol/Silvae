@@ -1751,6 +1751,7 @@ Intent possibili:
   LOCATE_TREE     params: { customId }
   NEARBY_RADIUS   params: { radius }   (radius in metres, integer)
   NEARBY_TOGGLE   params: {}
+  FILTER_ADDRESS   params: { address }  (street name or locality to search, e.g. "Pollenzo" or "via Roma")
   FILTER_CONDITION params: { label }   (Ottimo|Buono|Discreto|Scarso|Critico|Morto)
   RESET_FILTERS   params: {}
   ADD_TREE        params: {}
