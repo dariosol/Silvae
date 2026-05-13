@@ -366,15 +366,18 @@
                 headers: Object.assign({ 'Content-Type': 'application/json' }, authHeader()),
                 body: JSON.stringify({ transcript }),
             });
-            if (!res.ok) throw new Error('server error');
             const data = await res.json();
+            if (!res.ok) {
+                showStatus('Groq errore: ' + (data.error || res.status), 'danger');
+                return;
+            }
             if (data.intent) {
                 dispatchIntent({ intent: data.intent, params: data.params || {}, raw: transcript });
             } else {
                 showStatus('Non capito: "' + transcript + '"', 'warning');
             }
-        } catch (_) {
-            showStatus('Non capito: "' + transcript + '"', 'warning');
+        } catch (err) {
+            showStatus('Groq non raggiungibile: ' + err.message, 'danger');
         }
     }
 
