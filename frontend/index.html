@@ -212,8 +212,13 @@
           <div class="toolbar-left">
             <div class="filter-wrap">
               <i class="fa-solid fa-magnifying-glass filter-ico"></i>
-              <input id="idFilter" class="inp" type="text" style="padding-left:32px;min-width:180px;" placeholder="Filtra per ID…">
+              <input id="idFilter" class="inp" type="text" style="padding-left:32px;min-width:160px;" placeholder="Filtra per ID…">
             </div>
+            <div class="map-addr-wrap" style="max-width:240px;">
+              <input id="listAddrInput" class="map-addr-input" type="text" placeholder="Seleziona indirizzo…" autocomplete="off">
+              <ul id="listAddrSuggestions" class="map-addr-suggestions"></ul>
+            </div>
+            <button id="listAddrClearBtn" class="btn btn-sm btn-outline" onclick="resetListAddrFilter()" title="Rimuovi filtro indirizzo" style="display:none;padding:4px 8px;">&times;</button>
             <span id="inventoryLabel" class="section-label">Inventario Alberi</span>
             <span class="count-badge" id="treeCount">0</span>
           </div>
@@ -363,11 +368,17 @@
               <!-- 3. DATI GENERALI ARETE -->
               <div class="fs">
                 <div class="fs-title"><i class="fa-solid fa-leaf"></i> Dati Generali</div>
-                <div class="fgrp">
-                  <label class="flabel" for="species">Specie *</label>
-                  <input type="text" id="species" class="fc" list="species-datalist"
-                         placeholder="— seleziona o digita specie —" autocomplete="off" required>
-                  <datalist id="species-datalist"></datalist>
+                <div class="fc-grid2">
+                  <div class="fgrp">
+                    <label class="flabel" for="species">Specie *</label>
+                    <input type="text" id="species" class="fc" list="species-datalist"
+                           placeholder="— seleziona o digita specie —" autocomplete="off" required>
+                    <datalist id="species-datalist"></datalist>
+                  </div>
+                  <div class="fgrp">
+                    <label class="flabel" for="condition">Condizione</label>
+                    <input id="condition" class="fc" type="text" placeholder="es. Buono, Discreto, Scarso">
+                  </div>
                 </div>
                 <div class="fc-grid2">
                   <div class="fgrp">

@@ -828,7 +828,7 @@ def get_trees():
     addr_q = request.args.get('address')
     if city_q:  query = query.filter(Tree.city.ilike(f"%{city_q}%"))
     if addr_q:  query = query.filter(Tree.address.ilike(f"%{addr_q}%"))
-    return jsonify([tree_to_dict(t) for t in query.all()])
+    return jsonify([tree_to_dict(t) for t in query.order_by(Tree.id).all()])
 
 @app.route('/tree/<int:tree_id>', methods=['GET'])
 @auth_required
@@ -862,6 +862,9 @@ def update_tree(tree_id):
             tree.longitude = float(data['longitude'])
         except (ValueError, TypeError):
             return jsonify({'message': 'Invalid lat/lon'}), 400
+
+    if tree.cpc:
+        tree.condition = tree.cpc
 
     tree.rischio = json.dumps(r) if (r := _calc_rischio(tree)) else None
     db.session.commit()
@@ -921,6 +924,8 @@ def add_tree():
         owner_id=user_id
     )
     apply_tree_fields(new_tree, data)
+    if new_tree.cpc:
+        new_tree.condition = new_tree.cpc
     new_tree.rischio = json.dumps(r) if (r := _calc_rischio(new_tree)) else None
     db.session.add(new_tree)
     try:
@@ -1699,7 +1704,7 @@ def import_gpkg_route():
         if lat is not None and C['latitude']:
             row[C['latitude']] = lat
 
-        custom_id = gs('custom_id') or str(row.get('fid') or '').strip()
+        custom_id = str(row.get('name') or '').strip()
         if not custom_id:
             skipped += 1
             continue
