@@ -531,6 +531,58 @@ function switchTab(name) {
                 }
             });
             new LocateControl().addTo(state.map);
+
+            // Long-press on map → "Aggiungi albero qui?"
+            let _lpTimer = null, _lpLatLng = null;
+            const _LP_MS = 600;
+            const _lpCancel = () => { if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; } };
+            const _lpTrigger = latlng => {
+                _lpCancel();
+                L.popup({ closeOnClick: true, autoClose: true, className: 'lp-add-popup' })
+                    .setLatLng(latlng)
+                    .setContent(
+                        `<div style="text-align:center;padding:2px 0">
+                            <div style="font-size:13px;font-weight:600;margin-bottom:6px"><i class="fa-solid fa-seedling"></i> Aggiungi albero qui?</div>
+                            <div style="font-size:11px;color:#777;margin-bottom:10px">${latlng.lat.toFixed(5)}, ${latlng.lng.toFixed(5)}</div>
+                            <button id="_lp_yes" class="btn btn-primary btn-sm" style="margin-right:6px">Sì</button>
+                            <button id="_lp_no" class="btn btn-sm" style="border:1px solid #ccc">No</button>
+                        </div>`
+                    )
+                    .openOn(state.map);
+                setTimeout(() => {
+                    const yes = document.getElementById('_lp_yes');
+                    const no  = document.getElementById('_lp_no');
+                    if (yes) yes.onclick = () => {
+                        state.map.closePopup();
+                        resetForm();
+                        switchTab('trees');
+                        showTreeView('edit');
+                        document.getElementById('latitude').value  = latlng.lat.toFixed(6);
+                        document.getElementById('longitude').value = latlng.lng.toFixed(6);
+                    };
+                    if (no) no.onclick = () => state.map.closePopup();
+                }, 30);
+            };
+
+            state.map.on('mousedown', e => {
+                if (e.originalEvent.button !== 0) return;
+                _lpLatLng = e.latlng;
+                _lpTimer = setTimeout(() => _lpTrigger(_lpLatLng), _LP_MS);
+            });
+            state.map.on('mouseup mouseout drag zoomstart', _lpCancel);
+
+            const _mapContainer = state.map.getContainer();
+            _mapContainer.addEventListener('touchstart', e => {
+                if (e.touches.length !== 1) return;
+                const t = e.touches[0], rect = _mapContainer.getBoundingClientRect();
+                _lpLatLng = state.map.containerPointToLatLng(
+                    L.point(t.clientX - rect.left, t.clientY - rect.top)
+                );
+                _lpTimer = setTimeout(() => _lpTrigger(_lpLatLng), _LP_MS);
+            }, { passive: true });
+            _mapContainer.addEventListener('touchend',  _lpCancel, { passive: true });
+            _mapContainer.addEventListener('touchmove', _lpCancel, { passive: true });
+
         } else { state.map.invalidateSize(); }
         showOnMap(state.allTrees);
     }
