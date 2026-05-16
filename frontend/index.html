@@ -6,8 +6,6 @@
   <title>Silvae Pro</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
   <link rel="stylesheet" href="style.css">
   <style>
     .diag-row{display:flex;gap:6px;align-items:center;margin-bottom:4px;}
@@ -351,9 +349,14 @@
                     <input id="longitude" class="fc" type="text" placeholder="es. 9.1900">
                   </div>
                 </div>
-                <button type="button" class="btn btn-outline" style="width:100%;" onclick="getLocation()">
-                  <i class="fa-solid fa-location-crosshairs"></i> Usa posizione GPS
-                </button>
+                <div style="display:flex;gap:8px;">
+                  <button type="button" class="btn btn-outline" style="flex:1;" onclick="getLocation()">
+                    <i class="fa-solid fa-location-crosshairs"></i> Usa posizione GPS
+                  </button>
+                  <button type="button" class="btn btn-outline" style="flex:1;" onclick="openCoordCheck()">
+                    <i class="fa-solid fa-map-location-dot"></i> Controlla
+                  </button>
+                </div>
                 <div id="gpsStatus" style="font-size:12px;color:var(--text-muted);margin-top:6px;text-align:center;"></div>
               </div>
 
@@ -1181,9 +1184,23 @@ rischio_finale   = lookup_inverso(probabilità_n)    ← foglio A, colonne AR:AS
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script src="app.js"></script>
 <script src="voice.js"></script>
+
+<!-- Modale: Controlla coordinate -->
+<div class="info-modal-overlay" id="coordCheckModal" onclick="if(event.target===this)closeCoordCheck()">
+  <div class="info-modal" style="max-width:540px;padding:16px 16px 14px;">
+    <button class="info-modal-close" onclick="closeCoordCheck()">&times;</button>
+    <h3 style="margin-bottom:6px;"><i class="fa-solid fa-map-location-dot" style="color:var(--g700);margin-right:6px;"></i>Controlla posizione</h3>
+    <p style="font-size:12px;color:var(--text-muted);margin:0 0 10px;">Trascina il segnaposto rosso per correggere la posizione. I cerchi colorati sono gli alberi già censiti.</p>
+    <div id="coordCheckMap" style="height:380px;border-radius:8px;overflow:hidden;border:1px solid var(--border);"></div>
+    <div id="coordCheckInfo" style="font-size:12px;color:var(--text-muted);margin-top:8px;text-align:center;min-height:16px;"></div>
+    <div style="display:flex;gap:8px;margin-top:10px;">
+      <button class="btn btn-outline" style="flex:1;" onclick="closeCoordCheck()">Annulla</button>
+      <button class="btn btn-primary" style="flex:1;" onclick="confirmCoordCheck()"><i class="fa-solid fa-check"></i> Conferma</button>
+    </div>
+  </div>
+</div>
 
 <!-- Modale: Come funziona il calcolo del rischio ORD -->
 <div class="info-modal-overlay" id="riskInfoModal" onclick="if(event.target===this)this.classList.remove('open')">

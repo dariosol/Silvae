@@ -9,7 +9,7 @@ let state = {
     sortField: null, sortDir: 'asc',
     nearbyMode: false, userLat: null, userLon: null, nearbyRadius: null,
     exportMode: false, exportSelected: new Set(),
-    map: null, markers: [], clusterGroup: null, userMarker: null, satelliteActive: false,
+    map: null, markers: [], markerLayer: null, mapTrees: [], userMarker: null, satelliteActive: false,
     dropdowns: {}
 };
 
@@ -517,7 +517,7 @@ function switchTab(name) {
             ).addTo(state.map);
             state.map.on('baselayerchange', e => {
                 state.satelliteActive = e.name === 'Satellite';
-                showOnMap(state.allTrees);
+                _refreshMapMarkers();
             });
             const LocateControl = L.Control.extend({
                 options: { position: 'topleft' },
@@ -1173,6 +1173,72 @@ function resetForm() {
     });
 }
 
+// ─── Coord check map ──────────────────────────────────────
+
+let _ccMap = null, _ccPin = null, _ccTreeLayer = null;
+
+function openCoordCheck() {
+    const lat = parseFloat(document.getElementById('latitude').value);
+    const lon = parseFloat(document.getElementById('longitude').value);
+    if (isNaN(lat) || isNaN(lon)) { showStatus('Inserisci prima le coordinate', 'warning'); return; }
+
+    document.getElementById('coordCheckModal').classList.add('open');
+
+    if (!_ccMap) {
+        _ccMap = L.map('coordCheckMap', { zoomControl: true }).setView([lat, lon], 19);
+        L.tileLayer(
+            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+            { maxZoom: 20, attribution: '© Esri' }
+        ).addTo(_ccMap);
+        _ccTreeLayer = L.layerGroup().addTo(_ccMap);
+    } else {
+        _ccMap.setView([lat, lon], 19);
+    }
+
+    // Nearby trees as small coloured circles, no interaction
+    _ccTreeLayer.clearLayers();
+    (state.allTrees || []).forEach(t => {
+        if (!t.latitude || !t.longitude) return;
+        const color = COND_COLOR[condClass(t.condition)] || COND_COLOR['tr-other'];
+        L.circleMarker([parseFloat(t.latitude), parseFloat(t.longitude)], {
+            radius: 5, fillColor: color, fillOpacity: 0.85,
+            color: '#fff', weight: 1.5, interactive: false
+        }).addTo(_ccTreeLayer);
+    });
+
+    // Draggable pin
+    if (_ccPin) _ccMap.removeLayer(_ccPin);
+    const pinIcon = L.divIcon({
+        className: '',
+        html: `<div style="width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,.92);border:3px solid #e74c3c;box-shadow:0 2px 8px rgba(0,0,0,.45);cursor:grab;display:flex;align-items:center;justify-content:center;"><div style="width:7px;height:7px;border-radius:50%;background:#e74c3c;"></div></div>`,
+        iconSize: [24, 24], iconAnchor: [12, 12]
+    });
+    _ccPin = L.marker([lat, lon], { icon: pinIcon, draggable: true, zIndexOffset: 1000 }).addTo(_ccMap);
+    _ccPin.on('drag dragend', _ccUpdateInfo);
+    _ccUpdateInfo();
+
+    setTimeout(() => _ccMap.invalidateSize(), 60);
+}
+
+function _ccUpdateInfo() {
+    if (!_ccPin) return;
+    const p = _ccPin.getLatLng();
+    document.getElementById('coordCheckInfo').textContent = `${p.lat.toFixed(6)},  ${p.lng.toFixed(6)}`;
+}
+
+function confirmCoordCheck() {
+    if (!_ccPin) return;
+    const p = _ccPin.getLatLng();
+    document.getElementById('latitude').value  = p.lat.toFixed(6);
+    document.getElementById('longitude').value = p.lng.toFixed(6);
+    closeCoordCheck();
+    showStatus('Coordinate aggiornate', 'success');
+}
+
+function closeCoordCheck() {
+    document.getElementById('coordCheckModal').classList.remove('open');
+}
+
 // ─── GPS ──────────────────────────────────────────────────
 
 function getLocation() {
@@ -1343,15 +1409,7 @@ const COND_COLOR = {
     'tr-other': '#888888',
 };
 
-function treeMarkerIcon(t) {
-    if (state.satelliteActive) {
-        const color = COND_COLOR[condClass(t.condition)] || COND_COLOR['tr-other'];
-        return L.divIcon({
-            className: '',
-            html: `<div style="border-radius:50%;width:18px;height:18px;border:3px solid ${color};background:transparent;box-sizing:border-box;"></div>`,
-            iconSize: [18, 18], iconAnchor: [9, 9]
-        });
-    }
+function treeMarkerIcon() {
     return L.divIcon({
         className: '',
         html: `<div style="background:var(--g800);color:#fff;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,.3)"><i class="fa-solid fa-tree"></i></div>`,
@@ -1359,34 +1417,69 @@ function treeMarkerIcon(t) {
     });
 }
 
-function showOnMap(trees) {
-    if (state.clusterGroup) state.map.removeLayer(state.clusterGroup);
+// Grid-based spatial decimation: one tree per cell, cell halves every zoom step.
+// At zoom >= 18 show everything (viewport is small enough, trees are dense enough).
+function _decimateTrees(trees, zoom) {
+    if (zoom >= 18) return trees.filter(t => t.latitude && t.longitude);
+    const cell = 0.0001 * Math.pow(2, 19 - zoom);
+    const seen = new Map();
+    const out  = [];
+    for (const t of trees) {
+        if (!t.latitude || !t.longitude) continue;
+        const key = `${Math.floor(parseFloat(t.latitude) / cell)},${Math.floor(parseFloat(t.longitude) / cell)}`;
+        if (!seen.has(key)) { seen.set(key, true); out.push(t); }
+    }
+    return out;
+}
+
+function _refreshMapMarkers() {
+    if (!state.map || !state.markerLayer) return;
+    state.markerLayer.clearLayers();
     state.markers = [];
 
-    state.clusterGroup = L.markerClusterGroup({
-        maxClusterRadius: 30,
-        iconCreateFunction(cluster) {
-            const n = cluster.getChildCount();
-            return L.divIcon({
-                className: '',
-                html: `<div style="background:var(--g800);color:#fff;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.35)">${n}</div>`,
-                iconSize: [36, 36], iconAnchor: [18, 18]
-            });
-        }
-    });
+    const zoom   = state.map.getZoom();
+    const bounds = state.map.getBounds().pad(0.2);
+    const inView = (state.mapTrees || []).filter(t =>
+        t.latitude && t.longitude &&
+        bounds.contains([parseFloat(t.latitude), parseFloat(t.longitude)])
+    );
 
-    trees.forEach(t => {
-        if (!t.latitude || !t.longitude) return;
-        const m = L.marker([t.latitude, t.longitude], { icon: treeMarkerIcon(t) })
-            .bindPopup(`<strong>${t.custom_id}</strong><br><em>${t.species}</em><br>${condBadge(t.condition)}<br><span style="font-size:12px;color:#555">${t.address||t.city||''}</span><br><br><button class="btn btn-sm btn-primary" onclick="openEditForm(${t.id})"><i class="fa-solid fa-pen-to-square"></i> Modifica</button>`);
+    _decimateTrees(inView, zoom).forEach(t => {
+        const lat = parseFloat(t.latitude), lon = parseFloat(t.longitude);
+        const popup = `<strong>${t.custom_id}</strong><br><em>${t.species}</em><br>${condBadge(t.condition)}<br><span style="font-size:12px;color:#555">${t.address||t.city||''}</span><br><br><button class="btn btn-sm btn-primary" onclick="openEditForm(${t.id})"><i class="fa-solid fa-pen-to-square"></i> Modifica</button>`;
+        let m;
+        if (state.satelliteActive) {
+            const color = COND_COLOR[condClass(t.condition)] || COND_COLOR['tr-other'];
+            m = L.circleMarker([lat, lon], { radius: 5, fillColor: color, fillOpacity: 0.85, color: '#fff', weight: 1.5 });
+        } else {
+            m = L.marker([lat, lon], { icon: treeMarkerIcon(t) });
+        }
+        m.bindPopup(popup);
         m.treeId = t.id;
         state.markers.push(m);
-        state.clusterGroup.addLayer(m);
+        state.markerLayer.addLayer(m);
     });
+}
 
-    state.map.addLayer(state.clusterGroup);
-    if (state.markers.length > 0)
-        state.map.fitBounds(state.clusterGroup.getBounds().pad(0.12));
+function showOnMap(trees) {
+    if (!state.map) return;
+    state.mapTrees = trees;
+
+    if (!state.markerLayer) {
+        state.markerLayer = L.layerGroup().addTo(state.map);
+        state.map.on('zoomend moveend', _refreshMapMarkers);
+    }
+
+    _refreshMapMarkers();
+
+    const pts = trees.filter(t => t.latitude && t.longitude);
+    if (pts.length > 0) {
+        const lats = pts.map(t => parseFloat(t.latitude));
+        const lons = pts.map(t => parseFloat(t.longitude));
+        state.map.fitBounds(
+            L.latLngBounds([Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]).pad(0.12)
+        );
+    }
 }
 
 // ─── Inspection history ───────────────────────────────────
