@@ -181,9 +181,8 @@
       <select id="citySelect" class="nav-select" onchange="fetchTrees()">
         <option value="">Tutti i comuni</option>
       </select>
-      <input id="streetSearch" class="nav-search" type="text" placeholder="Cerca per indirizzo…">
-      <button class="btn-logout" style="padding:7px 10px;" onclick="fetchTrees()" title="Search">
-        <i class="fa-solid fa-magnifying-glass"></i>
+      <button class="btn-logout" style="padding:7px 10px;" onclick="fetchTrees()" title="Aggiorna">
+        <i class="fa-solid fa-rotate-right"></i>
       </button>
     </div>
     <div class="nav-user">
@@ -220,11 +219,10 @@
               <input id="idFilter" class="inp" type="text" style="padding-left:32px;min-width:160px;" placeholder="Filtra per ID…">
             </div>
             <div class="addr-filter-group">
-              <div class="map-addr-wrap">
-                <input id="listAddrInput" class="map-addr-input" type="text" placeholder="Filtra per indirizzo…" autocomplete="off">
-                <ul id="listAddrSuggestions" class="map-addr-suggestions"></ul>
+              <div class="filter-wrap">
+                <i class="fa-solid fa-location-dot filter-ico"></i>
+                <input id="listAddrInput" class="inp" type="text" style="padding-left:32px;min-width:150px;" placeholder="Filtra per indirizzo…" oninput="applyIdFilter()">
               </div>
-              <button id="listAddrClearBtn" class="btn btn-sm btn-outline" onclick="resetListAddrFilter()" title="Rimuovi filtro indirizzo" style="display:none;padding:4px 8px;">&times;</button>
             </div>
             <span id="inventoryLabel" class="section-label">Inventario Alberi</span>
             <span class="count-badge" id="treeCount">0</span>

@@ -907,11 +907,9 @@ async function populateUsers() {
 
 async function fetchTrees() {
     if (!state.token) return;
-    const city    = document.getElementById('citySelect').value;
-    const address = document.getElementById('streetSearch').value.trim();
-    const params  = new URLSearchParams();
-    if (city)    params.append('city', city);
-    if (address) params.append('address', address);
+    const city   = document.getElementById('citySelect').value;
+    const params = new URLSearchParams();
+    if (city) params.append('city', city);
     document.getElementById('inventoryLabel').textContent = city ? `Alberi — ${city}` : 'Inventario Alberi';
     const res = await fetch(`${API_BASE}/trees?${params}`, {headers: authHeader()});
     if (!res.ok) { const d = await res.json().catch(()=>({})); showStatus(d.message||'Errore nel caricamento alberi','danger'); return; }
@@ -993,13 +991,12 @@ function toggleNearby() {
 
 // ─── Filter + pagination ──────────────────────────────────
 
-let _listAddr = null; // { address, city } when active
-
 function applyIdFilter() {
-    const q = document.getElementById('idFilter').value.trim().toLowerCase();
+    const q  = document.getElementById('idFilter').value.trim().toLowerCase();
+    const qa = document.getElementById('listAddrInput')?.value.trim().toLowerCase() || '';
     let trees = state.allTrees;
-    if (q) trees = trees.filter(t => t.custom_id.toLowerCase().includes(q));
-    if (_listAddr) trees = trees.filter(t => t.address === _listAddr.address && (t.city||'') === _listAddr.city);
+    if (q)  trees = trees.filter(t => t.custom_id.toLowerCase().includes(q));
+    if (qa) trees = trees.filter(t => (t.address || '').toLowerCase().includes(qa));
     state.filteredTrees = trees;
     state.currentPage = 1; renderPage();
 }
@@ -1604,78 +1601,6 @@ function resetMapAddressFilter() {
     showOnMap(state.allTrees);
 }
 
-function _listAddrCommit(address, city) {
-    _listAddr = { address, city };
-    const pair = { address, city };
-    document.getElementById('listAddrInput').value = _mapAddrLabel(pair);
-    document.getElementById('listAddrSuggestions').classList.remove('open');
-    document.getElementById('listAddrClearBtn').style.display = '';
-    applyIdFilter();
-}
-
-function resetListAddrFilter() {
-    _listAddr = null;
-    document.getElementById('listAddrInput').value = '';
-    document.getElementById('listAddrSuggestions').classList.remove('open');
-    document.getElementById('listAddrClearBtn').style.display = 'none';
-    applyIdFilter();
-}
-
-function initListAddrAutocomplete() {
-    const inp = document.getElementById('listAddrInput');
-    const ul  = document.getElementById('listAddrSuggestions');
-    let kbd = -1;
-
-    inp.addEventListener('input', () => {
-        const q = inp.value.trim().toLowerCase();
-        document.getElementById('listAddrClearBtn').style.display = inp.value ? '' : 'none';
-        if (!q) { ul.innerHTML = ''; ul.classList.remove('open'); _listAddr = null; applyIdFilter(); return; }
-        const matches = _mapAddrPairs().filter(p => _mapAddrLabel(p).toLowerCase().includes(q));
-        kbd = -1;
-        if (!matches.length) { ul.innerHTML = ''; ul.classList.remove('open'); return; }
-        ul.innerHTML = matches.map(p => {
-            const label = _mapAddrLabel(p);
-            const i = label.toLowerCase().indexOf(q);
-            const hi = i >= 0
-                ? encodeHTML(label.slice(0,i)) + '<strong>' + encodeHTML(label.slice(i,i+q.length)) + '</strong>' + encodeHTML(label.slice(i+q.length))
-                : encodeHTML(label);
-            return `<li data-address="${encodeHTML(p.address)}" data-city="${encodeHTML(p.city)}">${hi}</li>`;
-        }).join('');
-        ul.classList.add('open');
-    });
-
-    inp.addEventListener('keydown', e => {
-        const items = ul.querySelectorAll('li');
-        if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            items[kbd]?.classList.remove('kbd-active');
-            kbd = Math.min(kbd + 1, items.length - 1);
-            items[kbd]?.classList.add('kbd-active');
-            items[kbd]?.scrollIntoView({ block: 'nearest' });
-        } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            items[kbd]?.classList.remove('kbd-active');
-            kbd = Math.max(kbd - 1, 0);
-            items[kbd]?.classList.add('kbd-active');
-            items[kbd]?.scrollIntoView({ block: 'nearest' });
-        } else if (e.key === 'Enter') {
-            e.preventDefault();
-            if (kbd >= 0 && items[kbd]) { const li = items[kbd]; _listAddrCommit(li.dataset.address, li.dataset.city); }
-        } else if (e.key === 'Escape') {
-            ul.classList.remove('open');
-        }
-    });
-
-    ul.addEventListener('mousedown', e => {
-        const li = e.target.closest('li');
-        if (li) _listAddrCommit(li.dataset.address, li.dataset.city);
-    });
-
-    document.addEventListener('click', e => {
-        if (!inp.contains(e.target) && !ul.contains(e.target)) ul.classList.remove('open');
-    });
-}
-
 function initMapAddressAutocomplete() {
     const inp = document.getElementById('mapAddressInput');
     const ul  = document.getElementById('mapAddrSuggestions');
@@ -2227,7 +2152,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('th.sortable').forEach(th => th.addEventListener('click', () => applySort(th.dataset.sort)));
     document.getElementById('logoutBtn').addEventListener('click', logout);
     document.getElementById('refreshCitiesBtn').addEventListener('click', populateCities);
-    document.getElementById('streetSearch').addEventListener('keydown', e => e.key==='Enter' && fetchTrees());
     document.getElementById('createUserBtn').addEventListener('click', createUser);
     document.getElementById('createCityBtn').addEventListener('click', createCity);
     document.getElementById('idFilter').addEventListener('input', applyIdFilter);
@@ -2238,7 +2162,6 @@ document.addEventListener('DOMContentLoaded', () => {
     initComuneAutocomplete('newCity');
     initComuneAutocomplete('importCity');
     document.getElementById('cpc').addEventListener('input', syncCpcToCondition);
-    initListAddrAutocomplete();
     initMapAddressAutocomplete();
     initImportDropZone();
     document.getElementById('exportExcelBtn').addEventListener('click', exportExcel);
