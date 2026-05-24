@@ -31,6 +31,7 @@ from tools.lookup_tables import (
 )
 from tools.ord_calculator import (
     assess_tree, bersaglio_value_to_class, bersaglio_flow_to_class,
+    calc_ecological_value,
 )
 
 # -----------------------
@@ -178,6 +179,14 @@ class Tree(db.Model):
     urgenza          = db.Column(db.String(50))
     rischio          = db.Column(db.Text)   # JSON: latest assess_tree result
 
+    # --- Valore ecologico (ORD row 10) ---
+    condizione_salute_ecologica = db.Column(db.Text)   # dropdown input
+    bio_kg                      = db.Column(db.Float)  # biomassa (kg)
+    co2_kg_anno                 = db.Column(db.Float)  # CO2 sequestrata (kg/anno)
+    o2_kg_anno                  = db.Column(db.Float)  # O2 prodotta (kg/anno)
+    ia_kg_anno                  = db.Column(db.Float)  # intercett. acqua (kg/anno)
+    valore_ecologico            = db.Column(db.Float)  # valore monetario (€)
+
 class Inspection(db.Model):
     __tablename__ = 'inspection'
     id            = db.Column(db.Integer, primary_key=True)
@@ -224,6 +233,10 @@ with app.app_context():
         ('prescrizioni_val','TEXT'), ('prescrizioni_mit','TEXT'), ('prescrizioni_col','TEXT'),
         ('monitoraggio','VARCHAR(50)'), ('urgenza','VARCHAR(50)'),
         ('rischio','TEXT'),
+        ('condizione_salute_ecologica','TEXT'),
+        ('bio_kg','FLOAT'), ('co2_kg_anno','FLOAT'),
+        ('o2_kg_anno','FLOAT'), ('ia_kg_anno','FLOAT'),
+        ('valore_ecologico','FLOAT'),
     ]
     with db.engine.connect() as conn:
         for col_name, col_type in new_cols:
@@ -320,6 +333,10 @@ def tree_to_dict(t):
         'prescrizioni_col': parse_json_field(t.prescrizioni_col),
         'monitoraggio': t.monitoraggio, 'urgenza': t.urgenza,
         'rischio': json.loads(t.rischio) if t.rischio else None,
+        'condizione_salute_ecologica': t.condizione_salute_ecologica,
+        'bio_kg': t.bio_kg, 'co2_kg_anno': t.co2_kg_anno,
+        'o2_kg_anno': t.o2_kg_anno, 'ia_kg_anno': t.ia_kg_anno,
+        'valore_ecologico': t.valore_ecologico,
     }
 
 def apply_tree_fields(tree_obj, data):
@@ -337,6 +354,7 @@ def apply_tree_fields(tree_obj, data):
         'bersaglio_ramo_tipo','bersaglio_ramo_value','bersaglio_ramo_flow','bersaglio_ramo',
         'moltiplicatore',
         'monitoraggio','urgenza',
+        'condizione_salute_ecologica',
     ]
     json_fields = [
         'diag_zolla','diag_colletto','diag_fusto','diag_castello',
@@ -379,6 +397,21 @@ def apply_tree_fields(tree_obj, data):
             computed = bersaglio_flow_to_class(tipo, flow, zone_w)
             if computed is not None:
                 setattr(tree_obj, class_key, computed)
+
+    # Auto-compute valore ecologico when all required inputs are available
+    eco = calc_ecological_value(
+        trunk_diameter_cm          = _f(data.get('trunk_diameter_cm'))          or _f(getattr(tree_obj, 'trunk_diameter_cm', None)),
+        tree_height_m              = _f(data.get('tree_height_m'))              or _f(getattr(tree_obj, 'tree_height_m', None)),
+        stadio_sviluppo            = data.get('stadio_sviluppo')                or getattr(tree_obj, 'stadio_sviluppo', None),
+        posizione_sociale          = data.get('posizione_sociale')              or getattr(tree_obj, 'posizione_sociale', None),
+        condizione_salute_ecologica= data.get('condizione_salute_ecologica')    or getattr(tree_obj, 'condizione_salute_ecologica', None),
+    )
+    if eco is not None:
+        tree_obj.bio_kg           = eco['bio_kg']
+        tree_obj.co2_kg_anno      = eco['co2_kg_anno']
+        tree_obj.o2_kg_anno       = eco['o2_kg_anno']
+        tree_obj.ia_kg_anno       = eco['ia_kg_anno']
+        tree_obj.valore_ecologico = eco['valore_ecologico']
 
 def _calc_rischio(tree_obj):
     """Return assess_tree dict for tree_obj, or None if ORD fields are incomplete."""
@@ -708,6 +741,7 @@ def get_dropdowns():
         'bersaglio_tipi': dd.BERSAGLIO_TIPI,
         'bersaglio_proprieta_values': dd.BERSAGLIO_PROPRIETA_VALUES,
         'bersaglio_occupazione_values': dd.BERSAGLIO_OCCUPAZIONE_VALUES,
+        'condizione_salute_ecologica': [desc for desc, _ in dd.CONDIZIONE_SALUTE_ECOLOGICA],
         'bersaglio_range': list(range(1, 8)),
         'diag_zolla': dd.zolla_radicale,
         'diag_colletto': dd.caratteri_colletto,

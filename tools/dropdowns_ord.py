@@ -498,6 +498,7 @@ from tools.ord_calculator import (
     BERSAGLIO_TIPI,
     BERSAGLIO_PROPRIETA_VALUES,
     BERSAGLIO_OCCUPAZIONE_VALUES,
+    CONDIZIONE_SALUTE_ECOLOGICA,
 )
 
 # ---------------------------------------------------------------------------

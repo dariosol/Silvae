@@ -43,14 +43,38 @@ function populateSelect(id, items, valueFn, textFn) {
     });
 }
 
+function _isAltro(item) {
+    return item === 'altro' || item === 'altro da specificare';
+}
+
 function populateMultiSelect(id, items) {
     const el = document.getElementById(id);
     if (!el) return;
     el.innerHTML = '';
     items.forEach(item => {
-        const o = document.createElement('option');
-        o.value = o.textContent = item;
-        el.appendChild(o);
+        const lbl = document.createElement('label');
+        const cb  = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.value = item;
+        lbl.appendChild(cb);
+        lbl.appendChild(document.createTextNode(item));
+        if (_isAltro(item)) {
+            cb.dataset.altro = '1';
+            const txt = document.createElement('input');
+            txt.type = 'text';
+            txt.placeholder = 'specificare…';
+            txt.style.cssText = 'display:none;margin-left:6px;border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:12px;flex:1;min-width:120px;';
+            cb.addEventListener('change', () => {
+                lbl.classList.toggle('chk-checked', cb.checked);
+                txt.style.display = cb.checked ? 'inline-block' : 'none';
+                if (cb.checked) txt.focus();
+            });
+            lbl.style.flexWrap = 'wrap';
+            lbl.appendChild(txt);
+        } else {
+            cb.addEventListener('change', () => lbl.classList.toggle('chk-checked', cb.checked));
+        }
+        el.appendChild(lbl);
     });
 }
 
@@ -107,6 +131,9 @@ function populateStaticDropdowns() {
         }
     });
 
+    // Condizione salute ecologica
+    populateSelect('condizione_salute_ecologica', d.condizione_salute_ecologica || [], x => x, x => x);
+
     // Single-select lookups
     populateSelect('monitoraggio', d.monitoraggio || [], x => x, x => x);
     populateSelect('urgenza', d.urgenza || [], x => x, x => x);
@@ -119,6 +146,104 @@ function populateStaticDropdowns() {
     populateMultiSelect('prescrizioni_mit', d.prescrizioni_mit || []);
     populateMultiSelect('prescrizioni_col', d.prescrizioni_col || []);
 }
+
+// ─── Diametro ↔ Circonferenza sync ───────────────────────
+
+function syncDiamCirc(source) {
+    const circ = document.getElementById('circonferenza_cm');
+    const diam = document.getElementById('trunk_diameter_cm');
+    if (source === 'circ') {
+        const v = parseFloat(circ.value);
+        diam.value = (v > 0) ? (v / Math.PI).toFixed(1) : '';
+    } else {
+        const v = parseFloat(diam.value);
+        circ.value = (v > 0) ? (v * Math.PI).toFixed(1) : '';
+    }
+}
+
+// ─── Valore ecologico live ────────────────────────────────
+
+const _ECO_STADIO_ANNI = {
+    'plantula': 10, 'giovane pianta': 20, 'albero giovane': 30,
+    'albero adulto': 40, 'albero maturo': 60,
+    'albero senescente': 80, 'albero veterano': 100,
+};
+const _ECO_CONDIZIONE_MAP = {
+    'Condizioni vegetative e fitosanitarie ottimali. Albero integro': 0,
+    'Condizioni vegetative e/o fitosanitarie ottimali. Albero lievemente alterato nella struttura': 5,
+    'Condizioni vegetative e/o fitosanitarie buone o comunque non tali da condizionare la salute e la vigoria': 15,
+    'Condizioni vegetative e/o fitosanitarie buone o comunque non tali da condizionare la salute e la vigoria. Albero strutturalmente alterato': 20,
+    "Condizioni vegetative e/o fitosanitarie mediocri, che limitano l'efficienza funzionale. Salute e/o vigoria ridotte": 25,
+    'Condizioni vegetative e/o fitosanitarie mediocri. Albero strutturalmente alterato': 30,
+    "Condizioni vegetative e/o fitosanitarie scadenti, che ne condizionano la salute e l'aspettativa di vita": 40,
+    'Condizioni vegetative e/o fitosanitarie scadenti. Albero molto alterato strutturalmente': 50,
+    'Condizioni vegetative e/o fitosanitarie pessime': 60,
+    'Condizioni vegetative e/o fitosanitarie pessime. Albero fortemente deperiente, strutturalmente molto alterato': 70,
+    'Albero morto in piedi': 90,
+};
+const _ECO_POS_COL = {
+    'oppressa': 2, 'dominata': 3, 'intermedia': 4, 'codominante': 5,
+    'dominante margine': 6, 'dominante interna': 7, 'predominante': 8,
+    'libera (p giovane)': 9, 'isolata': 10,
+};
+// deduction% → coefficients for pos_sociale col 2..10
+const _ECO_COEFFS = {
+     0: [0.80,0.85,0.90,0.92,0.96,0.94,0.98,1.00,1.00],
+     5: [0.75,0.80,0.85,0.87,0.91,0.89,0.93,0.95,0.95],
+    15: [0.65,0.70,0.75,0.77,0.81,0.79,0.83,0.85,0.85],
+    20: [0.60,0.65,0.70,0.72,0.76,0.74,0.78,0.80,0.80],
+    25: [0.55,0.60,0.65,0.67,0.71,0.69,0.73,0.75,0.75],
+    30: [0.50,0.55,0.60,0.62,0.66,0.64,0.68,0.70,0.70],
+    40: [0.40,0.45,0.50,0.52,0.56,0.54,0.58,0.60,0.60],
+    50: [0.30,0.35,0.40,0.42,0.46,0.44,0.48,0.50,0.50],
+    60: [0.20,0.25,0.30,0.32,0.36,0.34,0.38,0.40,0.40],
+    70: [0.10,0.15,0.20,0.22,0.26,0.24,0.28,0.30,0.30],
+    90: [0.00,0.00,0.00,0.02,0.06,0.04,0.08,0.10,0.10],
+};
+
+function calcEcoLive() {
+    const diam_cm  = parseFloat(document.getElementById('trunk_diameter_cm')?.value);
+    const h_m      = parseFloat(document.getElementById('tree_height_m')?.value);
+    const stadio   = document.getElementById('stadio_sviluppo')?.value;
+    const pos      = document.getElementById('posizione_sociale')?.value;
+    const cond     = document.getElementById('condizione_salute_ecologica')?.value;
+
+    const box = document.getElementById('eco_result');
+    if (!box) return;
+
+    const anni    = _ECO_STADIO_ANNI[stadio];
+    const deduct  = _ECO_CONDIZIONE_MAP[cond];
+    const pos_col = _ECO_POS_COL[pos];
+
+    if (!diam_cm || diam_cm <= 0 || !h_m || h_m <= 0 ||
+        anni == null || deduct == null || pos_col == null) {
+        box.style.display = 'none';
+        return;
+    }
+
+    const diam_m = diam_cm / 100;
+    const bio    = Math.PI / 4 * diam_m * diam_m * h_m * 0.9 * 900;
+
+    let co2, o2, ia;
+    if (cond === 'Albero morto in piedi') {
+        co2 = o2 = ia = 0;
+    } else {
+        const coeff = _ECO_COEFFS[deduct][pos_col - 2];
+        co2 = (bio / anni) * coeff;
+        o2  = co2 / 44.01 * 31.999 * 0.9;
+        ia  = ((bio * 0.2) / anni) * coeff;
+    }
+    const val = bio * 0.55 + co2 * 1 + o2 * 5 + ia * 10;
+
+    const r2 = x => Math.round(x * 100) / 100;
+    document.getElementById('eco_bio').textContent = r2(bio) + ' kg';
+    document.getElementById('eco_co2').textContent = r2(co2) + ' kg/a';
+    document.getElementById('eco_o2').textContent  = r2(o2)  + ' kg/a';
+    document.getElementById('eco_ia').textContent  = r2(ia)  + ' kg/a';
+    document.getElementById('eco_val').textContent = '€ ' + r2(val);
+    box.style.display = '';
+}
+
 
 // ─── Bersaglio tipo/value handling ───────────────────────
 
@@ -239,14 +364,47 @@ function loadDiagRows(part, data) {
 function getMultiSelect(id) {
     const el = document.getElementById(id);
     if (!el) return [];
-    return Array.from(el.selectedOptions).map(o => o.value);
+    const result = [];
+    el.querySelectorAll('input[type=checkbox]:checked').forEach(cb => {
+        if (cb.dataset.altro) {
+            const txt = cb.closest('label').querySelector('input[type=text]');
+            const val = txt?.value.trim();
+            if (val) result.push(val);
+        } else {
+            result.push(cb.value);
+        }
+    });
+    return result;
 }
 
 function setMultiSelect(id, values) {
     const el = document.getElementById(id);
-    if (!el || !values) return;
-    const set = new Set(values);
-    Array.from(el.options).forEach(o => { o.selected = set.has(o.value); });
+    if (!el) return;
+    const vals = values || [];
+    const standardVals = new Set(
+        Array.from(el.querySelectorAll('input[type=checkbox]:not([data-altro])')).map(cb => cb.value)
+    );
+    const standardSet = new Set(vals.filter(v => standardVals.has(v)));
+    const customVals  = vals.filter(v => v && !standardVals.has(v));
+    let customIdx = 0;
+
+    el.querySelectorAll('input[type=checkbox]').forEach(cb => {
+        const lbl = cb.closest('label');
+        if (cb.dataset.altro) {
+            const txt = lbl.querySelector('input[type=text]');
+            const val = customVals[customIdx] || '';
+            cb.checked = !!val;
+            lbl.classList.toggle('chk-checked', cb.checked);
+            if (txt) {
+                txt.value = val;
+                txt.style.display = cb.checked ? 'inline-block' : 'none';
+            }
+            if (val) customIdx++;
+        } else {
+            cb.checked = standardSet.has(cb.value);
+            lbl.classList.toggle('chk-checked', cb.checked);
+        }
+    });
 }
 
 // ─── Risk calculation ─────────────────────────────────────
@@ -1117,6 +1275,9 @@ function fillForm(data) {
     setMultiSelect('prescrizioni_col', data.prescrizioni_col);
     // Single selects
     sv('monitoraggio', data.monitoraggio); sv('urgenza', data.urgenza);
+    // Valore ecologico
+    sv('condizione_salute_ecologica', data.condizione_salute_ecologica);
+    calcEcoLive();
 
     document.getElementById('riskResults').style.display = 'none';
     document.getElementById('formSubmitButton').innerHTML =
@@ -1215,6 +1376,7 @@ async function submitTreeForm(e) {
         prescrizioni_mit: getMultiSelect('prescrizioni_mit'),
         prescrizioni_col: getMultiSelect('prescrizioni_col'),
         monitoraggio: v('monitoraggio'), urgenza: v('urgenza'),
+        condizione_salute_ecologica: v('condizione_salute_ecologica') || null,
     };
 
     const url    = editId ? `${API_BASE}/tree/${editId}` : `${API_BASE}/add_tree`;
@@ -1246,7 +1408,15 @@ function resetForm() {
     // Reset multi-selects (deselect all)
     ['conflitti_list','agenti_carie','altri_patogeni','prescrizioni_val','prescrizioni_mit','prescrizioni_col'].forEach(id => {
         const el = document.getElementById(id);
-        if (el) Array.from(el.options).forEach(o => o.selected = false);
+        if (!el) return;
+        el.querySelectorAll('input[type=checkbox]').forEach(cb => {
+            cb.checked = false;
+            cb.closest('label').classList.remove('chk-checked');
+            if (cb.dataset.altro) {
+                const txt = cb.closest('label').querySelector('input[type=text]');
+                if (txt) { txt.value = ''; txt.style.display = 'none'; }
+            }
+        });
     });
 }
 
@@ -1771,6 +1941,12 @@ function renderSnapshotDetails(snap) {
     add('Moltiplicatore', snap.moltiplicatore);
     add('Monitoraggio', snap.monitoraggio);
     add('Urgenza', snap.urgenza);
+    add('Condiz. salute ecologica', snap.condizione_salute_ecologica);
+    add('Bio', snap.bio_kg != null ? snap.bio_kg + ' kg' : null);
+    add('CO₂', snap.co2_kg_anno != null ? snap.co2_kg_anno + ' kg/anno' : null);
+    add('O₂', snap.o2_kg_anno != null ? snap.o2_kg_anno + ' kg/anno' : null);
+    add('Intercett. acqua', snap.ia_kg_anno != null ? snap.ia_kg_anno + ' kg/anno' : null);
+    add('Valore ecologico', snap.valore_ecologico != null ? '€ ' + snap.valore_ecologico : null);
     const prescrMit = Array.isArray(snap.prescrizioni_mit) ? snap.prescrizioni_mit.join(', ') : snap.prescrizioni_mit;
     add('Prescrizioni mit.', prescrMit);
     const prescrVal = Array.isArray(snap.prescrizioni_val) ? snap.prescrizioni_val.join(', ') : snap.prescrizioni_val;

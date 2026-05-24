@@ -565,6 +565,128 @@ def assess_tree(
     return {'attuale': attuale, 'residuo': residuo}
 
 
+# ---------------------------------------------------------------------------
+# VALORE ECOLOGICO  (ORD sheet, row 10)
+# ---------------------------------------------------------------------------
+
+# Stadio sviluppo → anni (used to annualise bio increment)  A!BL4:BN10, col 3
+_STADIO_ANNI: dict[str, int] = {
+    'plantula': 10, 'giovane pianta': 20, 'albero giovane': 30,
+    'albero adulto': 40, 'albero maturo': 60,
+    'albero senescente': 80, 'albero veterano': 100,
+}
+
+# Health-condition description → deduction %  (A!AU35:AV45)
+CONDIZIONE_SALUTE_ECOLOGICA: list[tuple[str, int]] = [
+    ('Condizioni vegetative e fitosanitarie ottimali. Albero integro', 0),
+    ('Condizioni vegetative e/o fitosanitarie ottimali. Albero lievemente alterato nella struttura', 5),
+    ('Condizioni vegetative e/o fitosanitarie buone o comunque non tali da condizionare la salute e la vigoria', 15),
+    ('Condizioni vegetative e/o fitosanitarie buone o comunque non tali da condizionare la salute e la vigoria. Albero strutturalmente alterato', 20),
+    ("Condizioni vegetative e/o fitosanitarie mediocri, che limitano l'efficienza funzionale. Salute e/o vigoria ridotte", 25),
+    ('Condizioni vegetative e/o fitosanitarie mediocri. Albero strutturalmente alterato', 30),
+    ("Condizioni vegetative e/o fitosanitarie scadenti, che ne condizionano la salute e l'aspettativa di vita", 40),
+    ('Condizioni vegetative e/o fitosanitarie scadenti. Albero molto alterato strutturalmente', 50),
+    ('Condizioni vegetative e/o fitosanitarie pessime', 60),
+    ('Condizioni vegetative e/o fitosanitarie pessime. Albero fortemente deperiente, strutturalmente molto alterato', 70),
+    ('Albero morto in piedi', 90),
+]
+_CONDIZIONE_SALUTE_MAP: dict[str, int] = {desc: pct for desc, pct in CONDIZIONE_SALUTE_ECOLOGICA}
+
+# Posizione sociale → VLOOKUP column index (2-10)  A!BQ3:BY3
+_POS_SOCIALE_COL: dict[str, int] = {
+    'oppressa': 2, 'dominata': 3, 'intermedia': 4, 'codominante': 5,
+    'dominante margine': 6, 'dominante interna': 7, 'predominante': 8,
+    'libera (p giovane)': 9, 'isolata': 10,
+}
+
+# A!BP4:BY24: deduction% → [coeff per pos_sociale oppressa..isolata]
+# Coefficients for column indices 2-10 (list index = col - 2)
+_SALUTE_POS_COEFFS: dict[int, list[float]] = {
+     0: [0.80, 0.85, 0.90, 0.92, 0.96, 0.94, 0.98, 1.00, 1.00],
+     5: [0.75, 0.80, 0.85, 0.87, 0.91, 0.89, 0.93, 0.95, 0.95],
+    10: [0.70, 0.75, 0.80, 0.82, 0.86, 0.84, 0.88, 0.90, 0.90],
+    15: [0.65, 0.70, 0.75, 0.77, 0.81, 0.79, 0.83, 0.85, 0.85],
+    20: [0.60, 0.65, 0.70, 0.72, 0.76, 0.74, 0.78, 0.80, 0.80],
+    25: [0.55, 0.60, 0.65, 0.67, 0.71, 0.69, 0.73, 0.75, 0.75],
+    30: [0.50, 0.55, 0.60, 0.62, 0.66, 0.64, 0.68, 0.70, 0.70],
+    35: [0.45, 0.50, 0.55, 0.57, 0.61, 0.59, 0.63, 0.65, 0.65],
+    40: [0.40, 0.45, 0.50, 0.52, 0.56, 0.54, 0.58, 0.60, 0.60],
+    45: [0.35, 0.40, 0.45, 0.47, 0.51, 0.49, 0.53, 0.55, 0.55],
+    50: [0.30, 0.35, 0.40, 0.42, 0.46, 0.44, 0.48, 0.50, 0.50],
+    55: [0.25, 0.30, 0.35, 0.37, 0.41, 0.39, 0.43, 0.45, 0.45],
+    60: [0.20, 0.25, 0.30, 0.32, 0.36, 0.34, 0.38, 0.40, 0.40],
+    65: [0.15, 0.20, 0.25, 0.27, 0.31, 0.29, 0.33, 0.35, 0.35],
+    70: [0.10, 0.15, 0.20, 0.22, 0.26, 0.24, 0.28, 0.30, 0.30],
+    75: [0.05, 0.10, 0.15, 0.17, 0.21, 0.19, 0.23, 0.25, 0.25],
+    80: [0.00, 0.05, 0.10, 0.12, 0.16, 0.14, 0.18, 0.20, 0.20],
+    85: [0.00, 0.00, 0.05, 0.07, 0.11, 0.09, 0.13, 0.15, 0.15],
+    90: [0.00, 0.00, 0.00, 0.02, 0.06, 0.04, 0.08, 0.10, 0.10],
+    95: [0.00, 0.00, 0.00, 0.00, 0.01, 0.00, 0.03, 0.05, 0.05],
+   100: [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00],
+}
+
+# Unit market prices (A!BN19:BN22)
+_PREZZO_BIO  = 0.55   # €/kg biomassa
+_PREZZO_CO2  = 1.00   # €/kg CO2 annuo
+_PREZZO_O2   = 5.00   # €/kg O2 annuo
+_PREZZO_IA   = 10.00  # €/kg intercettazione acqua annua
+
+
+def calc_ecological_value(
+    trunk_diameter_cm: float,
+    tree_height_m: float,
+    stadio_sviluppo: str,
+    posizione_sociale: str,
+    condizione_salute_ecologica: str,
+) -> dict | None:
+    """
+    Compute ecological value metrics — replicates ORD sheet row 10.
+
+    Returns dict with keys:
+      bio_kg, co2_kg_anno, o2_kg_anno, ia_kg_anno, valore_ecologico (€)
+    Returns None if any required input is missing or unrecognised.
+    """
+    if not trunk_diameter_cm or trunk_diameter_cm <= 0:
+        return None
+    if not tree_height_m or tree_height_m <= 0:
+        return None
+    anni   = _STADIO_ANNI.get(stadio_sviluppo)
+    pos_col = _POS_SOCIALE_COL.get(posizione_sociale)
+    deduct  = _CONDIZIONE_SALUTE_MAP.get(condizione_salute_ecologica)
+    if anni is None or pos_col is None or deduct is None:
+        return None
+
+    # G10 = PI/4 * (diam_m)^2 * H * 0.9 * 900
+    diam_m = trunk_diameter_cm / 100.0
+    bio_kg = math.pi / 4.0 * diam_m ** 2 * tree_height_m * 0.9 * 900.0
+
+    if condizione_salute_ecologica == 'Albero morto in piedi':
+        co2_kg_anno = 0.0
+        o2_kg_anno  = 0.0
+        ia_kg_anno  = 0.0
+    else:
+        coeff = _SALUTE_POS_COEFFS[deduct][pos_col - 2]
+        base  = (bio_kg / anni) * coeff          # J10 base
+        co2_kg_anno = base                        # J10
+        o2_kg_anno  = base / 44.01 * 31.999 * 0.9  # M10
+        ia_kg_anno  = ((bio_kg * 0.2) / anni) * coeff  # O10
+
+    valore_ecologico = (
+        bio_kg       * _PREZZO_BIO +
+        co2_kg_anno  * _PREZZO_CO2 +
+        o2_kg_anno   * _PREZZO_O2  +
+        ia_kg_anno   * _PREZZO_IA
+    )
+
+    return {
+        'bio_kg':           round(bio_kg, 2),
+        'co2_kg_anno':      round(co2_kg_anno, 2),
+        'o2_kg_anno':       round(o2_kg_anno, 2),
+        'ia_kg_anno':       round(ia_kg_anno, 2),
+        'valore_ecologico': round(valore_ecologico, 2),
+    }
+
+
 def print_report(result: dict) -> None:
     """Print a human-readable assessment report."""
     labels = {
