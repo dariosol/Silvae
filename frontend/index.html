@@ -219,16 +219,18 @@
               <i class="fa-solid fa-magnifying-glass filter-ico"></i>
               <input id="idFilter" class="inp" type="text" style="padding-left:32px;min-width:160px;" placeholder="Filtra per ID…">
             </div>
-            <div class="map-addr-wrap" style="max-width:240px;">
-              <input id="listAddrInput" class="map-addr-input" type="text" placeholder="Seleziona indirizzo…" autocomplete="off">
-              <ul id="listAddrSuggestions" class="map-addr-suggestions"></ul>
+            <div class="addr-filter-group">
+              <div class="map-addr-wrap">
+                <input id="listAddrInput" class="map-addr-input" type="text" placeholder="Filtra per indirizzo…" autocomplete="off">
+                <ul id="listAddrSuggestions" class="map-addr-suggestions"></ul>
+              </div>
+              <button id="listAddrClearBtn" class="btn btn-sm btn-outline" onclick="resetListAddrFilter()" title="Rimuovi filtro indirizzo" style="display:none;padding:4px 8px;">&times;</button>
             </div>
-            <button id="listAddrClearBtn" class="btn btn-sm btn-outline" onclick="resetListAddrFilter()" title="Rimuovi filtro indirizzo" style="display:none;padding:4px 8px;">&times;</button>
             <span id="inventoryLabel" class="section-label">Inventario Alberi</span>
             <span class="count-badge" id="treeCount">0</span>
           </div>
           <div class="toolbar-right">
-            <select id="pageSizeSelect" class="inp" style="width:80px;" title="Righe per pagina">
+            <select id="pageSizeSelect" class="inp desktop-only" style="width:80px;" title="Righe per pagina">
               <option value="25">25</option><option value="50">50</option><option value="100">100</option>
             </select>
             <button class="btn btn-outline btn-sm mobile-only" id="infoHintBtn" title="Seleziona un comune nella barra superiore, poi usa il filtro ID per trovare un albero specifico.">
