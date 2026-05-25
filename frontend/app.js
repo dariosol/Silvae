@@ -510,6 +510,13 @@ function renderRiskResults(data) {
 
 async function init() {
     await Promise.all([populateCities(), fetchDropdowns()]);
+    const resetToken = new URLSearchParams(window.location.search).get('token');
+    if (resetToken) {
+        document.getElementById('loginPage').style.display = 'flex';
+        document.getElementById('appPage').style.display   = 'none';
+        showLoginView('resetView');
+        return;
+    }
     setupAuthUI();
     if (state.token && state.user) fetchTrees();
     voiceInit();
@@ -545,7 +552,7 @@ function showRoleFeatures(role) {
 // ─── Login page view switching ────────────────────────────
 
 function showLoginView(name) {
-    ['loginView','registerView','forgotView'].forEach(id => {
+    ['loginView','registerView','forgotView','resetView'].forEach(id => {
         document.getElementById(id).style.display = id === name ? 'block' : 'none';
     });
 }
@@ -588,6 +595,29 @@ async function forgotPassword() {
     });
     const data = await res.json();
     showStatus(data.message || 'Richiesta inviata', 'success');
+}
+
+// ─── Reset password (from email link) ─────────────────────
+
+async function resetPassword() {
+    const token = new URLSearchParams(window.location.search).get('token') || '';
+    const pw1   = document.getElementById('resetPassword').value;
+    const pw2   = document.getElementById('resetPassword2').value;
+    if (!pw1) return showStatus('Inserisci la nuova password', 'warning');
+    if (pw1 !== pw2) return showStatus('Le password non coincidono', 'warning');
+    const res  = await fetch(`${API_BASE}/reset-password`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({token, password: pw1})
+    });
+    const data = await res.json();
+    if (res.ok) {
+        showStatus('Password aggiornata! Ora puoi accedere.', 'success');
+        history.replaceState(null, '', window.location.pathname);
+        showLoginView('loginView');
+    } else {
+        showStatus(data.message || 'Errore durante il reset', 'danger');
+    }
 }
 
 // ─── Agronomer management (city role) ────────────────────
@@ -2143,6 +2173,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('showForgotLink').addEventListener('click', e => { e.preventDefault(); showLoginView('forgotView'); });
     document.getElementById('showLoginFromRegLink').addEventListener('click', e => { e.preventDefault(); showLoginView('loginView'); });
     document.getElementById('showLoginFromForgotLink').addEventListener('click', e => { e.preventDefault(); showLoginView('loginView'); });
+    document.getElementById('showLoginFromResetLink').addEventListener('click', e => { e.preventDefault(); history.replaceState(null, '', window.location.pathname); showLoginView('loginView'); });
+    document.getElementById('resetBtn').addEventListener('click', resetPassword);
+    document.getElementById('resetPassword2').addEventListener('keydown', e => e.key === 'Enter' && resetPassword());
     document.getElementById('registerBtn').addEventListener('click', register);
     document.getElementById('regPassword2').addEventListener('keydown', e => e.key==='Enter' && register());
     document.getElementById('forgotBtn').addEventListener('click', forgotPassword);

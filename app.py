@@ -14,6 +14,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy import inspect, text, case
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from functools import wraps
 import openpyxl
 from openpyxl.styles import PatternFill, Font, Alignment
@@ -48,6 +51,10 @@ app.config['SQLALCHEMY_DATABASE_URI'] = DB_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 SECRET_KEY = os.environ.get('SECRET_KEY', 'super-secret-change-me')
 app.config['SECRET_KEY'] = SECRET_KEY
+
+SMTP_USER    = os.environ.get('SMTP_USER', '')
+SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD', '')
+APP_BASE_URL = os.environ.get('APP_BASE_URL', 'http://localhost:5000')
 
 db = SQLAlchemy(app)
 geolocator = Nominatim(user_agent="tree_locator")
@@ -565,8 +572,38 @@ def forgot_password():
         user.password_reset_token   = token
         user.password_reset_expires = datetime.now(timezone.utc) + timedelta(hours=2)
         db.session.commit()
-        # TODO: send email — replace this block with your SMTP/SendGrid call
-        print(f"[PASSWORD RESET] Token for {user.email}: {token}")
+        reset_url = f"{APP_BASE_URL}/?token={token}"
+        if SMTP_USER and SMTP_PASSWORD:
+            try:
+                html_body = f"""
+<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;background:#f9f9f7;border-radius:12px;">
+  <h2 style="color:#2d6a4f;margin-top:0;">Reimposta la tua password</h2>
+  <p style="color:#444;">Hai richiesto il reset della password per il tuo account <strong>Silvae Pro</strong>.</p>
+  <p style="color:#444;">Clicca il pulsante qui sotto per scegliere una nuova password. Il link è valido per <strong>2 ore</strong>.</p>
+  <a href="{reset_url}"
+     style="display:inline-block;margin:20px 0;padding:12px 28px;background:#2d6a4f;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">
+    Reimposta password
+  </a>
+  <p style="font-size:12px;color:#888;">Se non hai richiesto il reset, ignora questa email. La tua password rimarrà invariata.</p>
+  <hr style="border:none;border-top:1px solid #ddd;margin:24px 0;">
+  <p style="font-size:11px;color:#aaa;">Silvae Pro &nbsp;·&nbsp; Sistema di Gestione Alberi</p>
+</div>
+"""
+                msg = MIMEMultipart('alternative')
+                msg['Subject'] = 'Silvae Pro – Reimposta la tua password'
+                msg['From']    = SMTP_USER
+                msg['To']      = user.email
+                msg.attach(MIMEText(f"Reimposta la password: {reset_url}", 'plain'))
+                msg.attach(MIMEText(html_body, 'html'))
+                with smtplib.SMTP('smtp.gmail.com', 587) as smtp:
+                    smtp.ehlo()
+                    smtp.starttls()
+                    smtp.login(SMTP_USER, SMTP_PASSWORD)
+                    smtp.sendmail(SMTP_USER, user.email, msg.as_string())
+            except Exception as e:
+                print(f"[PASSWORD RESET] Errore invio email: {e}")
+        else:
+            print(f"[PASSWORD RESET] SMTP non configurato. Link: {reset_url}")
     # Always return the same message to avoid user enumeration
     return jsonify({'message': 'Se l\'email è registrata riceverai un link per il reset.'}), 200
 

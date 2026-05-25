@@ -164,6 +164,29 @@
       </div>
     </div>
 
+    <!-- RESET PASSWORD VIEW (reached via email link ?token=...) -->
+    <div id="resetView" style="display:none;">
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px;">Scegli una nuova password per il tuo account.</p>
+      <div class="login-field">
+        <label for="resetPassword">Nuova password</label>
+        <div class="login-field-wrap">
+          <i class="ico fa-solid fa-lock"></i>
+          <input id="resetPassword" class="login-input" type="password" placeholder="Minimo 6 caratteri" autocomplete="new-password">
+        </div>
+      </div>
+      <div class="login-field">
+        <label for="resetPassword2">Conferma password</label>
+        <div class="login-field-wrap">
+          <i class="ico fa-solid fa-lock"></i>
+          <input id="resetPassword2" class="login-input" type="password" placeholder="Ripeti la password" autocomplete="new-password">
+        </div>
+      </div>
+      <button id="resetBtn" class="btn-login"><i class="fa-solid fa-key"></i>&nbsp; Imposta nuova password</button>
+      <div style="text-align:center;margin-top:12px;font-size:13px;">
+        <a href="#" id="showLoginFromResetLink" style="color:var(--g600);">Torna al login</a>
+      </div>
+    </div>
+
     <div class="login-footer">Silvae Pro &nbsp;·&nbsp; Edizione Campo</div>
   </div>
 </div>
