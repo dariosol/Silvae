@@ -1605,12 +1605,12 @@ def import_gpkg_route():
 
     # All _GPKG_COLS canonical names are tried first, then legacy aliases.
     C = {
-        'custom_id':          dcol('custom_id', '_numero', 'name', 'id_albero', 'numero'),
+        'custom_id':          dcol('custom_id', '_name', '_numero', 'name', 'id_albero', 'numero'),
         'species':            dcol('species', '_tassonomi', 'specie', 'nome_scientifico', 'taxon'),
         'species_ita':        dcol('_nome ital', '_nome_ital', 'nome_italiano', 'nome_comune'),
         'condition':          dcol('condition', 'condizione'),
         'condition_fb':       dcol('_f. fisiol', '_f_fisiol', 'stato_fitosanitario'),
-        'address':            dcol('address', "_localita'", '_localita', 'localita', 'indirizzo', 'via'),
+        'address':            dcol('address', "_localita'", "localita'", '_localita', 'localita', 'indirizzo', 'via'),
         'height':             dcol('height', '_altezza', 'altezza', 'h_albero'),
         'crown_diameter_m':   dcol('crown_diameter_m', '_diametro', 'diametro_chioma'),
         'circonferenza_cm':   dcol('circonferenza_cm', '_circonfer', '_circonferenza', 'circonferenza'),
@@ -1775,7 +1775,7 @@ def import_gpkg_route():
         if lat is not None and C['latitude']:
             row[C['latitude']] = lat
 
-        custom_id = str(row.get('name') or '').strip()
+        custom_id = str(row.get(C['custom_id']) or '').strip() if C['custom_id'] else ''
         if not custom_id:
             skipped += 1
             continue
