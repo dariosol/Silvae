@@ -1608,7 +1608,7 @@ def import_gpkg_route():
         'custom_id':          dcol('custom_id', '_numero', '_name', 'name', 'id_albero', 'numero'),
         'species':            dcol('species', '_tassonomi', 'specie', 'nome_scientifico', 'taxon'),
         'species_ita':        dcol('_nome ital', '_nome_ital', 'nome_italiano', 'nome_comune'),
-        'condition':          dcol('condition', 'condizione', '_classe vt', '_classe_vt', '_f. fisiol', '_f_fisiol'),
+        'condition':          dcol('condition', 'condizione', '_classe vt', '_classe_vt'),
         'condition_fb':       dcol('_f. fisiol', '_f_fisiol', 'stato_fitosanitario'),
         'address':            dcol('address', "_localita'", "localita'", '_localita', 'localita', 'indirizzo', 'via'),
         'height':             dcol('height', '_altezza', 'altezza', 'h_albero'),
@@ -1623,7 +1623,7 @@ def import_gpkg_route():
         'latitude':           dcol('latitude', 'ycoord', 'y', 'lat'),
         'geom':               dcol('geom', 'geometry', 'the_geom', 'shape'),
         # Silvae Pro full-attribute fields
-        'age':                dcol('age'),
+        'age':                dcol('age', '_f. fisiol', '_f_fisiol'),
         'cpc':                dcol('cpc', '_classe vt', '_classe_vt'),
         'dimora':             dcol('dimora'),
         'stadio_sviluppo':    dcol('stadio_sviluppo'),
