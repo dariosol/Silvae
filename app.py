@@ -1605,18 +1605,20 @@ def import_gpkg_route():
 
     # All _GPKG_COLS canonical names are tried first, then legacy aliases.
     C = {
-        'custom_id':          dcol('custom_id', '_name', '_numero', 'name', 'id_albero', 'numero'),
+        'custom_id':          dcol('custom_id', '_numero', '_name', 'name', 'id_albero', 'numero'),
         'species':            dcol('species', '_tassonomi', 'specie', 'nome_scientifico', 'taxon'),
         'species_ita':        dcol('_nome ital', '_nome_ital', 'nome_italiano', 'nome_comune'),
-        'condition':          dcol('condition', 'condizione'),
+        'condition':          dcol('condition', 'condizione', '_classe vt', '_classe_vt', '_f. fisiol', '_f_fisiol'),
         'condition_fb':       dcol('_f. fisiol', '_f_fisiol', 'stato_fitosanitario'),
         'address':            dcol('address', "_localita'", "localita'", '_localita', 'localita', 'indirizzo', 'via'),
         'height':             dcol('height', '_altezza', 'altezza', 'h_albero'),
         'crown_diameter_m':   dcol('crown_diameter_m', '_diametro', 'diametro_chioma'),
         'circonferenza_cm':   dcol('circonferenza_cm', '_circonfer', '_circonferenza', 'circonferenza'),
-        'localizzazione':     dcol('localizzazione', '_stazione', 'stazione'),
+        'localizzazione':     dcol('localizzazione'),
         'location':           dcol('location'),
-        'next_check':         dcol('next_check', '_da contro', '_da_contro', 'prossima_ispezione', 'data_controllo', '_rivedere'),
+        'stazione_raw':       dcol('_stazione', 'stazione'),
+        'next_check':         dcol('next_check', '_da contro', '_da_contro', 'prossima_ispezione', 'data_controllo'),
+        'next_check_fb':      dcol('_rivedere'),
         'longitude':          dcol('longitude', 'xcoord', 'x', 'lon'),
         'latitude':           dcol('latitude', 'ycoord', 'y', 'lat'),
         'geom':               dcol('geom', 'geometry', 'the_geom', 'shape'),
@@ -1710,6 +1712,14 @@ def import_gpkg_route():
         if tree.cpc and tree.cpc.upper() == 'ABBATTUO':
             tree.cpc = 'ABBATTUTO'
 
+        staz = gs('stazione_raw')
+        if staz and not gs('localizzazione') and not gs('location'):
+            localiz_vals = [v.lower() for v in dd.localizzazione]
+            if staz.lower() in localiz_vals:
+                tree.localizzazione = staz
+            else:
+                tree.location = staz
+
         for key in ('tree_height_m','circonferenza_cm','trunk_diameter_cm',
                     'crown_diameter_m','branch_diam_cm','branch_length_m',
                     'branch_height_m','target_height_m',
@@ -1732,7 +1742,7 @@ def import_gpkg_route():
             if v is not None:
                 setattr(tree, key, v)
 
-        nd = _gpkg_parse_date(gs('next_check'))
+        nd = _gpkg_parse_date(gs('next_check')) or _gpkg_parse_date(gs('next_check_fb'))
         if nd is not None:
             tree.next_check = nd
 
