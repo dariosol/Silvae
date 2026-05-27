@@ -1795,10 +1795,11 @@ def import_gpkg_route():
             # custom_id+city only when coordinates are unavailable.
             existing = None
             if lat is not None and lon is not None:
-                existing = Tree.query.filter_by(
-                    city=city,
-                    latitude=round(lat, 6),
-                    longitude=round(lon, 6)
+                tol = 1e-6
+                existing = Tree.query.filter(
+                    Tree.city == city,
+                    Tree.latitude.between(lat - tol, lat + tol),
+                    Tree.longitude.between(lon - tol, lon + tol)
                 ).first()
             else:
                 existing = Tree.query.filter_by(custom_id=custom_id, city=city).first()
