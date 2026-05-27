@@ -1805,6 +1805,7 @@ def import_gpkg_route():
 
             if existing:
                 if on_conflict == 'update':
+                    existing.custom_id = custom_id
                     apply_fields(existing)
                     db.session.commit()
                     inserted += 1
