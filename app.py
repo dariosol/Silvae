@@ -1909,8 +1909,6 @@ def import_gpkg_route():
                     existing.custom_id = custom_id
                     existing.owner_id  = user_id
                     apply_fields(existing)
-                    db.session.flush()
-                    _set_geom(existing)
                     db.session.commit()
                     inserted += 1
                 else:
@@ -1921,8 +1919,6 @@ def import_gpkg_route():
                         species='Sconosciuta', condition='—')
             apply_fields(tree)
             db.session.add(tree)
-            db.session.flush()
-            _set_geom(tree)
             db.session.commit()
             inserted += 1
         except Exception as e:
