@@ -956,6 +956,26 @@ def delete_tree(tree_id):
     db.session.delete(tree); db.session.commit()
     return jsonify({'message': f'Tree {tree_id} deleted successfully!'}), 200
 
+@app.route('/trees/bulk', methods=['DELETE'])
+@auth_required
+def delete_trees_bulk():
+    user_id   = request.user.get('user_id')
+    role      = request.user.get('role')
+    user_city = request.user.get('city')
+    ids = (request.json or {}).get('ids', [])
+    if not ids:
+        return jsonify({'message': 'Nessun ID fornito'}), 400
+    deleted = 0
+    for tree_id in ids:
+        tree = db.session.get(Tree, int(tree_id))
+        if not tree: continue
+        if role == 'user' and tree.owner_id != user_id: continue
+        if role == 'city' and not city_can_access_tree(tree, user_id, user_city): continue
+        db.session.delete(tree)
+        deleted += 1
+    db.session.commit()
+    return jsonify({'deleted': deleted})
+
 @app.route('/add_tree', methods=['POST'])
 @auth_required
 def add_tree():
@@ -1529,6 +1549,171 @@ def _reverse_geocode_comune(lat, lon):
     except Exception:
         return ''
 
+# ---------- GPKG import: field-detection helpers ----------
+
+_GPKG_FIELD_CANDIDATES = {
+    'custom_id':          ['custom_id', 'name', '_numero', '_name', 'id_albero', 'numero'],
+    'species':            ['species', '_tassonomi', 'specie', 'nome_scientifico', 'taxon'],
+    'species_ita':        ['_nome ital', '_nome_ital', 'nome_italiano', 'nome_comune'],
+    'condition':          ['condition', 'condizione', '_classe vt', '_classe_vt'],
+    'cpc':                ['cpc', '_classe vt', '_classe_vt'],
+    'age':                ['age', '_f. fisiol', '_f_fisiol'],
+    'address':            ['address', "_localita'", "localita'", '_localita', 'localita', 'indirizzo', 'via'],
+    'height':             ['height', '_altezza', 'altezza', 'h_albero'],
+    'crown_diameter_m':   ['crown_diameter_m', '_diametro', 'diametro_chioma'],
+    'circonferenza_cm':   ['circonferenza_cm', '_circonfer', '_circonferenza', 'circonferenza'],
+    'localizzazione':     ['localizzazione'],
+    'location':           ['location'],
+    'stazione_raw':       ['_stazione', 'stazione'],
+    'next_check':         ['next_check', '_da contro', '_da_contro', 'prossima_ispezione', 'data_controllo'],
+    'next_check_fb':      ['_rivedere'],
+    'longitude':          ['longitude', 'xcoord', 'x', 'lon'],
+    'latitude':           ['latitude', 'ycoord', 'y', 'lat'],
+    'geom':               ['geom', 'geometry', 'the_geom', 'shape'],
+    'dimora':             ['dimora'],
+    'stadio_sviluppo':    ['stadio_sviluppo'],
+    'posizione_sociale':  ['posizione_sociale'],
+    'vincoli':            ['vincoli'],
+    'tree_height_m':      ['tree_height_m'],
+    'trunk_diameter_cm':  ['trunk_diameter_cm'],
+    'branch_diam_cm':     ['branch_diam_cm'],
+    'branch_length_m':    ['branch_length_m'],
+    'branch_height_m':    ['branch_height_m'],
+    'target_height_m':    ['target_height_m'],
+    'post_tree_height_m':    ['post_tree_height_m'],
+    'post_circonferenza_cm': ['post_circonferenza_cm'],
+    'post_branch_diam_cm':   ['post_branch_diam_cm'],
+    'post_branch_length_m':  ['post_branch_length_m'],
+    'post_branch_height_m':  ['post_branch_height_m'],
+    'post_target_height_m':  ['post_target_height_m'],
+    'pericolo_rami':      ['pericolo_rami'],
+    'pericolo_tronco':    ['pericolo_tronco'],
+    'pericolo_colletto':  ['pericolo_colletto'],
+    'pericolo_zolla':     ['pericolo_zolla'],
+    'bersaglio_chioma_tipo':  ['bersaglio_chioma_tipo'],
+    'bersaglio_chioma_value': ['bersaglio_chioma_value'],
+    'bersaglio_chioma_flow':  ['bersaglio_chioma_flow'],
+    'bersaglio_chioma':       ['bersaglio_chioma'],
+    'bersaglio_ramo_tipo':    ['bersaglio_ramo_tipo'],
+    'bersaglio_ramo_value':   ['bersaglio_ramo_value'],
+    'bersaglio_ramo_flow':    ['bersaglio_ramo_flow'],
+    'bersaglio_ramo':         ['bersaglio_ramo'],
+    'moltiplicatore':     ['moltiplicatore'],
+    'monitoraggio':       ['monitoraggio'],
+    'urgenza':            ['urgenza'],
+    'comments':           ['comments'],
+    'actions':            ['actions'],
+    'conflitti_list':     ['conflitti'],
+    'agenti_carie':       ['agenti_carie'],
+    'altri_patogeni':     ['altri_patogeni'],
+    'prescrizioni_val':   ['prescrizioni_val'],
+    'prescrizioni_mit':   ['prescrizioni_mit'],
+    'prescrizioni_col':   ['prescrizioni_col'],
+}
+
+def _gpkg_detect_C(cols):
+    """Auto-detect field mapping from GPKG column names."""
+    lc = {c.lower(): c for c in cols}
+    C = {}
+    for field, candidates in _GPKG_FIELD_CANDIDATES.items():
+        for cand in candidates:
+            if cand.lower() in lc:
+                C[field] = lc[cand.lower()]
+                break
+        else:
+            C[field] = None
+    return C
+
+def _gpkg_user_C(cols, user_mapping):
+    """Build field mapping from explicit user config {gpkg_col: silvae_field}."""
+    col_set = set(cols)
+    C = {f: None for f in _GPKG_FIELD_CANDIDATES}
+    for gpkg_col, silvae_field in user_mapping.items():
+        if silvae_field and silvae_field in C and gpkg_col in col_set:
+            C[silvae_field] = gpkg_col
+    return C
+
+def _gpkg_inspect_mapping(cols):
+    """Return user-facing auto-mapping for the inspect endpoint: {gpkg_col: silvae_field}."""
+    C = _gpkg_detect_C(cols)
+    internal = {'stazione_raw', 'next_check_fb', 'geom'}
+    result = {}
+    for field, gpkg_col in C.items():
+        if field in internal or not gpkg_col:
+            continue
+        if gpkg_col not in result:
+            result[gpkg_col] = field
+    if C.get('stazione_raw') and C['stazione_raw'] not in result:
+        result[C['stazione_raw']] = 'location'
+    if C.get('next_check_fb') and C['next_check_fb'] not in result:
+        result[C['next_check_fb']] = 'next_check'
+    return result
+
+def _gpkg_read_table(f_or_path):
+    """Open a GPKG file object or path, return (cols, rows, table_name) or raise."""
+    import_path = None
+    try:
+        if hasattr(f_or_path, 'read'):
+            with tempfile.NamedTemporaryFile(suffix='.gpkg', delete=False) as tmp:
+                f_or_path.save(tmp.name)
+                import_path = tmp.name
+            path = import_path
+        else:
+            path = f_or_path
+        src = sqlite3.connect(path)
+        src.row_factory = sqlite3.Row
+        cur = src.cursor()
+        try:
+            cur.execute("SELECT table_name FROM gpkg_contents WHERE data_type='features' LIMIT 1")
+            r = cur.fetchone()
+            table_name = r[0] if r else None
+        except Exception:
+            table_name = None
+        if not table_name:
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                        "AND name NOT LIKE 'gpkg_%' AND name NOT LIKE 'rtree_%' "
+                        "AND name NOT LIKE 'sqlite_%'")
+            rows_t = cur.fetchall()
+            table_name = rows_t[0][0] if rows_t else None
+        if not table_name:
+            src.close()
+            raise ValueError('Nessuna tabella features trovata nel file GPKG')
+        cur.execute(f"PRAGMA table_info('{table_name}')")
+        cols = [r[1] for r in cur.fetchall()]
+        cur.execute(f"SELECT * FROM '{table_name}'")
+        rows = [dict(r) for r in cur.fetchall()]
+        src.close()
+        return cols, rows, table_name
+    finally:
+        if import_path:
+            try: os.unlink(import_path)
+            except Exception: pass
+
+@app.route('/import/gpkg/inspect', methods=['POST'])
+@auth_required
+def inspect_gpkg_route():
+    f = request.files.get('file')
+    if not f:
+        return jsonify({'message': 'Nessun file inviato'}), 400
+    try:
+        cols, rows, _ = _gpkg_read_table(f)
+    except Exception as e:
+        return jsonify({'message': f'Errore lettura GPKG: {e}'}), 400
+
+    skip = {'fid', 'geom', 'geometry', 'the_geom', 'shape'}
+    display_cols = [c for c in cols if c.lower() not in skip]
+    sample = {}
+    if rows:
+        for k in display_cols:
+            v = rows[0].get(k)
+            if not isinstance(v, (bytes, bytearray)):
+                sample[k] = str(v) if v is not None else ''
+    return jsonify({
+        'columns':      display_cols,
+        'auto_mapping': _gpkg_inspect_mapping(cols),
+        'sample':       sample,
+    })
+
 @app.route('/import/gpkg', methods=['POST'])
 @auth_required
 def import_gpkg_route():
@@ -1551,120 +1736,20 @@ def import_gpkg_route():
     if not f.filename:
         return jsonify({'message': 'Nessun file selezionato'}), 400
 
-    tmp_path = None
     try:
-        with tempfile.NamedTemporaryFile(suffix='.gpkg', delete=False) as tmp:
-            f.save(tmp.name)
-            tmp_path = tmp.name
-
-        src = sqlite3.connect(tmp_path)
-        src.row_factory = sqlite3.Row
-        cur = src.cursor()
-
-        try:
-            cur.execute("SELECT table_name FROM gpkg_contents WHERE data_type='features' LIMIT 1")
-            r = cur.fetchone()
-            table_name = r[0] if r else None
-        except Exception:
-            table_name = None
-
-        if not table_name:
-            cur.execute("SELECT name FROM sqlite_master WHERE type='table' "
-                        "AND name NOT LIKE 'gpkg_%' AND name NOT LIKE 'rtree_%' "
-                        "AND name NOT LIKE 'sqlite_%'")
-            rows_t = cur.fetchall()
-            table_name = rows_t[0][0] if rows_t else None
-
-        if not table_name:
-            src.close()
-            return jsonify({'message': 'Nessuna tabella features trovata nel file GPKG'}), 400
-
-        cur.execute(f"PRAGMA table_info('{table_name}')")
-        cols = [r[1] for r in cur.fetchall()]
-        cur.execute(f"SELECT * FROM '{table_name}'")
-        rows = [dict(r) for r in cur.fetchall()]
-        src.close()
-
+        cols, rows, _ = _gpkg_read_table(f)
     except Exception as e:
         return jsonify({'message': f'Errore lettura GPKG: {e}'}), 400
-    finally:
-        if tmp_path:
-            try: os.unlink(tmp_path)
-            except Exception: pass
 
     # --- Column detection ------------------------------------------------
-    # Tries candidate names in order; returns the first that exists in cols.
-    # Silvae Pro exports use the canonical name (first candidate); external
-    # census files use legacy names (subsequent candidates).
-    def dcol(*candidates):
-        lc = {c.lower(): c for c in cols}
-        for cand in candidates:
-            if cand.lower() in lc:
-                return lc[cand.lower()]
-        return None
-
-    # All _GPKG_COLS canonical names are tried first, then legacy aliases.
-    C = {
-        'custom_id':          dcol('custom_id', '_numero', '_name', 'name', 'id_albero', 'numero'),
-        'species':            dcol('species', '_tassonomi', 'specie', 'nome_scientifico', 'taxon'),
-        'species_ita':        dcol('_nome ital', '_nome_ital', 'nome_italiano', 'nome_comune'),
-        'condition':          dcol('condition', 'condizione', '_classe vt', '_classe_vt'),
-        'condition_fb':       dcol('_f. fisiol', '_f_fisiol', 'stato_fitosanitario'),
-        'address':            dcol('address', "_localita'", "localita'", '_localita', 'localita', 'indirizzo', 'via'),
-        'height':             dcol('height', '_altezza', 'altezza', 'h_albero'),
-        'crown_diameter_m':   dcol('crown_diameter_m', '_diametro', 'diametro_chioma'),
-        'circonferenza_cm':   dcol('circonferenza_cm', '_circonfer', '_circonferenza', 'circonferenza'),
-        'localizzazione':     dcol('localizzazione'),
-        'location':           dcol('location'),
-        'stazione_raw':       dcol('_stazione', 'stazione'),
-        'next_check':         dcol('next_check', '_da contro', '_da_contro', 'prossima_ispezione', 'data_controllo'),
-        'next_check_fb':      dcol('_rivedere'),
-        'longitude':          dcol('longitude', 'xcoord', 'x', 'lon'),
-        'latitude':           dcol('latitude', 'ycoord', 'y', 'lat'),
-        'geom':               dcol('geom', 'geometry', 'the_geom', 'shape'),
-        # Silvae Pro full-attribute fields
-        'age':                dcol('age', '_f. fisiol', '_f_fisiol'),
-        'cpc':                dcol('cpc', '_classe vt', '_classe_vt'),
-        'dimora':             dcol('dimora'),
-        'stadio_sviluppo':    dcol('stadio_sviluppo'),
-        'posizione_sociale':  dcol('posizione_sociale'),
-        'vincoli':            dcol('vincoli'),
-        'tree_height_m':      dcol('tree_height_m'),
-        'trunk_diameter_cm':  dcol('trunk_diameter_cm'),
-        'branch_diam_cm':     dcol('branch_diam_cm'),
-        'branch_length_m':    dcol('branch_length_m'),
-        'branch_height_m':    dcol('branch_height_m'),
-        'target_height_m':    dcol('target_height_m'),
-        'post_tree_height_m':    dcol('post_tree_height_m'),
-        'post_circonferenza_cm': dcol('post_circonferenza_cm'),
-        'post_branch_diam_cm':   dcol('post_branch_diam_cm'),
-        'post_branch_length_m':  dcol('post_branch_length_m'),
-        'post_branch_height_m':  dcol('post_branch_height_m'),
-        'post_target_height_m':  dcol('post_target_height_m'),
-        'pericolo_rami':      dcol('pericolo_rami'),
-        'pericolo_tronco':    dcol('pericolo_tronco'),
-        'pericolo_colletto':  dcol('pericolo_colletto'),
-        'pericolo_zolla':     dcol('pericolo_zolla'),
-        'bersaglio_chioma_tipo':  dcol('bersaglio_chioma_tipo'),
-        'bersaglio_chioma_value': dcol('bersaglio_chioma_value'),
-        'bersaglio_chioma_flow':  dcol('bersaglio_chioma_flow'),
-        'bersaglio_chioma':       dcol('bersaglio_chioma'),
-        'bersaglio_ramo_tipo':    dcol('bersaglio_ramo_tipo'),
-        'bersaglio_ramo_value':   dcol('bersaglio_ramo_value'),
-        'bersaglio_ramo_flow':    dcol('bersaglio_ramo_flow'),
-        'bersaglio_ramo':         dcol('bersaglio_ramo'),
-        'moltiplicatore':     dcol('moltiplicatore'),
-        'monitoraggio':       dcol('monitoraggio'),
-        'urgenza':            dcol('urgenza'),
-        'comments':           dcol('comments'),
-        'actions':            dcol('actions'),
-        'conflitti_list':     dcol('conflitti'),
-        'agenti_carie':       dcol('agenti_carie'),
-        'altri_patogeni':     dcol('altri_patogeni'),
-        'prescrizioni_val':   dcol('prescrizioni_val'),
-        'prescrizioni_mit':   dcol('prescrizioni_mit'),
-        'prescrizioni_col':   dcol('prescrizioni_col'),
-    }
+    mapping_json = request.form.get('mapping')
+    if mapping_json:
+        try:
+            C = _gpkg_user_C(cols, json.loads(mapping_json))
+        except (ValueError, TypeError):
+            return jsonify({'message': 'Mapping JSON non valido'}), 400
+    else:
+        C = _gpkg_detect_C(cols)
 
     # --- Row helpers -------------------------------------------------------
     def gs(key):

@@ -2019,6 +2019,22 @@ function toggleTreeSelect(id, checked) {
     document.getElementById('exportCount').textContent = `${state.exportSelected.size} alber${state.exportSelected.size !== 1 ? 'i' : 'o'} selezionat${state.exportSelected.size !== 1 ? 'i' : 'o'}`;
 }
 
+async function deleteSelectedTrees() {
+    const n = state.exportSelected.size;
+    if (n === 0) { showStatus('Nessun albero selezionato', 'warning'); return; }
+    if (!confirm(`Eliminare ${n} alber${n !== 1 ? 'i' : 'o'}? L'operazione è irreversibile.`)) return;
+    const res = await fetch(`${API_BASE}/trees/bulk`, {
+        method: 'DELETE',
+        headers: { ...authHeader(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [...state.exportSelected] })
+    });
+    const data = await res.json();
+    if (!res.ok) { showStatus(data.message || 'Errore durante l\'eliminazione', 'danger'); return; }
+    showStatus(`${data.deleted} alber${data.deleted !== 1 ? 'i eliminati' : 'o eliminato'}`, 'success');
+    toggleExportMode();
+    fetchTrees();
+}
+
 async function exportSelectedExcel() {
     if (state.exportSelected.size === 0) { showStatus('Nessun albero selezionato', 'warning'); return; }
     showStatus('Preparazione Excel…', 'info');
@@ -2031,6 +2047,41 @@ async function exportSelectedExcel() {
 }
 
 // ─── Import GPKG ─────────────────────────────────────────
+
+const SILVAE_FIELDS = [
+    { value: '',                  label: '— non importare —' },
+    { value: 'custom_id',         label: 'ID Albero' },
+    { value: 'species',           label: 'Specie (latino)' },
+    { value: 'species_ita',       label: 'Specie (italiano)' },
+    { value: 'condition',         label: 'Condizione' },
+    { value: 'cpc',               label: 'Codice CPC' },
+    { value: 'age',               label: 'Età / Stima età' },
+    { value: 'address',           label: 'Indirizzo / Località' },
+    { value: 'height',            label: 'Altezza (classe)' },
+    { value: 'crown_diameter_m',  label: 'Diametro chioma (m)' },
+    { value: 'circonferenza_cm',  label: 'Circonferenza (cm)' },
+    { value: 'localizzazione',    label: 'Localizzazione' },
+    { value: 'location',          label: 'Dettaglio posizione' },
+    { value: 'next_check',        label: 'Prossima ispezione' },
+    { value: 'longitude',         label: 'Longitudine' },
+    { value: 'latitude',          label: 'Latitudine' },
+    { value: 'dimora',            label: 'Dimora' },
+    { value: 'stadio_sviluppo',   label: 'Stadio sviluppo' },
+    { value: 'posizione_sociale', label: 'Posizione sociale' },
+    { value: 'vincoli',           label: 'Vincoli' },
+    { value: 'tree_height_m',     label: 'Altezza albero (m)' },
+    { value: 'trunk_diameter_cm', label: 'Diametro tronco (cm)' },
+    { value: 'branch_diam_cm',    label: 'Diam. ramo (cm)' },
+    { value: 'branch_length_m',   label: 'Lunghezza ramo (m)' },
+    { value: 'branch_height_m',   label: 'Altezza ramo (m)' },
+    { value: 'target_height_m',   label: 'H target (m)' },
+    { value: 'monitoraggio',      label: 'Monitoraggio' },
+    { value: 'urgenza',           label: 'Urgenza' },
+    { value: 'comments',          label: 'Note' },
+    { value: 'actions',           label: 'Azioni' },
+];
+
+let _importMapping = {};  // {gpkg_col: silvae_field}
 
 function initImportDropZone() {
     const zone  = document.getElementById('importDropZone');
@@ -2059,14 +2110,105 @@ function initImportDropZone() {
     });
 }
 
-async function submitImportGPKG() {
+async function openImportMapping() {
     const input = document.getElementById('importFileInput');
-    const city  = document.getElementById('importCity').value.trim();
-    const conflict = document.getElementById('importConflict').value;
-    const btn   = document.getElementById('importSubmitBtn');
-    const result = document.getElementById('importResult');
+    if (!input.files[0]) { showStatus('Seleziona prima un file .gpkg', 'warning'); return; }
 
-    if (!input.files[0]) { showStatus('Seleziona un file .gpkg', 'warning'); return; }
+    const btn = document.getElementById('importSubmitBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Analisi file…';
+
+    const fd = new FormData();
+    fd.append('file', input.files[0]);
+
+    try {
+        const res  = await fetch(`${API_BASE}/import/gpkg/inspect`, { method: 'POST', headers: authHeader(), body: fd });
+        const data = await res.json();
+        if (!res.ok) { showStatus(data.message || 'Errore analisi file', 'danger'); return; }
+
+        _importMapping = Object.assign({}, data.auto_mapping);
+        _renderMappingTable(data.columns, data.sample, _importMapping);
+        document.getElementById('importMappingModal').classList.add('open');
+    } catch (e) {
+        showStatus('Errore di connessione', 'danger');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-upload"></i> Avvia Importazione';
+    }
+}
+
+function _renderMappingTable(columns, sample, mapping) {
+    const rows = columns.map(col => {
+        const ex  = (sample[col] || '').substring(0, 40);
+        const sel = mapping[col] || '';
+        const selectOpts = SILVAE_FIELDS.map(f =>
+            `<option value="${f.value}"${f.value === sel ? ' selected' : ''}>${f.label}</option>`
+        ).join('');
+        return `<tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:6px 8px;font-weight:600;font-family:monospace;font-size:12px;">${col}</td>
+          <td style="padding:6px 8px;color:var(--text-muted);font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${ex}">${ex}</td>
+          <td style="padding:4px 8px;">
+            <select class="fc" style="font-size:12px;padding:4px 6px;" data-col="${col}" onchange="_importMapping[this.dataset.col]=this.value">
+              ${selectOpts}
+            </select>
+          </td>
+        </tr>`;
+    }).join('');
+
+    document.getElementById('importMappingBody').innerHTML = rows;
+}
+
+function closeImportMapping() {
+    document.getElementById('importMappingModal').classList.remove('open');
+}
+
+function saveImportConfig() {
+    const cfg = {};
+    document.querySelectorAll('#importMappingBody select').forEach(sel => {
+        if (sel.value) cfg[sel.dataset.col] = sel.value;
+    });
+    const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'import_config.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+}
+
+function loadImportConfig(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+        try {
+            const cfg = JSON.parse(e.target.result);
+            document.querySelectorAll('#importMappingBody select').forEach(sel => {
+                if (cfg[sel.dataset.col] !== undefined) {
+                    sel.value = cfg[sel.dataset.col];
+                    _importMapping[sel.dataset.col] = cfg[sel.dataset.col];
+                }
+            });
+        } catch { showStatus('File di configurazione non valido', 'danger'); }
+    };
+    reader.readAsText(file);
+    input.value = '';
+}
+
+async function confirmImportMapping() {
+    const mapping = {};
+    document.querySelectorAll('#importMappingBody select').forEach(sel => {
+        if (sel.value) mapping[sel.dataset.col] = sel.value;
+    });
+    closeImportMapping();
+    await _doImport(mapping);
+}
+
+async function _doImport(mapping) {
+    const input    = document.getElementById('importFileInput');
+    const city     = document.getElementById('importCity').value.trim();
+    const conflict = document.getElementById('importConflict').value;
+    const btn      = document.getElementById('importSubmitBtn');
+    const result   = document.getElementById('importResult');
 
     btn.disabled = true;
     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Importazione in corso…';
@@ -2076,6 +2218,7 @@ async function submitImportGPKG() {
     fd.append('file', input.files[0]);
     fd.append('city', city);
     fd.append('on_conflict', conflict);
+    fd.append('mapping', JSON.stringify(mapping));
 
     try {
         const res  = await fetch(`${API_BASE}/import/gpkg`, { method: 'POST', headers: authHeader(), body: fd });

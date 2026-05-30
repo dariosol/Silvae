@@ -260,8 +260,8 @@
             <button class="btn btn-outline btn-sm" id="nearbyBtn" onclick="toggleNearby()" title="Vicino a me">
               <i class="fa-solid fa-location-crosshairs"></i><span class="btn-txt"> Vicino a me</span>
             </button>
-            <button class="btn btn-outline btn-sm" id="exportModeBtn" onclick="toggleExportMode()" title="Seleziona per esportare">
-              <i class="fa-solid fa-download"></i><span class="btn-txt"> Seleziona per esportare</span>
+            <button class="btn btn-outline btn-sm" id="exportModeBtn" onclick="toggleExportMode()" title="Seleziona alberi">
+              <i class="fa-solid fa-check-square"></i><span class="btn-txt"> Seleziona</span>
             </button>
             <button class="btn btn-primary" id="openFormBtn" title="Aggiungi Albero">
               <i class="fa-solid fa-plus"></i><span class="btn-txt"> Aggiungi Albero</span>
@@ -272,6 +272,7 @@
           <span id="exportCount" style="font-size:13px;font-weight:600;color:#1d4ed8;"></span>
           <button class="btn btn-excel btn-sm" onclick="exportSelectedExcel()"><i class="fa-solid fa-file-excel"></i> Esporta Excel</button>
           <button class="btn btn-gpkg btn-sm" onclick="exportSelectedGPKG()"><i class="fa-solid fa-database"></i> Esporta GPKG</button>
+          <button class="btn btn-sm" style="background:#dc2626;color:#fff;border:none;" onclick="deleteSelectedTrees()"><i class="fa-solid fa-trash"></i> Elimina selezionati</button>
           <button class="btn btn-outline btn-sm" onclick="toggleExportMode()" style="margin-left:auto;"><i class="fa-solid fa-xmark"></i> Annulla</button>
         </div>
         <div class="section-card">
@@ -994,7 +995,7 @@
                 </select>
               </div>
 
-              <button class="btn btn-primary" id="importSubmitBtn" style="width:100%;margin-top:14px;" onclick="submitImportGPKG()">
+              <button class="btn btn-primary" id="importSubmitBtn" style="width:100%;margin-top:14px;" onclick="openImportMapping()">
                 <i class="fa-solid fa-upload"></i> Avvia Importazione
               </button>
 
@@ -1251,6 +1252,43 @@ rischio_finale   = lookup_inverso(probabilità_n)    ← foglio A, colonne AR:AS
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="app.js"></script>
 <script src="voice.js"></script>
+
+<!-- Modale: Mapping campi importazione -->
+<div class="info-modal-overlay" id="importMappingModal" onclick="if(event.target===this)closeImportMapping()">
+  <div class="info-modal" style="max-width:720px;padding:20px 20px 16px;">
+    <button class="info-modal-close" onclick="closeImportMapping()">&times;</button>
+    <h3 style="margin-bottom:4px;"><i class="fa-solid fa-sliders" style="color:var(--g700);margin-right:6px;"></i>Configura importazione</h3>
+    <p style="font-size:12px;color:var(--text-muted);margin:0 0 14px;">Abbina i campi del file ai campi di Silvae Pro. I campi non abbinati vengono ignorati.</p>
+
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;" id="importMappingTable">
+        <thead>
+          <tr style="border-bottom:2px solid var(--border);">
+            <th style="text-align:left;padding:6px 8px;color:var(--text-muted);font-weight:600;width:32%;">Campo nel file</th>
+            <th style="text-align:left;padding:6px 8px;color:var(--text-muted);font-weight:600;width:28%;">Esempio</th>
+            <th style="text-align:left;padding:6px 8px;color:var(--text-muted);font-weight:600;">Campo Silvae Pro</th>
+          </tr>
+        </thead>
+        <tbody id="importMappingBody"></tbody>
+      </table>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;align-items:center;">
+      <label class="btn btn-outline btn-sm" style="cursor:pointer;">
+        <i class="fa-solid fa-folder-open"></i> Carica config
+        <input type="file" id="importConfigFileInput" accept=".json" style="display:none;" onchange="loadImportConfig(this)">
+      </label>
+      <button class="btn btn-outline btn-sm" onclick="saveImportConfig()">
+        <i class="fa-solid fa-floppy-disk"></i> Salva config
+      </button>
+      <div style="flex:1;"></div>
+      <button class="btn btn-outline btn-sm" onclick="closeImportMapping()">Annulla</button>
+      <button class="btn btn-primary btn-sm" onclick="confirmImportMapping()">
+        <i class="fa-solid fa-upload"></i> Avvia importazione
+      </button>
+    </div>
+  </div>
+</div>
 
 <!-- Modale: Controlla coordinate -->
 <div class="info-modal-overlay" id="coordCheckModal" onclick="if(event.target===this)closeCoordCheck()">
