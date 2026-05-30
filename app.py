@@ -1907,6 +1907,7 @@ def import_gpkg_route():
             if existing:
                 if on_conflict == 'update':
                     existing.custom_id = custom_id
+                    existing.owner_id  = user_id
                     apply_fields(existing)
                     db.session.flush()
                     _set_geom(existing)
