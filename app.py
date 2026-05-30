@@ -1649,6 +1649,18 @@ def _gpkg_inspect_mapping(cols):
         result[C['next_check_fb']] = 'next_check'
     return result
 
+def _set_geom(tree):
+    """Write PostGIS geom from lat/lon — silently skipped if PostGIS is unavailable."""
+    if not tree.id or not tree.latitude or not tree.longitude:
+        return
+    try:
+        db.session.execute(
+            text("UPDATE tree SET geom = ST_SetSRID(ST_MakePoint(:lon,:lat),4326) WHERE id=:id"),
+            {'lon': tree.longitude, 'lat': tree.latitude, 'id': tree.id}
+        )
+    except Exception:
+        db.session.rollback()
+
 def _gpkg_read_table(f_or_path):
     """Open a GPKG file object or path, return (cols, rows, table_name) or raise."""
     import_path = None
@@ -1854,6 +1866,7 @@ def import_gpkg_route():
 
     # --- Main loop ---------------------------------------------------------
     inserted = skipped = errors = 0
+    error_details = []
 
     for row in rows:
         # Coordinates: prefer explicit x/y columns, fall back to geometry blob
@@ -1896,10 +1909,7 @@ def import_gpkg_route():
                     existing.custom_id = custom_id
                     apply_fields(existing)
                     db.session.flush()
-                    if existing.latitude and existing.longitude:
-                        db.session.execute(text(
-                            "UPDATE tree SET geom = ST_SetSRID(ST_MakePoint(:lon,:lat),4326) WHERE id=:id"
-                        ), {'lon': existing.longitude, 'lat': existing.latitude, 'id': existing.id})
+                    _set_geom(existing)
                     db.session.commit()
                     inserted += 1
                 else:
@@ -1911,18 +1921,17 @@ def import_gpkg_route():
             apply_fields(tree)
             db.session.add(tree)
             db.session.flush()
-            if tree.latitude and tree.longitude:
-                db.session.execute(text(
-                    "UPDATE tree SET geom = ST_SetSRID(ST_MakePoint(:lon,:lat),4326) WHERE id=:id"
-                ), {'lon': tree.longitude, 'lat': tree.latitude, 'id': tree.id})
+            _set_geom(tree)
             db.session.commit()
             inserted += 1
-        except Exception:
+        except Exception as e:
             db.session.rollback()
             errors += 1
+            error_details.append(f"fid={row.get('fid','?')} id={custom_id}: {e}")
 
     return jsonify({'inserted': inserted, 'skipped': skipped, 'errors': errors,
-                    'total': len(rows), 'city': city, 'city_autodetected': city_autodetected})
+                    'total': len(rows), 'city': city, 'city_autodetected': city_autodetected,
+                    'error_details': error_details})
 
 # -----------------------
 # Voice intent (Groq NLU fallback)

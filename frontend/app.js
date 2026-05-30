@@ -2250,7 +2250,8 @@ async function _doImport(mapping) {
                   </div>
                 </div>
                 ${cityLine}
-                <div style="font-size:12px;color:var(--text-muted);margin-top:4px;text-align:center;">Totale righe nel file: ${total}</div>`;
+                <div style="font-size:12px;color:var(--text-muted);margin-top:4px;text-align:center;">Totale righe nel file: ${total}</div>
+                ${data.error_details?.length ? `<details style="margin-top:8px;font-size:11px;"><summary style="cursor:pointer;color:#dc2626;">Dettaglio errori (${data.error_details.length})</summary><pre style="margin:4px 0 0;white-space:pre-wrap;color:#dc2626;">${data.error_details.join('\n')}</pre></details>` : ''}`;
             showStatus(`Importazione completata: ${inserted} alberi inseriti`, 'success');
             if (detectedCity) {
                 const sel = document.getElementById('citySelect');
