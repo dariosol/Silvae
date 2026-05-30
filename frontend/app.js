@@ -2252,6 +2252,15 @@ async function _doImport(mapping) {
                 ${cityLine}
                 <div style="font-size:12px;color:var(--text-muted);margin-top:4px;text-align:center;">Totale righe nel file: ${total}</div>`;
             showStatus(`Importazione completata: ${inserted} alberi inseriti`, 'success');
+            if (detectedCity) {
+                const sel = document.getElementById('citySelect');
+                if (sel && ![...sel.options].some(o => o.value === detectedCity)) {
+                    const o = document.createElement('option');
+                    o.value = o.text = detectedCity;
+                    sel.appendChild(o);
+                }
+                if (sel) sel.value = detectedCity;
+            }
             fetchTrees();
         }
     } catch (e) {

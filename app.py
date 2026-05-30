@@ -1796,6 +1796,8 @@ def import_gpkg_route():
                 setattr(tree, key, v)
         if tree.cpc and tree.cpc.upper() == 'ABBATTUO':
             tree.cpc = 'ABBATTUTO'
+        if tree.cpc and (not tree.condition or tree.condition == '—'):
+            tree.condition = tree.cpc
 
         staz = gs('stazione_raw')
         if staz and not gs('localizzazione') and not gs('location'):
@@ -1893,6 +1895,11 @@ def import_gpkg_route():
                 if on_conflict == 'update':
                     existing.custom_id = custom_id
                     apply_fields(existing)
+                    db.session.flush()
+                    if existing.latitude and existing.longitude:
+                        db.session.execute(text(
+                            "UPDATE tree SET geom = ST_SetSRID(ST_MakePoint(:lon,:lat),4326) WHERE id=:id"
+                        ), {'lon': existing.longitude, 'lat': existing.latitude, 'id': existing.id})
                     db.session.commit()
                     inserted += 1
                 else:
@@ -1903,6 +1910,11 @@ def import_gpkg_route():
                         species='Sconosciuta', condition='—')
             apply_fields(tree)
             db.session.add(tree)
+            db.session.flush()
+            if tree.latitude and tree.longitude:
+                db.session.execute(text(
+                    "UPDATE tree SET geom = ST_SetSRID(ST_MakePoint(:lon,:lat),4326) WHERE id=:id"
+                ), {'lon': tree.longitude, 'lat': tree.latitude, 'id': tree.id})
             db.session.commit()
             inserted += 1
         except Exception:
