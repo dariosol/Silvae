@@ -7,12 +7,15 @@ Applicazione web per il censimento e la valutazione del rischio degli alberi urb
 ## Funzionalità principali
 
 - **Censimento alberi** con dati dendrologici completi (specie, dimensioni, coordinate GPS o indirizzo)
-- **Valutazione del rischio ORD** secondo il protocollo ARETE: matrice 7×7×7 di Bersaglio (B), Inclinazione (I) e Probabilità (P)
+- **Valutazione del rischio ORD** secondo il protocollo ARETE: prodotto di Bersaglio (B), Inclinazione (I) e Probabilità (P)
 - **Calcolo automatico del bersaglio** da tipo di uso del suolo e flusso (pedoni, traffico, proprietà, occupazione)
+- **Valore ecologico**: stima di biomassa, CO₂ sequestrata, O₂ prodotto, intercettazione acqua e valore monetario (€)
 - **Mappa interattiva** (Leaflet) con clustering e marker colorati per classe di rischio
 - **Esportazione** in formato Excel (.xlsx) e GeoPackage (.gpkg)
-- **Importazione** da file GeoPackage (.gpkg) — compatibile con i censimenti ARETE e con i file esportati dall'app
-- **Autenticazione JWT** multi-utente con ruolo amministratore
+- **Importazione** da file GeoPackage (.gpkg) — compatibile con i censimenti ARETE e con i file esportati dall'app, con anteprima e mappatura colonne
+- **Input vocale** per la compilazione delle schede (Web Speech API + parsing dell'intento tramite Groq)
+- **Geocodifica** diretta e inversa degli indirizzi (Nominatim/OpenStreetMap) e autocompletamento dei comuni italiani
+- **Autenticazione JWT** multi-utente con tre ruoli (`superuser`, `city`, `user`) e reset password via email
 - **Tab Algoritmo ARETE** con documentazione tecnica integrata nella webapp
 
 ---
@@ -47,15 +50,20 @@ La larghezza della zona è calcolata automaticamente:
 
 Un **moltiplicatore** opzionale (es. 2 per zone scolastiche) scala la classe bersaglio finale.
 
+La logica di calcolo è implementata in [`tools/ord_calculator.py`](tools/ord_calculator.py), con le tabelle di lookup e i valori dei menu a tendina in [`tools/lookup_tables.py`](tools/lookup_tables.py) e [`tools/dropdowns_ord.py`](tools/dropdowns_ord.py).
+
 ---
 
 ## Stack tecnologico
 
-- **Backend**: Python 3.10+, Flask 3.1, SQLAlchemy 2.0, GeoAlchemy2, psycopg2
-- **Database**: PostgreSQL con estensione PostGIS
+- **Backend**: Python 3.10+, Flask 3.1, SQLAlchemy 2.0, psycopg2-binary
+- **Database**: PostgreSQL (le coordinate sono memorizzate come `latitude`/`longitude` numeriche; **PostGIS non è richiesto**)
 - **Frontend**: HTML5, CSS3, JavaScript vanilla, Leaflet.js, Font Awesome
 - **Autenticazione**: JWT (PyJWT), password hash con `werkzeug.security`
-- **Deploy**: Gunicorn + Railway (o qualsiasi host con PostgreSQL/PostGIS)
+- **Geocodifica**: geopy + Nominatim (OpenStreetMap)
+- **Input vocale**: Web Speech API (browser) + Groq (`llama-3.1-8b-instant`) per il riconoscimento dell'intento
+- **Email**: SMTP (Gmail) per il reset password
+- **Deploy**: Gunicorn + Railway (o qualsiasi host con PostgreSQL)
 
 ---
 
@@ -63,16 +71,20 @@ Un **moltiplicatore** opzionale (es. 2 per zone scolastiche) scala la classe ber
 
 ```
 tree_project/
-├── app.py                          # Backend Flask: API, modelli, autenticazione
-├── Schede_Rilevamento_ARETE/
-│   └── ord_calculator.py           # Logica calcolo ARETE (B·I·P, bersaglio, classi)
+├── app.py                      # Backend Flask: API, modelli, autenticazione, import/export
+├── tools/
+│   ├── ord_calculator.py       # Logica calcolo ARETE (B·I·P, bersaglio, classi, valore ecologico)
+│   ├── lookup_tables.py        # Tabelle di lookup (specie, patologie, prescrizioni, ...)
+│   └── dropdowns_ord.py        # Valori dei menu a tendina ORD
 ├── frontend/
-│   ├── index.html                  # Interfaccia principale (multi-tab)
-│   └── app.js                      # Logica frontend (fetch, mappa, form, esportazione)
-├── Procfile                        # Configurazione Gunicorn per Railway
-├── requirements.txt                # Dipendenze Python
-├── .env                            # Variabili d'ambiente locali (non in git)
-├── .env.example                    # Template variabili d'ambiente
+│   ├── index.html              # Interfaccia principale (multi-tab)
+│   ├── app.js                  # Logica frontend (fetch, mappa, form, esportazione)
+│   ├── voice.js                # Input vocale (Web Speech API + intent Groq)
+│   └── style.css               # Stili dell'applicazione
+├── Procfile                    # Configurazione Gunicorn per Railway
+├── requirements.txt            # Dipendenze Python
+├── .env                        # Variabili d'ambiente locali (non in git)
+├── .env.example                # Template variabili d'ambiente
 └── .gitignore
 ```
 
@@ -83,7 +95,7 @@ tree_project/
 ### Prerequisiti
 
 - Python ≥ 3.10
-- PostgreSQL con estensione PostGIS
+- PostgreSQL
 
 ### 1. Clona il repository
 
@@ -106,7 +118,7 @@ source flaskenv/bin/activate        # Linux/Mac
 pip install -r requirements.txt
 ```
 
-### 4. Configura PostgreSQL e PostGIS
+### 4. Crea il database PostgreSQL
 
 ```bash
 sudo -u postgres psql
@@ -114,8 +126,6 @@ sudo -u postgres psql
 
 ```sql
 CREATE DATABASE trees_db;
-\c trees_db
-CREATE EXTENSION IF NOT EXISTS postgis;
 ```
 
 ### 5. Configura le variabili d'ambiente
@@ -129,7 +139,17 @@ cp .env.example .env
 ```ini
 DATABASE_URL=postgresql://postgres:tuapassword@localhost/trees_db
 SECRET_KEY=chiave-segreta-lunga-e-casuale
+
+# Opzionali:
+# Reset password via Gmail SMTP (SMTP_PASSWORD = App Password Gmail)
+SMTP_USER=tua.gmail@gmail.com
+SMTP_PASSWORD=xxxx xxxx xxxx xxxx
+APP_BASE_URL=http://localhost:5000
+# Input vocale (parsing intento)
+GROQ_API_KEY=gsk_...
 ```
+
+> Le variabili `SMTP_*`, `APP_BASE_URL` e `GROQ_API_KEY` sono opzionali: senza di esse il reset password stampa solo il link in console e l'input vocale è disabilitato.
 
 ### 6. Avvia l'applicazione
 
@@ -137,11 +157,23 @@ SECRET_KEY=chiave-segreta-lunga-e-casuale
 python app.py
 ```
 
-Lo schema del database viene creato e aggiornato automaticamente all'avvio (nessuna migrazione manuale necessaria).
+Lo schema del database viene creato e aggiornato automaticamente all'avvio (nessuna migrazione manuale necessaria). Al primo avvio viene creato un utente amministratore predefinito **`admin` / `admin`** (ruolo `superuser`) — **cambia subito la password**.
 
 L'app è disponibile su: `http://127.0.0.1:5000`
 
 > **Nota**: il warning *"Do not use the development server in a production environment"* è normale durante lo sviluppo locale.
+
+---
+
+## Ruoli utente
+
+| Ruolo | Permessi |
+|-------|----------|
+| **superuser** | Accesso completo: gestione utenti, città, tutti gli alberi |
+| **city** | Gestisce gli alberi del proprio comune e collega gli agronomi (`user`) al comune |
+| **user** (agronomo) | Censisce e valuta gli alberi dei comuni a cui è collegato |
+
+L'accesso agli alberi è filtrato per comune tramite il modello `CityMembership` (relazione città ↔ agronomi).
 
 ---
 
@@ -153,15 +185,7 @@ L'app è disponibile su: `http://127.0.0.1:5000`
 - Aggiungi un servizio **PostgreSQL** dal marketplace Railway
 - Collega il tuo repository GitHub
 
-### 2. Abilita PostGIS
-
-Railway non abilita PostGIS automaticamente. Aprire la console del database PostgreSQL (tab **Query** su Railway) ed eseguire:
-
-```sql
-CREATE EXTENSION IF NOT EXISTS postgis;
-```
-
-### 3. Variabili d'ambiente su Railway
+### 2. Variabili d'ambiente su Railway
 
 Nel servizio dell'app, imposta le variabili:
 
@@ -169,15 +193,18 @@ Nel servizio dell'app, imposta le variabili:
 |-----------|--------|
 | `DATABASE_URL` | Copiare dalla variabile `DATABASE_URL` del servizio PostgreSQL Railway |
 | `SECRET_KEY` | Stringa casuale lunga (es. generata con `openssl rand -hex 32`) |
+| `SMTP_USER` / `SMTP_PASSWORD` | *(opzionale)* Credenziali Gmail per il reset password |
+| `APP_BASE_URL` | *(opzionale)* URL pubblico dell'app (per i link di reset) |
+| `GROQ_API_KEY` | *(opzionale)* API key Groq per l'input vocale |
 
 > Railway usa `postgres://` come prefisso — l'app lo converte automaticamente in `postgresql://`.
 
-### 4. Deploy
+### 3. Deploy
 
 Ogni push sul branch principale avvia il deploy automatico. Il `Procfile` istruisce Railway ad avviare Gunicorn:
 
 ```
-web: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+web: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120 --preload
 ```
 
 ---
@@ -188,9 +215,9 @@ web: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
 |-----|-----------|
 | **Alberi** | Tabella degli alberi con ricerca, ordinamento, aggiunta/modifica/cancellazione |
 | **Mappa** | Mappa Leaflet con marker e clustering, filtri per città |
-| **Gestione** | Pannello amministratore: gestione utenti, reset password |
+| **Gestione** | Pannello amministratore: gestione utenti, città, agronomi, reset password |
 | **Esporta** | Esportazione in Excel (.xlsx) o GeoPackage (.gpkg) — intera raccolta o selezione manuale |
-| **Importa** | Importazione da file .gpkg (censimenti esterni o file esportati dall'app) con gestione conflitti (skip/update) |
+| **Importa** | Importazione da file .gpkg (censimenti esterni o file esportati dall'app) con anteprima, mappatura colonne e gestione conflitti (skip/update) |
 | **Algoritmo** | Documentazione tecnica del calcolo ARETE integrata nella webapp |
 
 ---
@@ -227,31 +254,65 @@ Valori già in forma testuale (es. file esportati da Silvae Pro) vengono lasciat
 
 ## API principali
 
+### Autenticazione e utenti
+
 | Metodo | Endpoint | Descrizione |
 |--------|----------|-------------|
 | `POST` | `/login` | Autenticazione, restituisce JWT |
-| `POST` | `/register` | Registrazione nuovo utente (solo admin) |
-| `GET` | `/trees` | Lista alberi (filtri: city, address, species, page) |
-| `POST` | `/add_tree` | Aggiunge un nuovo albero |
-| `PATCH` | `/tree/<id>` | Aggiorna dati albero |
+| `GET`  | `/me` | Dati dell'utente autenticato |
+| `POST` | `/register` | Auto-registrazione (nuovo utente con ruolo `user`) |
+| `POST` | `/forgot-password` | Invia il link di reset password via email |
+| `POST` | `/reset-password` | Imposta una nuova password tramite token |
+| `POST` | `/add_user` | Crea un utente (solo `city`/`superuser`) |
+| `GET`  | `/users` | Lista utenti visibili al chiamante |
+
+### Città e agronomi
+
+| Metodo | Endpoint | Descrizione |
+|--------|----------|-------------|
+| `POST`   | `/admin/cities` | Crea una città (solo `superuser`) |
+| `GET`    | `/cities` | Lista delle città presenti |
+| `GET`    | `/comuni/search` | Autocompletamento comuni italiani (`?q=`) |
+| `GET`    | `/city/agronomers` | Agronomi collegati al comune |
+| `POST`   | `/city/agronomers` | Collega un agronomo al comune |
+| `DELETE` | `/city/agronomers/<id>` | Scollega un agronomo |
+
+### Alberi e valutazioni
+
+| Metodo | Endpoint | Descrizione |
+|--------|----------|-------------|
+| `GET`    | `/trees` | Lista alberi (filtri: city, address, species, page) |
+| `GET`    | `/tree/<id>` | Dettaglio albero per ID |
+| `GET`    | `/tree/custom/<custom_id>` | Dettaglio albero per ID personalizzato |
+| `POST`   | `/add_tree` | Aggiunge un nuovo albero |
+| `PATCH`  | `/tree/<id>` | Aggiorna dati albero |
 | `DELETE` | `/tree/<id>` | Elimina albero |
-| `POST` | `/calculate_risk` | Calcola il rischio ORD per un albero |
-| `GET` | `/tree/<id>/inspections` | Storico valutazioni rischio |
-| `GET` | `/export/excel` | Esporta alberi in Excel (parametro opzionale `?ids=1,2,3` per selezione) |
-| `GET` | `/export/gpkg` | Esporta alberi in GeoPackage — tutti gli attributi ARETE + geometria (parametro opzionale `?ids=`) |
-| `POST` | `/import/gpkg` | Importa alberi da file .gpkg (multipart: `file`, `city`, `on_conflict=skip\|update`) |
-| `GET` | `/dropdowns` | Valori per i menu a tendina (specie, tipi bersaglio, …) |
-| `GET` | `/cities` | Lista delle città presenti |
+| `DELETE` | `/trees/bulk` | Elimina più alberi in blocco |
+| `POST`   | `/calculate_risk` | Calcola il rischio ORD per un albero |
+| `GET`    | `/tree/<id>/inspections` | Storico valutazioni rischio |
+| `POST`   | `/tree/<id>/inspections` | Aggiunge una valutazione/ispezione |
+| `GET`    | `/dropdowns` | Valori per i menu a tendina (specie, tipi bersaglio, …) |
+
+### Import / Export
+
+| Metodo | Endpoint | Descrizione |
+|--------|----------|-------------|
+| `GET`  | `/export/excel` | Esporta alberi in Excel (`?ids=1,2,3` opzionale) |
+| `GET`  | `/export/gpkg` | Esporta alberi in GeoPackage — attributi ARETE + geometria (`?ids=` opzionale) |
+| `POST` | `/import/gpkg/inspect` | Anteprima colonne e mappatura automatica di un .gpkg |
+| `POST` | `/import/gpkg` | Importa alberi da .gpkg (multipart: `file`, `city`, `on_conflict=skip\|update`) |
+
+### Geocodifica e voce
+
+| Metodo | Endpoint | Descrizione |
+|--------|----------|-------------|
+| `POST` | `/test_geocode` | Geocodifica un indirizzo → coordinate |
+| `POST` | `/reverse_geocode` | Coordinate → indirizzo e città |
+| `POST` | `/api/voice_intent` | Riconosce l'intento da un trascritto vocale (Groq) |
 
 ---
 
 ## Troubleshooting
-
-**Errore `ST_AsEWKB` o colonna `geom` mancante**
-```sql
-CREATE EXTENSION IF NOT EXISTS postgis;
-```
-Poi riavvia l'app: lo schema viene ricreato automaticamente.
 
 **`ModuleNotFoundError: No module named 'dotenv'`**
 ```bash
@@ -261,8 +322,14 @@ pip install python-dotenv
 **`password authentication failed`**
 Verifica che `DATABASE_URL` in `.env` corrisponda alle credenziali PostgreSQL locali.
 
+**Il reset password non invia email**
+`SMTP_USER`/`SMTP_PASSWORD` non sono impostati: il link di reset viene stampato nella console del server. `SMTP_PASSWORD` deve essere una *App Password* Gmail, non la password normale.
+
+**L'input vocale non risponde (errore 503 `GROQ_API_KEY not set`)**
+Imposta la variabile d'ambiente `GROQ_API_KEY`.
+
 **L'app su Railway non si avvia**
-Controlla che la variabile `DATABASE_URL` sia impostata e che PostGIS sia stato abilitato manualmente con `CREATE EXTENSION IF NOT EXISTS postgis;`.
+Controlla che la variabile `DATABASE_URL` sia impostata correttamente.
 
 ---
 
