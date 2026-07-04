@@ -56,6 +56,21 @@ SMTP_USER    = os.environ.get('SMTP_USER', '')
 SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD', '')
 APP_BASE_URL = os.environ.get('APP_BASE_URL', 'http://localhost:5000')
 
+# Demo accounts: shared read/write sandbox wiped and re-seeded to a fixed state
+# on every demo login, so every visitor always sees the same demo of Torino.
+# - demo_user (role "user"): the agronomer that owns the demo trees.
+# - demo_city (role "city"): the municipality, linked to demo_user only, to
+#   showcase the city role on the same trees.
+DEMO_USERNAME       = os.environ.get('DEMO_USERNAME', 'demo_user')
+DEMO_PASSWORD       = os.environ.get('DEMO_PASSWORD', 'demo_password')
+DEMO_CITY_USERNAME  = os.environ.get('DEMO_CITY_USERNAME', 'demo_city')
+DEMO_CITY_PASSWORD  = os.environ.get('DEMO_CITY_PASSWORD', 'demo_city_password')
+DEMO_CITY_NAME      = 'Torino'
+
+# Public self-registration. Disabled for now (not in production yet); re-enable by
+# setting REGISTRATION_ENABLED=true (and un-hiding the "Crea account" link in the frontend).
+REGISTRATION_ENABLED = os.environ.get('REGISTRATION_ENABLED', 'false').lower() == 'true'
+
 db = SQLAlchemy(app)
 geolocator = Nominatim(user_agent="tree_locator")
 
@@ -476,6 +491,99 @@ def _make_inspection(tree_obj, user_id, username):
         rischio=json.dumps(rischio_val) if rischio_val else None,
     )
 
+# -----------------------
+# Demo account seeding
+# -----------------------
+# Fixed set of demo trees in Torino. Owned by the demo user, wiped and re-created
+# on every demo login so the demo always looks identical. A few carry full ORD
+# measures so the risk (B·I·P) is computed; others are left partial on purpose.
+DEMO_TREES = [
+    dict(custom_id='DEMO-001', species='Platanus × acerifolia', condition='Buono',
+         address='Corso Vittorio Emanuele II', latitude=45.0625, longitude=7.6819,
+         height='18', trunk_diameter_cm=62, crown_diameter_m=12, age='45',
+         location='Filare stradale',
+         tree_height_m=18, circonferenza_cm=195, branch_diam_cm=22, branch_length_m=8,
+         branch_height_m=9, target_height_m=1.7,
+         pericolo_rami='1', pericolo_tronco='0', pericolo_colletto='0', pericolo_zolla='0',
+         bersaglio_chioma=6, bersaglio_ramo=5, moltiplicatore=1,
+         comments='Esemplare in filare lungo corso trafficato.'),
+    dict(custom_id='DEMO-002', species='Tilia cordata', condition='Discreto',
+         address='Giardini Reali', latitude=45.0728, longitude=7.6874,
+         height='14', trunk_diameter_cm=48, crown_diameter_m=9, age='35',
+         location='Parco storico',
+         tree_height_m=14, circonferenza_cm=151, branch_diam_cm=16, branch_length_m=6,
+         branch_height_m=7, target_height_m=1.7,
+         pericolo_rami='1', pericolo_tronco='1', pericolo_colletto='0', pericolo_zolla='0',
+         bersaglio_chioma=4, bersaglio_ramo=3, moltiplicatore=1,
+         comments='Lieve carie al colletto da monitorare.'),
+    dict(custom_id='DEMO-003', species='Aesculus hippocastanum', condition='Scarso',
+         address='Parco del Valentino', latitude=45.0556, longitude=7.6862,
+         height='16', trunk_diameter_cm=55, crown_diameter_m=11, age='60',
+         location='Parco urbano',
+         tree_height_m=16, circonferenza_cm=173, branch_diam_cm=20, branch_length_m=7,
+         branch_height_m=8, target_height_m=1.7,
+         pericolo_rami='2', pericolo_tronco='2', pericolo_colletto='1', pericolo_zolla='1',
+         bersaglio_chioma=5, bersaglio_ramo=4, moltiplicatore=1,
+         comments='Corpi fruttiferi e defogliazione da cameraria.'),
+    dict(custom_id='DEMO-004', species='Celtis australis', condition='Ottimo',
+         address='Piazza Vittorio Veneto', latitude=45.0647, longitude=7.6942,
+         height='12', trunk_diameter_cm=38, crown_diameter_m=8, age='25',
+         location='Piazza', comments='Giovane esemplare in buona vigoria.'),
+    dict(custom_id='DEMO-005', species='Quercus robur', condition='Buono',
+         address='Parco della Pellerina', latitude=45.0889, longitude=7.6467,
+         height='20', trunk_diameter_cm=78, crown_diameter_m=15, age='90',
+         location='Grande parco', comments='Esemplare monumentale.'),
+    dict(custom_id='DEMO-006', species='Cedrus deodara', condition='Discreto',
+         address='Parco del Valentino', latitude=45.0533, longitude=7.6875,
+         height='22', trunk_diameter_cm=70, crown_diameter_m=13, age='70',
+         location='Parco urbano', comments='Conifera ornamentale, sofferenza estiva.'),
+]
+
+def _ensure_demo_account(username, password, role):
+    """Create the demo account if missing; keep password/role/city in sync with config."""
+    u = User.query.filter_by(username=username).first()
+    if not u:
+        u = User(username=username, email=None, role=role, city=DEMO_CITY_NAME)
+        db.session.add(u)
+    u.set_password(password)
+    u.role = role
+    u.city = DEMO_CITY_NAME
+    db.session.commit()
+    return u
+
+def _seed_demo_trees(demo_user):
+    """Delete all demo-owned trees (and their inspections) and re-create the fixed set."""
+    tree_ids = [tid for (tid,) in
+                db.session.query(Tree.id).filter(Tree.owner_id == demo_user.id).all()]
+    if tree_ids:
+        Inspection.query.filter(Inspection.tree_id.in_(tree_ids)).delete(synchronize_session=False)
+        Tree.query.filter(Tree.owner_id == demo_user.id).delete(synchronize_session=False)
+        db.session.commit()
+    for d in DEMO_TREES:
+        t = Tree(owner_id=demo_user.id, city=DEMO_CITY_NAME, **d)
+        t.rischio = json.dumps(r) if (r := _calc_rischio(t)) else None
+        db.session.add(t)
+    db.session.commit()
+
+def reset_demo():
+    """Reset the whole demo to its fixed state: both accounts, their link, and the trees."""
+    demo_user = _ensure_demo_account(DEMO_USERNAME, DEMO_PASSWORD, 'user')
+    demo_city = _ensure_demo_account(DEMO_CITY_USERNAME, DEMO_CITY_PASSWORD, 'city')
+    # demo_city manages only demo_user: clear any other links, then link demo_user.
+    CityMembership.query.filter_by(city_user_id=demo_city.id).delete(synchronize_session=False)
+    db.session.commit()
+    db.session.add(CityMembership(city_user_id=demo_city.id, agronomer_id=demo_user.id))
+    db.session.commit()
+    _seed_demo_trees(demo_user)
+
+def _demo_user_id():
+    u = User.query.filter_by(username=DEMO_USERNAME).first()
+    return u.id if u else None
+
+def _is_demo_account(username):
+    """Demo accounts are read-only for admin actions (creating users, linking agronomers)."""
+    return username in (DEMO_USERNAME, DEMO_CITY_USERNAME)
+
 def generate_token(user, expires_minutes=60*24):
     payload = {
         "user_id": user.id, "username": user.username,
@@ -526,6 +634,9 @@ def login():
     user = User.query.filter_by(username=username).first()
     if not user or not user.check_password(password):
         return jsonify({'message': 'Invalid credentials'}), 401
+    # Demo accounts: reset the shared sandbox to the fixed demo state on every login.
+    if user.username in (DEMO_USERNAME, DEMO_CITY_USERNAME):
+        reset_demo()
     token = generate_token(user)
     return jsonify({'token': token,
                     'user': {'id': user.id, 'username': user.username,
@@ -541,6 +652,8 @@ def me():
 
 @app.route('/register', methods=['POST'])
 def register():
+    if not REGISTRATION_ENABLED:
+        return jsonify({'message': 'Registrazione non disponibile'}), 403
     data = request.json or {}
     username = data.get('username', '').strip()
     email    = data.get('email', '').strip()
@@ -634,6 +747,8 @@ def reset_password():
 @auth_required
 def add_user():
     creator = request.user
+    if _is_demo_account(creator.get('username')):
+        return jsonify({'message': 'Azione non disponibile nell\'account demo'}), 403
     data = request.json or {}
     username, password, role, city = (data.get(k) for k in ('username','password','role','city'))
     if not username or not password or not role:
@@ -685,6 +800,8 @@ def list_city_agronomers():
 @auth_required
 @role_required('city', 'superuser')
 def add_city_agronomer():
+    if _is_demo_account(request.user.get('username')):
+        return jsonify({'message': 'Azione non disponibile nell\'account demo'}), 403
     user_id = request.user.get('user_id')
     role    = request.user.get('role')
     data    = request.json or {}
@@ -707,6 +824,8 @@ def add_city_agronomer():
 @auth_required
 @role_required('city', 'superuser')
 def remove_city_agronomer(membership_id):
+    if _is_demo_account(request.user.get('username')):
+        return jsonify({'message': 'Azione non disponibile nell\'account demo'}), 403
     user_id = request.user.get('user_id')
     role    = request.user.get('role')
     m = db.session.get(CityMembership, membership_id)
@@ -895,6 +1014,9 @@ def get_trees():
     query = Tree.query
     if role == 'user':   query = query.filter(Tree.owner_id == user_id)
     elif role == 'city': query = city_tree_filter(query, user_id, user_city)
+    elif role == 'superuser':
+        did = _demo_user_id()
+        if did and did != user_id: query = query.filter(Tree.owner_id != did)
     city_q = request.args.get('city')
     addr_q = request.args.get('address')
     if city_q:  query = query.filter(Tree.city.ilike(f"%{city_q}%"))
@@ -1122,6 +1244,9 @@ def export_excel():
     query = Tree.query
     if role == 'user':   query = query.filter(Tree.owner_id == user_id)
     elif role == 'city': query = city_tree_filter(query, user_id, user_city)
+    elif role == 'superuser':
+        did = _demo_user_id()
+        if did and did != user_id: query = query.filter(Tree.owner_id != did)
     ids_param = request.args.get('ids')
     if ids_param:
         id_list = [int(x) for x in ids_param.split(',') if x.strip().isdigit()]
@@ -1392,6 +1517,9 @@ def export_gpkg():
     query = Tree.query
     if role == 'user':   query = query.filter(Tree.owner_id == user_id)
     elif role == 'city': query = city_tree_filter(query, user_id, user_city)
+    elif role == 'superuser':
+        did = _demo_user_id()
+        if did and did != user_id: query = query.filter(Tree.owner_id != did)
     ids_param = request.args.get('ids')
     if ids_param:
         id_list = [int(x) for x in ids_param.split(',') if x.strip().isdigit()]
@@ -2001,6 +2129,13 @@ with app.app_context():
         su.set_password('admin')
         db.session.add(su); db.session.commit()
         print("Created default superuser: admin / admin")
+    # Ensure the demo accounts exist and start from a clean demo state.
+    try:
+        reset_demo()
+        print(f"Demo accounts ready: {DEMO_USERNAME} / {DEMO_PASSWORD}"
+              f"  |  {DEMO_CITY_USERNAME} / {DEMO_CITY_PASSWORD}")
+    except Exception as e:
+        print(f"[DEMO] Seeding skipped: {e}")
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0')

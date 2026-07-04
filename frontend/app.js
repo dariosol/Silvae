@@ -2322,7 +2322,9 @@ function showStatus(msg, level='info') {
 document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('loginBtn').addEventListener('click', login);
     document.getElementById('loginPassword').addEventListener('keydown', e => e.key==='Enter' && login());
-    document.getElementById('showRegisterLink').addEventListener('click', e => { e.preventDefault(); showLoginView('registerView'); });
+    // Registrazione pubblica disabilitata: link "Crea account" nascosto (vedi index.html).
+    // Riattivare questa riga quando si riapre la registrazione.
+    // document.getElementById('showRegisterLink').addEventListener('click', e => { e.preventDefault(); showLoginView('registerView'); });
     document.getElementById('showForgotLink').addEventListener('click', e => { e.preventDefault(); showLoginView('forgotView'); });
     document.getElementById('showLoginFromRegLink').addEventListener('click', e => { e.preventDefault(); showLoginView('loginView'); });
     document.getElementById('showLoginFromForgotLink').addEventListener('click', e => { e.preventDefault(); showLoginView('loginView'); });

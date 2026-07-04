@@ -2,6 +2,8 @@
 
 Applicazione web per il censimento e la valutazione del rischio degli alberi urbani, conforme al **Protocollo ARETE** (Analisi del Rischio degli Elementi Arborei in ambiente urbano).
 
+> Fonte: "Protocollo Areté® per la Valutazione del Rischio Arboreo [ver. 4.0] - ARBORETE® ([http://www.protocolloarete.it](http://www.protocolloarete.it))".
+
 ---
 
 ## Funzionalità principali
@@ -147,6 +149,14 @@ SMTP_PASSWORD=xxxx xxxx xxxx xxxx
 APP_BASE_URL=http://localhost:5000
 # Input vocale (parsing intento)
 GROQ_API_KEY=gsk_...
+
+# Registrazione pubblica (disabilitata di default finché non si è in produzione)
+REGISTRATION_ENABLED=false
+# Credenziali degli account demo (default: demo_user / demo_password, demo_city / demo_city_password)
+# DEMO_USERNAME=demo_user
+# DEMO_PASSWORD=demo_password
+# DEMO_CITY_USERNAME=demo_city
+# DEMO_CITY_PASSWORD=demo_city_password
 ```
 
 > Le variabili `SMTP_*`, `APP_BASE_URL` e `GROQ_API_KEY` sono opzionali: senza di esse il reset password stampa solo il link in console e l'input vocale è disabilitato.
@@ -175,6 +185,27 @@ L'app è disponibile su: `http://127.0.0.1:5000`
 
 L'accesso agli alberi è filtrato per comune tramite il modello `CityMembership` (relazione città ↔ agronomi).
 
+Gli utenti vengono creati da un `superuser` (qualsiasi ruolo) o da un `city` (solo agronomi del proprio comune). La **registrazione pubblica** (`/register` + link "Crea account") è **disabilitata di default**: si riattiva impostando `REGISTRATION_ENABLED=true` e ripristinando il link nel frontend (vedi commenti in `frontend/index.html` e `frontend/app.js`).
+
+---
+
+## Account demo
+
+Due account preconfigurati permettono di mostrare l'applicazione a potenziali clienti senza toccare dati reali. Vengono creati automaticamente all'avvio e **ripristinati a ogni login** a uno stato fisso: chiunque entri vede sempre la stessa demo di **Torino** (6 alberi), e le modifiche fatte durante la sessione non sopravvivono all'accesso successivo.
+
+| Account | Credenziali (default) | Ruolo | Mostra |
+|---------|----------------------|-------|--------|
+| **demo_user** | `demo_user` / `demo_password` | `user` (agronomo) | Censimento e valutazione dei 6 alberi demo |
+| **demo_city** | `demo_city` / `demo_city_password` | `city` (comune) | Gestione comunale, collegato **solo** a `demo_user` |
+
+Caratteristiche:
+
+- **Isolamento**: gli alberi demo appartengono a `demo_user` e non sono visibili agli altri utenti; sono esclusi anche dalla vista e dagli export del `superuser`.
+- **Reset a ogni login**: all'accesso di uno dei due account, gli alberi demo e il collegamento `demo_city → demo_user` vengono ricreati identici (eventuali modifiche/collegamenti aggiunti durante la demo vengono azzerati).
+- **Sola lettura per le azioni amministrative**: gli account demo non possono creare utenti né modificare i collegamenti agronomi (le relative funzioni sono visibili ma bloccate), così la demo resta un sandbox non persistente.
+
+Le credenziali sono personalizzabili con le variabili d'ambiente `DEMO_USERNAME`, `DEMO_PASSWORD`, `DEMO_CITY_USERNAME`, `DEMO_CITY_PASSWORD`.
+
 ---
 
 ## Deploy su Railway
@@ -196,6 +227,8 @@ Nel servizio dell'app, imposta le variabili:
 | `SMTP_USER` / `SMTP_PASSWORD` | *(opzionale)* Credenziali Gmail per il reset password |
 | `APP_BASE_URL` | *(opzionale)* URL pubblico dell'app (per i link di reset) |
 | `GROQ_API_KEY` | *(opzionale)* API key Groq per l'input vocale |
+| `REGISTRATION_ENABLED` | *(opzionale)* `true` per riabilitare la registrazione pubblica (default `false`) |
+| `DEMO_*` | *(opzionale)* Credenziali degli account demo (vedi sezione [Account demo](#account-demo)) |
 
 > Railway usa `postgres://` come prefisso — l'app lo converte automaticamente in `postgresql://`.
 
@@ -260,7 +293,7 @@ Valori già in forma testuale (es. file esportati da Silvae Pro) vengono lasciat
 |--------|----------|-------------|
 | `POST` | `/login` | Autenticazione, restituisce JWT |
 | `GET`  | `/me` | Dati dell'utente autenticato |
-| `POST` | `/register` | Auto-registrazione (nuovo utente con ruolo `user`) |
+| `POST` | `/register` | Auto-registrazione (ruolo `user`) — **disabilitato** salvo `REGISTRATION_ENABLED=true` |
 | `POST` | `/forgot-password` | Invia il link di reset password via email |
 | `POST` | `/reset-password` | Imposta una nuova password tramite token |
 | `POST` | `/add_user` | Crea un utente (solo `city`/`superuser`) |
