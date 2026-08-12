@@ -580,6 +580,7 @@ th.sort-active .sort-ico { opacity: 1; color: var(--g700); }
 
 /* condition left-border */
 .tr-good  td:first-child { border-left: 4px solid #2d6a4f; }
+.tr-buono td:first-child { border-left: 4px solid #52b788; }
 .tr-fair  td:first-child { border-left: 4px solid #e67e22; }
 .tr-poor  td:first-child { border-left: 4px solid #c0392b; }
 .tr-other td:first-child { border-left: 4px solid #adb5bd; }
@@ -600,9 +601,10 @@ th.sort-active .sort-ico { opacity: 1; color: var(--g700); }
   font-size: 11px; font-weight: 700;
   text-transform: uppercase; letter-spacing: .4px;
 }
-.cb-good { background: #d8f3dc; color: #1b5e2a; }
-.cb-fair { background: #fff3cd; color: #856404; }
-.cb-poor { background: #f8d7da; color: #842029; }
+.cb-good  { background: #d8f3dc; color: #1b5e2a; }
+.cb-buono { background: #eaf7ef; color: #2d6a4f; }
+.cb-fair  { background: #ffe5cc; color: #9a4a06; }
+.cb-poor  { background: #f8d7da; color: #842029; }
 .cb-other { background: #e9ecef; color: #495057; }
 
 .act-cell { display: flex; gap: 5px; justify-content: flex-end; }
@@ -631,6 +633,7 @@ th.sort-active .sort-ico { opacity: 1; color: var(--g700); }
   vertical-align: middle;
 }
 .cond-dot.dot-good  { background: #2d6a4f; }
+.cond-dot.dot-buono { background: #52b788; }
 .cond-dot.dot-fair  { background: #e67e22; }
 .cond-dot.dot-poor  { background: #c0392b; }
 .cond-dot.dot-other { background: #adb5bd; }
@@ -685,6 +688,7 @@ th.sort-active .sort-ico { opacity: 1; color: var(--g700); }
 
 /* condition left accent on cards */
 .tr-good  .tree-card-main { border-left: 4px solid #2d6a4f; }
+.tr-buono .tree-card-main { border-left: 4px solid #52b788; }
 .tr-fair  .tree-card-main { border-left: 4px solid #e67e22; }
 .tr-poor  .tree-card-main { border-left: 4px solid #c0392b; }
 .tr-other .tree-card-main { border-left: 4px solid #adb5bd; }
@@ -736,7 +740,21 @@ th.sort-active .sort-ico { opacity: 1; color: var(--g700); }
 .map-addr-suggestions li:hover,
 .map-addr-suggestions li.kbd-active { background: var(--g100); }
 .map-addr-suggestions li strong { color: var(--g700); font-weight: 700; }
+#tab-map #mapWrap { flex: 1; min-height: 0; position: relative; display: flex; }
 #tab-map #map { flex: 1; min-height: 0; display: block; }
+
+/* ── Selezione area sulla mappa (rettangolo, stile Booking) ── */
+.leaflet-bar.locate-ctrl-btn.active { background: var(--g600); color: #fff; }
+#map.area-select-cursor { cursor: crosshair; }
+#areaSelectPanel {
+  position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
+  z-index: 600; display: flex; flex-direction: column; gap: 8px;
+  background: #fff; border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.18); padding: 10px 14px;
+  max-width: calc(100% - 24px);
+}
+#areaSelectPanel .asp-count { font-size: 13px; font-weight: 600; color: var(--text); text-align: center; }
+#areaSelectPanel .asp-actions { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
 
 /* ── Status toast ── */
 #status {
@@ -811,6 +829,7 @@ textarea.fc { resize: vertical; min-height: 72px; }
   border: 2.5px solid #fff;
 }
 .tl-dot-good  { background: var(--g800); box-shadow: 0 0 0 2px var(--g300); }
+.tl-dot-buono { background: #52b788;    box-shadow: 0 0 0 2px #b7e4c7; }
 .tl-dot-fair  { background: #e67e22;    box-shadow: 0 0 0 2px #fde8c8; }
 .tl-dot-poor  { background: #c0392b;    box-shadow: 0 0 0 2px #f5c6cb; }
 .tl-dot-other { background: #adb5bd;    box-shadow: 0 0 0 2px #dee2e6; }

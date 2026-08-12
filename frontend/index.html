@@ -872,7 +872,19 @@
           <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
-      <div id="map"></div>
+      <div id="mapWrap">
+        <div id="map"></div>
+        <div id="areaSelectPanel" style="display:none;">
+          <div class="asp-count"><i class="fa-solid fa-vector-square"></i> <span id="areaSelectCount">0</span> alberi nell'area</div>
+          <div class="asp-actions">
+            <button class="btn btn-excel btn-sm" onclick="exportAreaExcel()" id="areaExcelBtn" disabled><i class="fa-solid fa-file-excel"></i> Excel</button>
+            <button class="btn btn-gpkg btn-sm" onclick="exportAreaGPKG()" id="areaGpkgBtn" disabled><i class="fa-solid fa-database"></i> GPKG</button>
+            <button class="btn btn-outline btn-sm" onclick="exportAreaScheda()" id="areaSchedaBtn" disabled><i class="fa-solid fa-file-lines"></i> Schede</button>
+            <button class="btn btn-outline btn-sm" onclick="clearAreaSelect()" title="Cancella selezione"><i class="fa-solid fa-eraser"></i></button>
+            <button class="btn btn-outline btn-sm" onclick="toggleAreaSelect()" title="Esci dalla modalità selezione"><i class="fa-solid fa-xmark"></i></button>
+          </div>
+        </div>
+      </div>
     </section>
 
 
@@ -954,6 +966,17 @@
               <h3>GeoPackage — GPKG</h3>
               <p>Tutti gli attributi + geometria in formato <code>.gpkg</code>. Compatibile con QGIS e altri GIS.</p>
               <button id="exportGPKGBtn" class="btn btn-gpkg"><i class="fa-solid fa-file-arrow-down"></i> Scarica .gpkg</button>
+            </div>
+          </div>
+          <!-- PLACEHOLDER: schede albero (report) — struttura definitiva in arrivo -->
+          <div class="export-card">
+            <div class="export-card-icon" style="background:#b45309;"><i class="fa-solid fa-file-lines"></i></div>
+            <div class="export-card-body">
+              <h3>Schede albero <span style="font-size:11px;font-weight:600;color:#b45309;">(anteprima)</span></h3>
+              <p>Report con una scheda per albero, da un template selezionabile. Contenuto e impaginazione definitivi in arrivo.</p>
+              <label for="reportTemplateSelect" style="display:block;font-size:12px;color:var(--text-muted);margin-bottom:4px;">Template</label>
+              <select id="reportTemplateSelect" class="inp" style="margin-bottom:10px;"></select>
+              <button id="exportSchedaBtn" class="btn btn-outline"><i class="fa-solid fa-file-arrow-down"></i> Genera schede</button>
             </div>
           </div>
         </div>
@@ -1289,6 +1312,77 @@ rischio_finale   = lookup_inverso(probabilità_n)    ← foglio A, colonne AR:AS
       <button class="btn btn-outline btn-sm" onclick="closeImportMapping()">Annulla</button>
       <button class="btn btn-primary btn-sm" onclick="confirmImportMapping()">
         <i class="fa-solid fa-upload"></i> Avvia importazione
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modale: Esporta GPKG (rinomina chiavi) -->
+<div class="info-modal-overlay" id="gpkgExportModal" onclick="if(event.target===this)closeGpkgExport()">
+  <div class="info-modal" style="max-width:640px;padding:20px 20px 16px;">
+    <button class="info-modal-close" onclick="closeGpkgExport()">&times;</button>
+    <h3 style="margin-bottom:4px;"><i class="fa-solid fa-database" style="color:var(--g700);margin-right:6px;"></i>Esporta GeoPackage</h3>
+    <p style="font-size:12px;color:var(--text-muted);margin:0 0 14px;">Rinomina le chiavi (colonne) del GPKG se vuoi. I campi lasciati vuoti mantengono il nome di default. Usa la <i class="fa-solid fa-xmark"></i> per escludere un campo dall'export.</p>
+
+    <div style="margin-bottom:12px;">
+      <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px;">Nome del file</label>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <input id="gpkgExportFilename" class="inp" type="text" value="alberi" style="flex:1;">
+        <span style="font-family:monospace;color:var(--text-muted);font-size:13px;">.gpkg</span>
+      </div>
+    </div>
+
+    <div style="max-height:46vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px;">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr style="border-bottom:2px solid var(--border);position:sticky;top:0;background:var(--surface);">
+            <th style="text-align:left;padding:6px 8px;color:var(--text-muted);font-weight:600;width:42%;">Chiave di default</th>
+            <th style="text-align:left;padding:6px 8px;color:var(--text-muted);font-weight:600;">Nuovo nome (opzionale)</th>
+            <th style="text-align:center;padding:6px 8px;color:var(--text-muted);font-weight:600;width:64px;">Escludi</th>
+          </tr>
+        </thead>
+        <tbody id="gpkgExportBody"></tbody>
+      </table>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;align-items:center;">
+      <button class="btn btn-outline btn-sm" onclick="resetGpkgNames()">
+        <i class="fa-solid fa-rotate-left"></i> Ripristina default
+      </button>
+      <div style="flex:1;"></div>
+      <button class="btn btn-outline btn-sm" onclick="closeGpkgExport()">Annulla</button>
+      <button class="btn btn-gpkg btn-sm" onclick="confirmGpkgExport()">
+        <i class="fa-solid fa-download"></i> Esporta
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modale: Esporta Excel (scelta dei campi) -->
+<div class="info-modal-overlay" id="excelExportModal" onclick="if(event.target===this)closeExcelExport()">
+  <div class="info-modal" style="max-width:640px;padding:20px 20px 16px;">
+    <button class="info-modal-close" onclick="closeExcelExport()">&times;</button>
+    <h3 style="margin-bottom:4px;"><i class="fa-solid fa-file-excel" style="color:#1d6f42;margin-right:6px;"></i>Esporta Excel</h3>
+    <p style="font-size:12px;color:var(--text-muted);margin:0 0 14px;">Clicca la <i class="fa-solid fa-xmark"></i> accanto a un campo per escluderlo dall'export. I campi barrati non verranno esportati.</p>
+
+    <div style="margin-bottom:12px;">
+      <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px;">Nome del file</label>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <input id="excelExportFilename" class="inp" type="text" value="alberi" style="flex:1;">
+        <span style="font-family:monospace;color:var(--text-muted);font-size:13px;">.xlsx</span>
+      </div>
+    </div>
+
+    <div id="excelExportBody" style="max-height:46vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:10px 12px;"></div>
+
+    <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;align-items:center;">
+      <button class="btn btn-outline btn-sm" onclick="resetExcelFields()">
+        <i class="fa-solid fa-rotate-left"></i> Includi tutti
+      </button>
+      <div style="flex:1;"></div>
+      <button class="btn btn-outline btn-sm" onclick="closeExcelExport()">Annulla</button>
+      <button class="btn btn-excel btn-sm" onclick="confirmExcelExport()">
+        <i class="fa-solid fa-download"></i> Esporta
       </button>
     </div>
   </div>

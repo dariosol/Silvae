@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import sys, os, io, json, secrets, struct, tempfile, sqlite3, urllib.request
+import sys, os, io, json, re, secrets, struct, tempfile, sqlite3, urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from dotenv import load_dotenv
@@ -36,6 +36,7 @@ from tools.ord_calculator import (
     assess_tree, bersaglio_value_to_class, bersaglio_flow_to_class,
     calc_ecological_value,
 )
+from tools import report_templates as report_tpl
 
 # -----------------------
 # Configuration
@@ -1237,51 +1238,42 @@ def reverse_geocode():
         pass
     return jsonify({'address': '', 'city': ''})
 
-@app.route('/export/excel', methods=['GET'])
-@auth_required
-def export_excel():
-    role, user_id, user_city = (request.user.get(k) for k in ('role','user_id','city'))
-    query = Tree.query
-    if role == 'user':   query = query.filter(Tree.owner_id == user_id)
-    elif role == 'city': query = city_tree_filter(query, user_id, user_city)
-    elif role == 'superuser':
-        did = _demo_user_id()
-        if did and did != user_id: query = query.filter(Tree.owner_id != did)
-    ids_param = request.args.get('ids')
-    if ids_param:
-        id_list = [int(x) for x in ids_param.split(',') if x.strip().isdigit()]
-        query = query.filter(Tree.id.in_(id_list))
-    trees = query.all()
+# --- Excel export: helper e definizione delle colonne (raggruppate) -----------
+# Definiti a livello di modulo così da poter essere condivisi tra l'endpoint di
+# export e quello che elenca le colonne (per la scelta dei campi da esportare).
+def _xl_jlist(val):
+    if not val: return ''
+    try:
+        lst = json.loads(val) if isinstance(val, str) else val
+        return ', '.join(str(x) for x in lst) if isinstance(lst, list) else str(lst)
+    except: return ''
 
-    def _jlist(val):
-        if not val: return ''
-        try:
-            lst = json.loads(val) if isinstance(val, str) else val
-            return ', '.join(str(x) for x in lst) if isinstance(lst, list) else str(lst)
-        except: return ''
+def _xl_diag(val):
+    if not val: return ''
+    try:
+        lst = json.loads(val) if isinstance(val, str) else val
+        return '; '.join(
+            f"{r.get('caratt','')}: {r.get('giudizio','')}"
+            for r in lst if isinstance(r, dict) and r.get('caratt')
+        )
+    except: return ''
 
-    def _diag(val):
-        if not val: return ''
-        try:
-            lst = json.loads(val) if isinstance(val, str) else val
-            return '; '.join(
-                f"{r.get('caratt','')}: {r.get('giudizio','')}"
-                for r in lst if isinstance(r, dict) and r.get('caratt')
-            )
-        except: return ''
+def _xl_rtop(t, phase, field):
+    if not t.rischio: return ''
+    try: return json.loads(t.rischio).get(phase, {}).get(field, '')
+    except: return ''
 
-    def _rtop(t, phase, field):
-        if not t.rischio: return ''
-        try: return json.loads(t.rischio).get(phase, {}).get(field, '')
-        except: return ''
+def _xl_rpart(t, phase, part, field):
+    if not t.rischio: return ''
+    try: return json.loads(t.rischio).get(phase, {}).get(part, {}).get(field, '')
+    except: return ''
 
-    def _rpart(t, phase, part, field):
-        if not t.rischio: return ''
-        try: return json.loads(t.rischio).get(phase, {}).get(part, {}).get(field, '')
-        except: return ''
 
-    # (group_label, color_hex, [(col_header, getter), ...])
-    GROUPS = [
+def _excel_groups():
+    """Colonne dell'export Excel: (group_label, color_hex, [(col_header, getter), ...]).
+    L'intestazione di colonna funge anche da chiave stabile per l'esclusione dei campi."""
+    _jlist, _diag, _rtop, _rpart = _xl_jlist, _xl_diag, _xl_rtop, _xl_rpart
+    return [
         ('Identificazione', 'BDD7EE', [
             ('ID',                  lambda t: t.id),
             ('ID Albero',           lambda t: t.custom_id),
@@ -1381,15 +1373,53 @@ def export_excel():
         ]),
     ]
 
-    # Flatten columns and track group spans for merged header row
+
+def _export_exclude_set():
+    """Insieme dei campi da NON esportare, dal parametro `exclude` (array JSON di chiavi).
+    La chiave è l'intestazione colonna (Excel) o il nome colonna di default (GPKG)."""
+    raw = request.args.get('exclude')
+    if not raw:
+        return set()
+    try:
+        data = json.loads(raw)
+        if isinstance(data, list):
+            return {str(x) for x in data}
+    except Exception:
+        pass
+    return set()
+
+
+@app.route('/export/excel/columns', methods=['GET'])
+@auth_required
+def export_excel_columns():
+    """Gruppi e intestazioni delle colonne dell'export Excel, per la scelta dei campi."""
+    return jsonify([
+        {'group': label, 'color': color, 'columns': [h for h, _ in cols]}
+        for label, color, cols in _excel_groups()
+    ])
+
+
+@app.route('/export/excel', methods=['GET'])
+@auth_required
+def export_excel():
+    trees   = _scoped_tree_query().all()
+    exclude = _export_exclude_set()
+
+    # Flatten columns and track group spans for merged header row,
+    # skipping excluded columns and dropping any group left empty.
     all_cols   = []  # [(header, getter, color)]
     group_info = []  # [(label, start_col, end_col, color)]
     col_idx = 1
-    for label, color, cols in GROUPS:
-        group_info.append((label, col_idx, col_idx + len(cols) - 1, color))
-        for header, getter in cols:
+    for label, color, cols in _excel_groups():
+        kept = [(h, g) for (h, g) in cols if h not in exclude]
+        if not kept:
+            continue
+        group_info.append((label, col_idx, col_idx + len(kept) - 1, color))
+        for header, getter in kept:
             all_cols.append((header, getter, color))
-        col_idx += len(cols)
+        col_idx += len(kept)
+    if not all_cols:
+        return jsonify({'error': "Nessun campo selezionato per l'export"}), 400
 
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -1510,21 +1540,49 @@ def _gpkg_csv_to_json(val):
     items = [x.strip() for x in str(val).split(',') if x.strip()]
     return json.dumps(items, ensure_ascii=False) if items else None
 
+@app.route('/export/gpkg/columns', methods=['GET'])
+@auth_required
+def export_gpkg_columns():
+    """Nomi (chiavi) di default delle colonne del GPKG, per la finestra di rinomina in export."""
+    return jsonify([{'name': n, 'type': typ} for n, typ, _, _ in _GPKG_COLS])
+
+
+def _san_gpkg_ident(name):
+    """Ripulisce un nome colonna in un identificatore SQL valido (o None se vuoto)."""
+    s = re.sub(r'[^0-9A-Za-z_]', '_', str(name).strip())
+    if not s:
+        return None
+    if s[0].isdigit():
+        s = '_' + s
+    return s
+
+
+def _resolve_gpkg_names(overrides):
+    """Restituisce la lista dei nomi colonna di output applicando le rinomine richieste.
+    Garantisce nomi validi, non duplicati e diversi dalle colonne riservate (fid, geom)."""
+    reserved = {'fid', 'geom'}
+    out_names = []
+    seen = {r.lower() for r in reserved}
+    for (n, _typ, _g, _attr) in _GPKG_COLS:
+        target = n
+        if n in overrides:
+            cand = _san_gpkg_ident(overrides[n])
+            if cand and cand.lower() not in seen:
+                target = cand
+        base, k = target, 2
+        while target.lower() in seen:
+            target = f'{base}_{k}'
+            k += 1
+        seen.add(target.lower())
+        out_names.append(target)
+    return out_names
+
+
 @app.route('/export/gpkg', methods=['GET'])
 @auth_required
 def export_gpkg():
-    role, user_id, user_city = (request.user.get(k) for k in ('role','user_id','city'))
-    query = Tree.query
-    if role == 'user':   query = query.filter(Tree.owner_id == user_id)
-    elif role == 'city': query = city_tree_filter(query, user_id, user_city)
-    elif role == 'superuser':
-        did = _demo_user_id()
-        if did and did != user_id: query = query.filter(Tree.owner_id != did)
-    ids_param = request.args.get('ids')
-    if ids_param:
-        id_list = [int(x) for x in ids_param.split(',') if x.strip().isdigit()]
-        query = query.filter(Tree.id.in_(id_list))
-    trees = [t for t in query.all() if t.latitude is not None and t.longitude is not None]
+    trees = [t for t in _scoped_tree_query().all()
+             if t.latitude is not None and t.longitude is not None]
 
     def make_point(lon, lat):
         return b'GP\x00\x01' + struct.pack('<i', 4326) + struct.pack('<BIdd', 1, 1, lon, lat)
@@ -1544,9 +1602,31 @@ def export_gpkg():
             return getter(t)
         return _csv_getters[col_name](t)
 
-    col_defs = ', '.join(f'{n} {typ}' for n, typ, _, _ in _GPKG_COLS)
-    col_names = ', '.join(n for n, _, _, _ in _GPKG_COLS)
-    placeholders = ', '.join(['?'] * len(_GPKG_COLS))
+    # Rinomina delle chiavi (colonne) richiesta dall'utente: {nome_default: nome_nuovo}
+    overrides = {}
+    rename_param = request.args.get('rename')
+    if rename_param:
+        try:
+            raw = json.loads(rename_param)
+            if isinstance(raw, dict):
+                overrides = {str(k): v for k, v in raw.items()}
+        except Exception:
+            overrides = {}
+    out_names = _resolve_gpkg_names(overrides)
+
+    # (nome_default, nome_output, tipo, getter) — il valore si estrae col nome default
+    cols = [(n, out, typ, g) for (n, typ, g, _), out in zip(_GPKG_COLS, out_names)]
+
+    # Esclusione dei campi non desiderati (per nome colonna di default)
+    exclude = _export_exclude_set()
+    if exclude:
+        cols = [c for c in cols if c[0] not in exclude]
+    if not cols:
+        return jsonify({'error': "Nessun campo selezionato per l'export"}), 400
+
+    col_defs = ', '.join(f'{out} {typ}' for _, out, typ, _ in cols)
+    col_names = ', '.join(out for _, out, _, _ in cols)
+    placeholders = ', '.join(['?'] * len(cols))
 
     tmp_path = None
     try:
@@ -1605,7 +1685,7 @@ def export_gpkg():
         for t in trees:
             cur.execute(INSERT,
                 [make_point(t.longitude, t.latitude)] +
-                [get_val(n, g, t) for n, _, g, _ in _GPKG_COLS])
+                [get_val(n, g, t) for n, _out, _typ, g in cols])
 
         conn.commit()
         conn.close()
@@ -1620,6 +1700,60 @@ def export_gpkg():
         if tmp_path:
             try: os.unlink(tmp_path)
             except Exception: pass
+
+# -----------------------
+# Report — Schede albero (PLACEHOLDER)
+# -----------------------
+
+def _scoped_tree_query():
+    """Query alberi filtrata per ruolo del chiamante e per il parametro `ids`.
+    Stessa logica di visibilità/selezione usata dagli export (excel/gpkg)."""
+    role, user_id, user_city = (request.user.get(k) for k in ('role', 'user_id', 'city'))
+    query = Tree.query
+    if role == 'user':   query = query.filter(Tree.owner_id == user_id)
+    elif role == 'city': query = city_tree_filter(query, user_id, user_city)
+    elif role == 'superuser':
+        did = _demo_user_id()
+        if did and did != user_id: query = query.filter(Tree.owner_id != did)
+    ids_param = request.args.get('ids')
+    if ids_param:
+        id_list = [int(x) for x in ids_param.split(',') if x.strip().isdigit()]
+        query = query.filter(Tree.id.in_(id_list))
+    return query
+
+
+@app.route('/report/templates', methods=['GET'])
+@auth_required
+def report_templates_list():
+    """Elenco dei template di scheda albero disponibili (per il frontend)."""
+    return jsonify(report_tpl.list_templates())
+
+
+@app.route('/report/scheda', methods=['GET'])
+@auth_required
+def report_scheda():
+    """Genera il report "schede albero" per gli alberi visibili/selezionati.
+
+    Parametri:
+      - ids:      selezione opzionale (`1,2,3`); assente = tutti i visibili
+      - template: id del template (assente = template di default)
+
+    PLACEHOLDER: la resa attuale è un HTML segnaposto. Struttura, campi e
+    formati definitivi (PDF/DOCX) verranno implementati coi requisiti.
+    """
+    template_id = request.args.get('template')
+    template = report_tpl.get_template(template_id)
+    if template is None:
+        return jsonify({'error': f'Template non trovato: {template_id}'}), 404
+
+    trees = _scoped_tree_query().all()
+    content = report_tpl.render_scheda(trees, template)
+
+    buf = io.BytesIO(content)
+    buf.seek(0)
+    ext = report_tpl.extension_for(template)
+    return send_file(buf, download_name=f'schede_albero.{ext}', as_attachment=True,
+                     mimetype=report_tpl.mimetype_for(template))
 
 # -----------------------
 # Import GPKG

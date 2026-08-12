@@ -14,6 +14,7 @@ Applicazione web per il censimento e la valutazione del rischio degli alberi urb
 - **Valore ecologico**: stima di biomassa, CO₂ sequestrata, O₂ prodotto, intercettazione acqua e valore monetario (€)
 - **Mappa interattiva** (Leaflet) con clustering e marker colorati per classe di rischio
 - **Esportazione** in formato Excel (.xlsx) e GeoPackage (.gpkg)
+- **Report "schede albero"** da template selezionabile — una scheda per albero *(placeholder, in sviluppo)*
 - **Importazione** da file GeoPackage (.gpkg) — compatibile con i censimenti ARETE e con i file esportati dall'app, con anteprima e mappatura colonne
 - **Input vocale** per la compilazione delle schede (Web Speech API + parsing dell'intento tramite Groq)
 - **Geocodifica** diretta e inversa degli indirizzi (Nominatim/OpenStreetMap) e autocompletamento dei comuni italiani
@@ -77,7 +78,8 @@ tree_project/
 ├── tools/
 │   ├── ord_calculator.py       # Logica calcolo ARETE (B·I·P, bersaglio, classi, valore ecologico)
 │   ├── lookup_tables.py        # Tabelle di lookup (specie, patologie, prescrizioni, ...)
-│   └── dropdowns_ord.py        # Valori dei menu a tendina ORD
+│   ├── dropdowns_ord.py        # Valori dei menu a tendina ORD
+│   └── report_templates.py     # Template schede albero per i report (placeholder)
 ├── frontend/
 │   ├── index.html              # Interfaccia principale (multi-tab)
 │   ├── app.js                  # Logica frontend (fetch, mappa, form, esportazione)
@@ -249,7 +251,7 @@ web: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120 --preload
 | **Alberi** | Tabella degli alberi con ricerca, ordinamento, aggiunta/modifica/cancellazione |
 | **Mappa** | Mappa Leaflet con marker e clustering, filtri per città |
 | **Gestione** | Pannello amministratore: gestione utenti, città, agronomi, reset password |
-| **Esporta** | Esportazione in Excel (.xlsx) o GeoPackage (.gpkg) — intera raccolta o selezione manuale |
+| **Esporta** | Esportazione in Excel (.xlsx) o GeoPackage (.gpkg) e report schede albero — intera raccolta o selezione manuale, con **scelta dei campi da esportare** (esclusione singoli campi) |
 | **Importa** | Importazione da file .gpkg (censimenti esterni o file esportati dall'app) con anteprima, mappatura colonne e gestione conflitti (skip/update) |
 | **Algoritmo** | Documentazione tecnica del calcolo ARETE integrata nella webapp |
 
@@ -259,14 +261,15 @@ web: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120 --preload
 
 Il campo **Condizione** (campo `condition` nel database) rappresenta lo stato vegetativo/fitosanitario dell'albero ed è visualizzato tramite badge colorati in tabella, schede e popup della mappa.
 
-Il rilevamento avviene per corrispondenza sul testo (case-insensitive):
+Quando è presente il **CPC**, la condizione assume il valore della classe CPC (il CPC "vince"). Il colore segue la classe CPC (A/B/C/C/D/D); in assenza di CPC vale la corrispondenza sul testo (case-insensitive). Le lettere di classe hanno la priorità sui sinonimi testuali:
 
-| Categoria | Parole chiave | Colore |
-|-----------|--------------|--------|
-| **Buono** | `buono`, `eccellente`, `ottimo` | Verde |
-| **Discreto** | `discreto`, `mediocre` | Giallo |
-| **Scarso / Critico** | `scarso`, `critico`, `morto`, `abbattuto` | Rosso |
-| **Non classificato** | qualsiasi altro valore | Grigio |
+| Categoria | Classe CPC | Parole chiave | Colore |
+|-----------|-----------|--------------|--------|
+| **Ottimo** | `A` | `ottimo`, `eccellente` | Verde |
+| **Buono** | `B` | `buono` | Verdino (verde chiaro) |
+| **Discreto** | `C` | `discreto`, `mediocre` | Arancione |
+| **Scarso / Critico** | `C/D`, `D` | `scarso`, `critico`, `morto`, `abbattuto` | Rosso |
+| **Non classificato** | — | qualsiasi altro valore | Grigio |
 
 I valori consigliati da inserire nel form ispezioni sono: **Buono**, **Discreto**, **Scarso**.
 
@@ -330,10 +333,21 @@ Valori già in forma testuale (es. file esportati da Silvae Pro) vengono lasciat
 
 | Metodo | Endpoint | Descrizione |
 |--------|----------|-------------|
-| `GET`  | `/export/excel` | Esporta alberi in Excel (`?ids=1,2,3` opzionale) |
-| `GET`  | `/export/gpkg` | Esporta alberi in GeoPackage — attributi ARETE + geometria (`?ids=` opzionale) |
+| `GET`  | `/export/excel` | Esporta alberi in Excel (`?ids=1,2,3` e `?exclude=` opzionali) |
+| `GET`  | `/export/excel/columns` | Gruppi e intestazioni delle colonne Excel (per la scelta dei campi da esportare) |
+| `GET`  | `/export/gpkg` | Esporta alberi in GeoPackage — attributi ARETE + geometria (`?ids=`, `?rename=`, `?exclude=` opzionali) |
+| `GET`  | `/export/gpkg/columns` | Nomi/tipi di default delle colonne del GPKG (per rinomina/esclusione in export) |
 | `POST` | `/import/gpkg/inspect` | Anteprima colonne e mappatura automatica di un .gpkg |
 | `POST` | `/import/gpkg` | Importa alberi da .gpkg (multipart: `file`, `city`, `on_conflict=skip\|update`) |
+
+### Report — Schede albero *(placeholder)*
+
+Generazione di un report con una **scheda per albero** a partire da un *template* selezionabile. La struttura è già cablata (filtro per ruolo e selezione `ids` come gli export); resa attuale segnaposto in attesa dei requisiti definitivi (vedi [`tools/report_templates.py`](tools/report_templates.py)).
+
+| Metodo | Endpoint | Descrizione |
+|--------|----------|-------------|
+| `GET`  | `/report/templates` | Elenco dei template di scheda disponibili |
+| `GET`  | `/report/scheda` | Genera le schede albero (`?ids=` e `?template=` opzionali) |
 
 ### Geocodifica e voce
 

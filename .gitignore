@@ -11,3 +11,6 @@ flaskenv/
 instance/
 .DS_Store
 calculus.md
+
+# DB locale creato da test_locale.py --sqlite
+test_locale.db

@@ -10,6 +10,8 @@ let state = {
     nearbyMode: false, userLat: null, userLon: null, nearbyRadius: null,
     exportMode: false, exportSelected: new Set(),
     map: null, markers: [], markerLayer: null, mapTrees: [], userMarker: null, satelliteActive: false,
+    areaSelectMode: false, areaRect: null, areaSelectedIds: [],
+    gpkgColumns: null, gpkgExportIds: [],
     dropdowns: {}
 };
 
@@ -720,6 +722,9 @@ function switchTab(name) {
             });
             new LocateControl().addTo(state.map);
 
+            // Selezione area rettangolare per l'export (stile Booking)
+            setupAreaSelect();
+
             // Long-press on map → "Aggiungi albero qui?"
             let _lpTimer = null, _lpLatLng = null;
             const _LP_MS = 600;
@@ -753,6 +758,7 @@ function switchTab(name) {
             };
 
             state.map.on('mousedown', e => {
+                if (state.areaSelectMode) return;
                 if (e.originalEvent.button !== 0) return;
                 _lpLatLng = e.latlng;
                 _lpTimer = setTimeout(() => _lpTrigger(_lpLatLng), _LP_MS);
@@ -761,6 +767,7 @@ function switchTab(name) {
 
             const _mapContainer = state.map.getContainer();
             _mapContainer.addEventListener('touchstart', e => {
+                if (state.areaSelectMode) return;
                 if (e.touches.length !== 1) return;
                 const t = e.touches[0], rect = _mapContainer.getBoundingClientRect();
                 _lpLatLng = state.map.containerPointToLatLng(
@@ -1100,30 +1107,44 @@ function renderPagination() {
 
 // ─── Tree list render ─────────────────────────────────────
 
-function condClass(cond) {
-    if (!cond) return 'tr-other'; const c = cond.toLowerCase();
-    if (c.includes('buono')||c.includes('eccellente')||c.includes('ottimo')) return 'tr-good';
-    if (c.includes('discreto')||c.includes('mediocre')) return 'tr-fair';
-    if (c.includes('scarso')||c.includes('critico')||c.includes('morto')||c.includes('abbattuto')) return 'tr-poor';
-    return 'tr-other';
+// Categoria di colore della condizione. Le classi CPC/VTA (A/B/C/C/D/D) hanno
+// priorità: quando c'è il CPC, la condizione è la lettera della classe.
+//   A  / ottimo, eccellente                      → good   (verde)
+//   B  / buono                                    → buono  (verdino)
+//   C  / discreto, mediocre                       → fair   (arancione)
+//   C/D, D / scarso, critico, morto, abbattuto    → poor   (rosso)
+function condCategory(cond) {
+    if (!cond) return 'other';
+    const c = String(cond).trim().toLowerCase();
+    // Classi CPC / VTA (la lettera vince)
+    if (c === 'a') return 'good';
+    if (c === 'b') return 'buono';
+    if (c === 'c') return 'fair';
+    if (c === 'd' || c === 'c/d') return 'poor';
+    // Sinonimi testuali (IT/EN)
+    if (c.includes('ottimo')||c.includes('eccellente')||c.includes('excel')||c.includes('good')) return 'good';
+    if (c.includes('buono')) return 'buono';
+    if (c.includes('discreto')||c.includes('mediocre')||c.includes('fair')||c.includes('moder')) return 'fair';
+    if (c.includes('scarso')||c.includes('critico')||c.includes('morto')||c.includes('abbattuto')
+        ||c.includes('poor')||c.includes('crit')||c.includes('dead')) return 'poor';
+    return 'other';
 }
+
+const COND_BADGE_ICON = {
+    good:'fa-circle-check', buono:'fa-circle-check', fair:'fa-circle-exclamation',
+    poor:'fa-circle-xmark', other:'fa-circle',
+};
+
+function condClass(cond) { return 'tr-' + condCategory(cond); }
 
 function condBadge(cond) {
     if (!cond) return `<span class="cond-badge cb-other">—</span>`;
-    const c = cond.toLowerCase(); let cls='cb-other', icon='fa-circle';
-    if (c.includes('buono')||c.includes('eccellente')||c.includes('ottimo')) { cls='cb-good'; icon='fa-circle-check'; }
-    else if (c.includes('discreto')||c.includes('mediocre')) { cls='cb-fair'; icon='fa-circle-exclamation'; }
-    else if (c.includes('scarso')||c.includes('critico')||c.includes('morto')||c.includes('abbattuto')) { cls='cb-poor'; icon='fa-circle-xmark'; }
-    return `<span class="cond-badge ${cls}"><i class="fa-solid ${icon}"></i> ${cond}</span>`;
+    const cat = condCategory(cond);
+    return `<span class="cond-badge cb-${cat}"><i class="fa-solid ${COND_BADGE_ICON[cat]}"></i> ${cond}</span>`;
 }
 
 function condDot(cond) {
-    if (!cond) return `<span class="cond-dot dot-other" title="—"></span>`;
-    const c = cond.toLowerCase();
-    if (c.includes('buono')||c.includes('eccellente')||c.includes('ottimo')) return `<span class="cond-dot dot-good" title="${cond}"></span>`;
-    if (c.includes('discreto')||c.includes('mediocre')) return `<span class="cond-dot dot-fair" title="${cond}"></span>`;
-    if (c.includes('scarso')||c.includes('critico')||c.includes('morto')||c.includes('abbattuto')) return `<span class="cond-dot dot-poor" title="${cond}"></span>`;
-    return `<span class="cond-dot dot-other" title="${cond}"></span>`;
+    return `<span class="cond-dot dot-${condCategory(cond)}" title="${cond || '—'}"></span>`;
 }
 
 function renderTreeCards(trees) {
@@ -1677,9 +1698,10 @@ function initMapAddressAutocomplete() {
 }
 
 const COND_COLOR = {
-    'tr-good': '#2d6a4f',
-    'tr-fair': '#e67e22',
-    'tr-poor': '#c0392b',
+    'tr-good':  '#2d6a4f',
+    'tr-buono': '#52b788',
+    'tr-fair':  '#e67e22',
+    'tr-poor':  '#c0392b',
     'tr-other': '#888888',
 };
 
@@ -1786,13 +1808,7 @@ function formatDate(str) {
     return new Date(str + 'T12:00:00').toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric'});
 }
 
-function tlDotClass(cond) {
-    if (!cond) return 'tl-dot-other'; const c = cond.toLowerCase();
-    if (c.includes('good')||c.includes('excel')) return 'tl-dot-good';
-    if (c.includes('fair')||c.includes('moder')) return 'tl-dot-fair';
-    if (c.includes('poor')||c.includes('crit')||c.includes('dead')) return 'tl-dot-poor';
-    return 'tl-dot-other';
-}
+function tlDotClass(cond) { return 'tl-dot-' + condCategory(cond); }
 
 function rischioBadge(rischio) {
     if (!rischio) return '';
@@ -2035,15 +2051,9 @@ async function deleteSelectedTrees() {
     fetchTrees();
 }
 
-async function exportSelectedExcel() {
+function exportSelectedExcel() {
     if (state.exportSelected.size === 0) { showStatus('Nessun albero selezionato', 'warning'); return; }
-    showStatus('Preparazione Excel…', 'info');
-    const ids = [...state.exportSelected].join(',');
-    const res = await fetch(`${API_BASE}/export/excel?ids=${ids}`, {headers: authHeader()});
-    if (!res.ok) return showStatus('Esportazione fallita', 'danger');
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(await res.blob()); a.download = 'alberi.xlsx'; a.click();
-    URL.revokeObjectURL(a.href); showStatus('File Excel scaricato', 'success');
+    return downloadExport('excel', [...state.exportSelected], 'alberi_selezione');
 }
 
 // ─── Import GPKG ─────────────────────────────────────────
@@ -2274,36 +2284,344 @@ async function _doImport(mapping) {
 
 // ─── Export ───────────────────────────────────────────────
 
-async function exportExcel() {
-    if (!state.token) return showStatus('Effettua prima il login','danger');
-    showStatus('Preparazione Excel…','info');
-    const res = await fetch(`${API_BASE}/export/excel`, {headers: authHeader()});
-    if (!res.ok) return showStatus('Esportazione fallita','danger');
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(await res.blob()); a.download = 'trees.xlsx'; a.click();
-    URL.revokeObjectURL(a.href); showStatus('File Excel scaricato','success');
+// Punto d'ingresso per tutti gli export.
+//   format: 'excel' | 'gpkg'
+//   ids:    array di id (esporta solo quelli) oppure null/[] per l'export completo
+//   defaultName: nome proposto, senza estensione
+//   Excel → chiede solo il nome file; GPKG → apre la finestra di rinomina chiavi.
+function downloadExport(format, ids, defaultName) {
+    if (!state.token) { showStatus('Effettua prima il login', 'danger'); return; }
+    if (format === 'gpkg') return openGpkgExportModal(ids || [], defaultName);
+    return openExcelExportModal(ids || [], defaultName);
 }
 
-async function exportGPKG() {
-    if (!state.token) return showStatus('Effettua prima il login','danger');
-    showStatus('Preparazione GPKG…','info');
-    const res = await fetch(`${API_BASE}/export/gpkg`, {headers: authHeader()});
-    if (!res.ok) return showStatus('Esportazione fallita','danger');
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(await res.blob()); a.download = 'alberi.gpkg'; a.click();
-    URL.revokeObjectURL(a.href); showStatus('GPKG scaricato','success');
+// Escape per testo/attributi inseriti in innerHTML.
+function _htmlEsc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-async function exportSelectedGPKG() {
-    if (state.exportSelected.size === 0) { showStatus('Nessun albero selezionato', 'warning'); return; }
-    showStatus('Preparazione GPKG…', 'info');
-    const ids = [...state.exportSelected].join(',');
-    const res = await fetch(`${API_BASE}/export/gpkg?ids=${ids}`, {headers: authHeader()});
+// Normalizza un nome file: rimuove estensione/caratteri non validi, aggiunge quella giusta.
+function _safeFilename(name, defaultName, ext) {
+    name = (name || '').trim();
+    if (!name) name = defaultName;
+    if (name.toLowerCase().endsWith('.' + ext)) name = name.slice(0, -(ext.length + 1));
+    name = name.replace(/[\\/:*?"<>|]/g, '_').trim() || defaultName;
+    return `${name}.${ext}`;
+}
+
+// Esegue il download vero e proprio (con eventuale mappa di rinomina per il GPKG).
+async function _performExport(format, ids, filename, renameObj, excludeArr) {
+    const ext = format === 'excel' ? 'xlsx' : 'gpkg';
+    showStatus(`Preparazione ${ext.toUpperCase()}…`, 'info');
+    const params = new URLSearchParams();
+    if (ids && ids.length) params.set('ids', ids.join(','));
+    if (renameObj && Object.keys(renameObj).length) params.set('rename', JSON.stringify(renameObj));
+    if (excludeArr && excludeArr.length) params.set('exclude', JSON.stringify(excludeArr));
+    const qs = params.toString();
+    const res = await fetch(`${API_BASE}/export/${format}${qs ? '?' + qs : ''}`, { headers: authHeader() });
     if (!res.ok) return showStatus('Esportazione fallita', 'danger');
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(await res.blob()); a.download = 'alberi.gpkg'; a.click();
-    URL.revokeObjectURL(a.href); showStatus('GPKG scaricato','success');
+    a.href = URL.createObjectURL(await res.blob());
+    a.download = filename; a.click();
+    URL.revokeObjectURL(a.href);
+    showStatus(`${ext.toUpperCase()} scaricato: ${filename}`, 'success');
 }
+
+// ─── Finestra export GPKG: rinomina delle chiavi ──────────
+
+async function openGpkgExportModal(ids, defaultName) {
+    if (!state.gpkgColumns) {
+        try {
+            const res = await fetch(`${API_BASE}/export/gpkg/columns`, { headers: authHeader() });
+            if (!res.ok) throw new Error();
+            state.gpkgColumns = await res.json();
+        } catch { showStatus('Impossibile leggere le colonne del GPKG', 'danger'); return; }
+    }
+    state.gpkgExportIds = ids || [];
+    state.gpkgExcluded  = state.gpkgExcluded || new Set();
+    state.gpkgRenames   = state.gpkgRenames  || {};
+    document.getElementById('gpkgExportFilename').value = defaultName || 'alberi';
+    _renderGpkgExportTable();
+    document.getElementById('gpkgExportModal').classList.add('open');
+}
+
+// Salva i nomi digitati prima di ridisegnare la tabella (per non perderli).
+function _captureGpkgRenames() {
+    document.querySelectorAll('#gpkgExportBody .gpkg-rename').forEach(i => {
+        state.gpkgRenames[i.dataset.col] = i.value;
+    });
+}
+
+function _renderGpkgExportTable() {
+    const excl = state.gpkgExcluded;
+    document.getElementById('gpkgExportBody').innerHTML = state.gpkgColumns.map(c => {
+        const off = excl.has(c.name);
+        const val = _htmlEsc(state.gpkgRenames[c.name] || '');
+        return `<tr style="border-bottom:1px solid var(--border);${off ? 'opacity:.45;' : ''}">
+          <td style="padding:6px 8px;font-family:monospace;font-size:12px;font-weight:600;${off ? 'text-decoration:line-through;' : ''}">${c.name}</td>
+          <td style="padding:4px 8px;">
+            <input class="inp gpkg-rename" data-col="${c.name}" type="text" placeholder="${c.name}" value="${val}" ${off ? 'disabled' : ''}
+                   style="width:100%;font-size:12px;padding:4px 6px;">
+          </td>
+          <td style="padding:4px 8px;text-align:center;">
+            <button type="button" class="btn btn-outline btn-sm" onclick="toggleGpkgField('${c.name}')" title="${off ? 'Reintegra campo' : 'Escludi campo'}" style="padding:2px 8px;">
+              <i class="fa-solid ${off ? 'fa-rotate-left' : 'fa-xmark'}"></i>
+            </button>
+          </td>
+        </tr>`;
+    }).join('');
+}
+
+function toggleGpkgField(name) {
+    _captureGpkgRenames();
+    if (state.gpkgExcluded.has(name)) state.gpkgExcluded.delete(name);
+    else state.gpkgExcluded.add(name);
+    _renderGpkgExportTable();
+}
+
+function resetGpkgNames() {
+    _captureGpkgRenames();
+    state.gpkgRenames = {};
+    state.gpkgExcluded.clear();
+    _renderGpkgExportTable();
+}
+
+function closeGpkgExport() {
+    document.getElementById('gpkgExportModal').classList.remove('open');
+}
+
+function confirmGpkgExport() {
+    _captureGpkgRenames();
+    const rename = {};
+    state.gpkgColumns.forEach(c => {
+        if (state.gpkgExcluded.has(c.name)) return;
+        const v = (state.gpkgRenames[c.name] || '').trim();
+        if (v && v !== c.name) rename[c.name] = v;
+    });
+    const exclude  = [...state.gpkgExcluded];
+    const filename = _safeFilename(document.getElementById('gpkgExportFilename').value, 'alberi', 'gpkg');
+    closeGpkgExport();
+    _performExport('gpkg', state.gpkgExportIds, filename, rename, exclude);
+}
+
+// ─── Finestra export Excel: scelta dei campi ──────────────
+
+async function openExcelExportModal(ids, defaultName) {
+    if (!state.excelColumns) {
+        try {
+            const res = await fetch(`${API_BASE}/export/excel/columns`, { headers: authHeader() });
+            if (!res.ok) throw new Error();
+            state.excelColumns = await res.json();
+        } catch { showStatus('Impossibile leggere le colonne Excel', 'danger'); return; }
+    }
+    state.excelExportIds = ids || [];
+    state.excelExcluded  = state.excelExcluded || new Set();
+    document.getElementById('excelExportFilename').value = defaultName || 'alberi';
+    _renderExcelExportFields();
+    document.getElementById('excelExportModal').classList.add('open');
+}
+
+function _renderExcelExportFields() {
+    const excl = state.excelExcluded;
+    document.getElementById('excelExportBody').innerHTML = state.excelColumns.map(g => `
+      <div style="margin-bottom:10px;">
+        <div style="font-size:12px;font-weight:700;color:var(--text-muted);margin:2px 0 6px;">${_htmlEsc(g.group)}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${g.columns.map(c => {
+            const off = excl.has(c);
+            return `<button type="button" data-col="${_htmlEsc(c)}" onclick="toggleExcelField(this)"
+                      style="font-size:12px;padding:3px 9px;border-radius:14px;border:1px solid var(--border);cursor:pointer;
+                             ${off ? 'background:#f3f4f6;color:#9ca3af;text-decoration:line-through;'
+                                   : 'background:#eef2ff;color:#3730a3;'}">
+                      ${_htmlEsc(c)} <i class="fa-solid ${off ? 'fa-rotate-left' : 'fa-xmark'}" style="margin-left:3px;font-size:10px;"></i>
+                    </button>`;
+          }).join('')}
+        </div>
+      </div>`).join('');
+}
+
+function toggleExcelField(btn) {
+    const col = btn.dataset.col;
+    if (state.excelExcluded.has(col)) state.excelExcluded.delete(col);
+    else state.excelExcluded.add(col);
+    _renderExcelExportFields();
+}
+
+function resetExcelFields() {
+    state.excelExcluded.clear();
+    _renderExcelExportFields();
+}
+
+function closeExcelExport() {
+    document.getElementById('excelExportModal').classList.remove('open');
+}
+
+function confirmExcelExport() {
+    const filename = _safeFilename(document.getElementById('excelExportFilename').value, 'alberi', 'xlsx');
+    const exclude  = [...state.excelExcluded];
+    closeExcelExport();
+    _performExport('excel', state.excelExportIds, filename, null, exclude);
+}
+
+function exportExcel() { return downloadExport('excel', null, 'alberi'); }
+function exportGPKG()  { return downloadExport('gpkg',  null, 'alberi'); }
+
+// ─── Schede albero (report) — PLACEHOLDER ─────────────────
+// Carica l'elenco dei template nel <select> (una volta sola).
+async function loadReportTemplates() {
+    const sel = document.getElementById('reportTemplateSelect');
+    if (!sel || sel.dataset.loaded) return;
+    try {
+        const res = await fetch(`${API_BASE}/report/templates`, { headers: authHeader() });
+        if (!res.ok) throw new Error();
+        const templates = await res.json();
+        sel.innerHTML = templates.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+        sel.dataset.loaded = '1';
+    } catch { sel.innerHTML = '<option value="">(nessun template)</option>'; }
+}
+
+// Genera e scarica il report schede per gli id dati (null/[] = tutti i visibili).
+async function generateScheda(ids) {
+    if (!state.token) { showStatus('Effettua prima il login', 'danger'); return; }
+    const sel = document.getElementById('reportTemplateSelect');
+    const template = sel ? sel.value : '';
+    const params = new URLSearchParams();
+    if (template) params.set('template', template);
+    if (ids && ids.length) params.set('ids', ids.join(','));
+    const qs = params.toString();
+    showStatus('Preparazione schede…', 'info');
+    const res = await fetch(`${API_BASE}/report/scheda${qs ? '?' + qs : ''}`, { headers: authHeader() });
+    if (!res.ok) return showStatus('Generazione schede fallita', 'danger');
+    const cd = res.headers.get('Content-Disposition') || '';
+    const m = cd.match(/filename="?([^"]+)"?/);
+    const filename = m ? m[1] : 'schede_albero.html';
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(await res.blob());
+    a.download = filename; a.click();
+    URL.revokeObjectURL(a.href);
+    showStatus(`Schede generate: ${filename}`, 'success');
+}
+
+// Card "Esporta": schede degli alberi selezionati in tabella (o tutti se nessuna selezione).
+function exportScheda() {
+    return generateScheda(state.exportSelected.size ? [...state.exportSelected] : null);
+}
+
+// Barra selezione area sulla mappa: schede degli alberi nell'area selezionata.
+function exportAreaScheda() {
+    const ids = state.areaSelectedIds || [];
+    if (ids.length === 0) { showStatus("Nessun albero nell'area selezionata", 'warning'); return; }
+    return generateScheda(ids);
+}
+
+function exportSelectedGPKG() {
+    if (state.exportSelected.size === 0) { showStatus('Nessun albero selezionato', 'warning'); return; }
+    return downloadExport('gpkg', [...state.exportSelected], 'alberi_selezione');
+}
+
+// ─── Selezione area sulla mappa (rettangolo, stile Booking) ─
+
+function setupAreaSelect() {
+    const map = state.map;
+
+    // Bottone toggle nella barra dei controlli (accanto a "posizione")
+    const AreaControl = L.Control.extend({
+        options: { position: 'topleft' },
+        onAdd() {
+            const btn = L.DomUtil.create('button', 'leaflet-bar locate-ctrl-btn');
+            btn.id = 'areaSelectBtn';
+            btn.innerHTML = '<i class="fa-solid fa-vector-square"></i>';
+            btn.title = "Seleziona un'area da esportare";
+            L.DomEvent.disableClickPropagation(btn);
+            L.DomEvent.on(btn, 'click', toggleAreaSelect);
+            return btn;
+        }
+    });
+    new AreaControl().addTo(map);
+
+    let start = null;
+
+    map.on('mousedown', e => {
+        if (!state.areaSelectMode) return;
+        if (e.originalEvent.button !== 0) return;
+        start = e.latlng;
+        clearAreaSelect();
+        state.areaRect = L.rectangle([start, start], {
+            color: '#1a5276', weight: 2, fillColor: '#1a5276', fillOpacity: 0.1,
+            dashArray: '5,5', interactive: false
+        }).addTo(map);
+    });
+    map.on('mousemove', e => {
+        if (!state.areaSelectMode || !start || !state.areaRect) return;
+        state.areaRect.setBounds(L.latLngBounds(start, e.latlng));
+    });
+    map.on('mouseup', e => {
+        if (!state.areaSelectMode || !start) return;
+        const bounds = L.latLngBounds(start, e.latlng);
+        start = null;
+        finalizeAreaSelect(bounds);
+    });
+}
+
+function toggleAreaSelect() {
+    if (!state.map) return;
+    state.areaSelectMode = !state.areaSelectMode;
+    const btn   = document.getElementById('areaSelectBtn');
+    const panel = document.getElementById('areaSelectPanel');
+    const mapEl = state.map.getContainer();
+    if (state.areaSelectMode) {
+        state.map.dragging.disable();
+        mapEl.classList.add('area-select-cursor');
+        if (btn)   btn.classList.add('active');
+        if (panel) panel.style.display = 'flex';
+        updateAreaPanel();
+        showStatus("Trascina sulla mappa per selezionare un'area", 'info');
+    } else {
+        state.map.dragging.enable();
+        mapEl.classList.remove('area-select-cursor');
+        if (btn)   btn.classList.remove('active');
+        if (panel) panel.style.display = 'none';
+        clearAreaSelect();
+    }
+}
+
+function clearAreaSelect() {
+    if (state.areaRect && state.map) { state.map.removeLayer(state.areaRect); }
+    state.areaRect = null;
+    state.areaSelectedIds = [];
+    updateAreaPanel();
+}
+
+function finalizeAreaSelect(bounds) {
+    const inside = (state.mapTrees || []).filter(t =>
+        t.latitude && t.longitude &&
+        bounds.contains([parseFloat(t.latitude), parseFloat(t.longitude)])
+    );
+    state.areaSelectedIds = inside.map(t => t.id);
+    updateAreaPanel();
+}
+
+function updateAreaPanel() {
+    const n = (state.areaSelectedIds || []).length;
+    const countEl = document.getElementById('areaSelectCount');
+    if (countEl) countEl.textContent = n;
+    const xls = document.getElementById('areaExcelBtn');
+    const gpk = document.getElementById('areaGpkgBtn');
+    const sch = document.getElementById('areaSchedaBtn');
+    if (xls) xls.disabled = n === 0;
+    if (gpk) gpk.disabled = n === 0;
+    if (sch) sch.disabled = n === 0;
+}
+
+function _areaExport(format) {
+    const ids = state.areaSelectedIds || [];
+    if (ids.length === 0) { showStatus("Nessun albero nell'area selezionata", 'warning'); return; }
+    return downloadExport(format, ids, 'alberi_area');
+}
+
+function exportAreaExcel() { return _areaExport('excel'); }
+function exportAreaGPKG()  { return _areaExport('gpkg');  }
 
 // ─── Status toast ─────────────────────────────────────────
 
@@ -2354,5 +2672,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initImportDropZone();
     document.getElementById('exportExcelBtn').addEventListener('click', exportExcel);
     document.getElementById('exportGPKGBtn').addEventListener('click', exportGPKG);
+    document.getElementById('exportSchedaBtn').addEventListener('click', exportScheda);
+    loadReportTemplates();
     init();
 });
