@@ -2180,7 +2180,7 @@ def import_gpkg_route():
                 tol = 1e-6
                 existing = Tree.query.filter(
                     Tree.city == city,
-                    Tree.latitude.between(lat - tol, lat + tol),
+                    Tree.latitude.between(lat - tol,lat + tol),
                     Tree.longitude.between(lon - tol, lon + tol)
                 ).first()
             else:
