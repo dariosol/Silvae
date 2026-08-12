@@ -1,6 +1,7 @@
 blinker==1.9.0
 gunicorn
 openpyxl
+Pillow
 PyJWT
 python-dotenv
 click==8.1.8

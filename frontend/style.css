@@ -875,6 +875,12 @@ textarea.fc { resize: vertical; min-height: 72px; }
   background: var(--g100); color: var(--g800);
   padding: 2px 7px; border-radius: 20px;
 }
+.tl-first-tag {
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .6px;
+  background: #e0e7ff; color: #3730a3;
+  padding: 2px 7px; border-radius: 20px;
+}
 .tl-body { font-size: 13px; color: var(--text-mid); margin-bottom: 6px; line-height: 1.5; }
 .tl-card-summary { margin: 4px 0 6px; display: flex; flex-direction: column; gap: 3px; }
 .tl-summary-id { font-size: 12px; font-weight: 600; color: var(--text-mid); display: flex; align-items: center; gap: 5px; }

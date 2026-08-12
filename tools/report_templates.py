@@ -26,14 +26,18 @@ from dataclasses import dataclass, field
 from typing import Callable, Optional
 import html
 
+from tools import ord_scheda
 
-# --- Formati di output supportati (per adesso solo un placeholder HTML) -------
+
+# --- Formati di output supportati ---------------------------------------------
 FORMAT_HTML = "html"
+FORMAT_XLSX = "xlsx"  # scheda ARETE (foglio ORD) dal template ufficiale
 FORMAT_PDF = "pdf"   # da implementare
 FORMAT_DOCX = "docx"  # da implementare
 
 _MIME_BY_FORMAT = {
     FORMAT_HTML: "text/html; charset=utf-8",
+    FORMAT_XLSX: ord_scheda.XLSX_MIME,
     FORMAT_PDF: "application/pdf",
     FORMAT_DOCX: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
@@ -73,18 +77,27 @@ class TreeSheetTemplate:
 # Placeholder: un solo template di base. I template reali verranno aggiunti qui
 # oppure registrati a runtime con ``register_template``.
 REPORT_TEMPLATES: dict[str, TreeSheetTemplate] = {
+    "scheda_arete": TreeSheetTemplate(
+        id="scheda_arete",
+        name="Scheda di rilevamento ARETE (ORD)",
+        description="Scheda identica al template ufficiale "
+                    "(Schede_Rilevamento_ARETE, foglio ORD), compilata coi dati "
+                    "del database. Uno .zip con le cartelle excel/ e pdf/.",
+        fmt=FORMAT_XLSX,
+        builtin=True,
+        sections=[],
+    ),
     "scheda_base": TreeSheetTemplate(
         id="scheda_base",
-        name="Scheda albero (base)",
-        description="Template segnaposto: una pagina per albero. "
-                    "Struttura e impaginazione definitive in arrivo.",
+        name="Scheda albero (base HTML)",
+        description="Template segnaposto HTML: una pagina per albero.",
         fmt=FORMAT_HTML,
         builtin=True,
         sections=[],
     ),
 }
 
-DEFAULT_TEMPLATE_ID = "scheda_base"
+DEFAULT_TEMPLATE_ID = "scheda_arete"
 
 
 def list_templates() -> list[dict]:
@@ -111,6 +124,19 @@ def mimetype_for(template: TreeSheetTemplate) -> str:
 
 def extension_for(template: TreeSheetTemplate) -> str:
     return template.fmt
+
+
+def render_schede(trees, template: TreeSheetTemplate) -> tuple[str, bytes, str]:
+    """Genera le schede e ritorna ``(filename, content, mimetype)``.
+
+    Per il template ARETE (foglio ORD) produce l'.xlsx identico al template
+    ufficiale (o uno .zip se gli alberi sono più d'uno). Per gli altri template
+    ricade sul placeholder HTML.
+    """
+    if template.fmt == FORMAT_XLSX:
+        return ord_scheda.build_schede(trees)
+    content = render_scheda(trees, template)
+    return f"schede_albero.{extension_for(template)}", content, mimetype_for(template)
 
 
 def render_scheda(trees, template: TreeSheetTemplate) -> bytes:

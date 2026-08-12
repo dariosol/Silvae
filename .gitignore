@@ -9,6 +9,7 @@ flaskenv/
 *.save
 *.pdf
 instance/
+.scheda_work/
 .DS_Store
 calculus.md
 

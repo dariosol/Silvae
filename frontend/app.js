@@ -1960,7 +1960,8 @@ function renderTimeline(inspections) {
                 <div class="tl-header">
                     <span class="tl-date">${formatDate(insp.date)}</span>
                     ${condBadge(insp.condition)}
-                    ${idx===0?'<span class="tl-latest-tag">Ultima</span>':''}
+                    ${idx===0 && idx!==inspections.length-1?'<span class="tl-latest-tag">Ultima</span>':''}
+                    ${idx===inspections.length-1?'<span class="tl-first-tag">Primo inserimento</span>':''}
                 </div>
                 ${rischioBadge(insp.rischio)}
                 ${renderCardSummary(insp.snapshot)}

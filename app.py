@@ -565,6 +565,11 @@ def _seed_demo_trees(demo_user):
         t.rischio = json.dumps(r) if (r := _calc_rischio(t)) else None
         db.session.add(t)
     db.session.commit()
+    # Ispezione di "primo inserimento" per ogni albero demo: è il punto di
+    # partenza che deve comparire nello storico.
+    for t in Tree.query.filter(Tree.owner_id == demo_user.id).all():
+        db.session.add(_make_inspection(t, demo_user.id, DEMO_USERNAME))
+    db.session.commit()
 
 def reset_demo():
     """Reset the whole demo to its fixed state: both accounts, their link, and the trees."""
@@ -964,6 +969,18 @@ def calculate_risk():
             computed = bersaglio_flow_to_class(tipo, flow, zone_w)
             if computed is not None:
                 required[class_key] = computed
+    # I gradi di pericolo si valutano per-componente, come nella scheda: un
+    # pericolo mancante diventa 0 = "non determinato" (SOSPESO), non blocca il
+    # calcolo. Si rifiuta solo se mancano TUTTI e quattro.
+    PERICOLI = ('pericolo_rami', 'pericolo_tronco', 'pericolo_colletto', 'pericolo_zolla')
+    if all(required[k] is None for k in PERICOLI):
+        return jsonify({'message': 'Per calcolare il rischio inserisci almeno un '
+                                   'grado di pericolo (rami, tronco, colletto o zolla).'}), 400
+    for k in PERICOLI:
+        if required[k] is None:
+            required[k] = 0
+
+    # Gli altri campi (dimensioni e bersagli) restano obbligatori.
     missing = [k for k, v in required.items() if v is None]
     if missing:
         return jsonify({'message': f'Missing: {", ".join(missing)}'}), 400
@@ -1738,8 +1755,9 @@ def report_scheda():
       - ids:      selezione opzionale (`1,2,3`); assente = tutti i visibili
       - template: id del template (assente = template di default)
 
-    PLACEHOLDER: la resa attuale è un HTML segnaposto. Struttura, campi e
-    formati definitivi (PDF/DOCX) verranno implementati coi requisiti.
+    Il template di default ("scheda_arete") produce l'.xlsx identico al template
+    ufficiale ARETE (foglio ORD), compilato coi dati del database — un file per
+    albero, oppure uno .zip se gli alberi selezionati sono più d'uno.
     """
     template_id = request.args.get('template')
     template = report_tpl.get_template(template_id)
@@ -1747,13 +1765,15 @@ def report_scheda():
         return jsonify({'error': f'Template non trovato: {template_id}'}), 404
 
     trees = _scoped_tree_query().all()
-    content = report_tpl.render_scheda(trees, template)
+    if not trees:
+        return jsonify({'error': 'Nessun albero da includere nelle schede'}), 404
+
+    filename, content, mimetype = report_tpl.render_schede(trees, template)
 
     buf = io.BytesIO(content)
     buf.seek(0)
-    ext = report_tpl.extension_for(template)
-    return send_file(buf, download_name=f'schede_albero.{ext}', as_attachment=True,
-                     mimetype=report_tpl.mimetype_for(template))
+    return send_file(buf, download_name=filename, as_attachment=True,
+                     mimetype=mimetype)
 
 # -----------------------
 # Import GPKG
