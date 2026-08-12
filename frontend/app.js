@@ -1751,6 +1751,15 @@ function _refreshMapMarkers() {
             m = L.marker([lat, lon], { icon: treeMarkerIcon(t) });
         }
         m.bindPopup(popup);
+        // Da zoom 19 in su mostra il custom ID accanto al pallino
+        if (zoom >= 19 && t.custom_id) {
+            m.bindTooltip(String(t.custom_id), {
+                permanent: true,
+                direction: 'right',
+                offset: [8, 0],
+                className: 'tree-id-label'
+            });
+        }
         m.treeId = t.id;
         state.markers.push(m);
         state.markerLayer.addLayer(m);
