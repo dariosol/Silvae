@@ -875,8 +875,9 @@
       <div id="mapWrap">
         <div id="map"></div>
         <div id="areaSelectPanel" style="display:none;">
-          <div class="asp-count"><i class="fa-solid fa-vector-square"></i> <span id="areaSelectCount">0</span> alberi nell'area</div>
+          <div class="asp-count"><i class="fa-solid fa-draw-polygon"></i> <span id="areaSelectCount">0</span> alberi nell'area</div>
           <div class="asp-actions">
+            <button class="btn btn-primary btn-sm" onclick="closeAreaPolygon()" id="areaCloseBtn" title="Chiudi il poligono e seleziona gli alberi"><i class="fa-solid fa-check"></i> Chiudi area</button>
             <button class="btn btn-excel btn-sm" onclick="exportAreaExcel()" id="areaExcelBtn" disabled><i class="fa-solid fa-file-excel"></i> Excel</button>
             <button class="btn btn-gpkg btn-sm" onclick="exportAreaGPKG()" id="areaGpkgBtn" disabled><i class="fa-solid fa-database"></i> GPKG</button>
             <button class="btn btn-outline btn-sm" onclick="exportAreaScheda()" id="areaSchedaBtn" disabled><i class="fa-solid fa-file-lines"></i> Schede</button>

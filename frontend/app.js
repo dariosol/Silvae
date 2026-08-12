@@ -10,7 +10,7 @@ let state = {
     nearbyMode: false, userLat: null, userLon: null, nearbyRadius: null,
     exportMode: false, exportSelected: new Set(),
     map: null, markers: [], markerLayer: null, mapTrees: [], userMarker: null, satelliteActive: false,
-    areaSelectMode: false, areaRect: null, areaSelectedIds: [],
+    areaSelectMode: false, areaVertices: [], areaDraft: null, areaMarkers: [], areaPoly: null, areaClosed: false, areaSelectedIds: [],
     gpkgColumns: null, gpkgExportIds: [],
     dropdowns: {}
 };
@@ -2531,8 +2531,8 @@ function setupAreaSelect() {
         onAdd() {
             const btn = L.DomUtil.create('button', 'leaflet-bar locate-ctrl-btn');
             btn.id = 'areaSelectBtn';
-            btn.innerHTML = '<i class="fa-solid fa-vector-square"></i>';
-            btn.title = "Seleziona un'area da esportare";
+            btn.innerHTML = '<i class="fa-solid fa-draw-polygon"></i>';
+            btn.title = "Seleziona un'area (poligono) da esportare";
             L.DomEvent.disableClickPropagation(btn);
             L.DomEvent.on(btn, 'click', toggleAreaSelect);
             return btn;
@@ -2540,28 +2540,91 @@ function setupAreaSelect() {
     });
     new AreaControl().addTo(map);
 
-    let start = null;
-
-    map.on('mousedown', e => {
+    // Click sulla mappa → aggiunge un vertice al poligono in costruzione.
+    map.on('click', e => {
         if (!state.areaSelectMode) return;
-        if (e.originalEvent.button !== 0) return;
-        start = e.latlng;
-        clearAreaSelect();
-        state.areaRect = L.rectangle([start, start], {
+        _addAreaVertex(e.latlng);
+    });
+    // Movimento del mouse → "elastico": anteprima del lato verso il cursore.
+    map.on('mousemove', e => {
+        if (!state.areaSelectMode || state.areaClosed || state.areaVertices.length === 0) return;
+        _redrawAreaDraft(e.latlng);
+    });
+}
+
+// Aggiunge un vertice; se il click è sul primo vertice (con ≥3 punti) chiude l'area.
+function _addAreaVertex(latlng) {
+    if (state.areaClosed) clearAreaSelect();
+    if (state.areaVertices.length >= 3) {
+        const p0 = state.map.latLngToContainerPoint(state.areaVertices[0]);
+        const pc = state.map.latLngToContainerPoint(latlng);
+        if (p0.distanceTo(pc) < 14) { closeAreaPolygon(); return; }
+    }
+    state.areaVertices.push(latlng);
+    _redrawAreaDraft();
+    updateAreaPanel();
+}
+
+// Ridisegna il poligono in costruzione (+ eventuale vertice "elastico" sotto al cursore)
+// e i pallini dei vertici. Il primo vertice è cliccabile per chiudere l'area.
+function _redrawAreaDraft(cursorLatLng) {
+    const pts = state.areaVertices.slice();
+    if (cursorLatLng) pts.push(cursorLatLng);
+
+    if (state.areaDraft) { state.map.removeLayer(state.areaDraft); state.areaDraft = null; }
+    if (pts.length >= 2) {
+        state.areaDraft = L.polygon(pts, {
             color: '#1a5276', weight: 2, fillColor: '#1a5276', fillOpacity: 0.1,
             dashArray: '5,5', interactive: false
-        }).addTo(map);
+        }).addTo(state.map);
+    }
+
+    state.areaMarkers.forEach(m => state.map.removeLayer(m));
+    state.areaMarkers = state.areaVertices.map((v, i) => {
+        const first = i === 0;
+        const m = L.circleMarker(v, {
+            radius: first ? 6 : 4, color: '#1a5276', weight: 2,
+            fillColor: first ? '#ffffff' : '#1a5276', fillOpacity: 1,
+            interactive: first
+        });
+        if (first) {
+            m.on('click', ev => {
+                L.DomEvent.stop(ev);
+                if (state.areaVertices.length >= 3) closeAreaPolygon();
+            });
+            m.bindTooltip("Clicca per chiudere l'area", { direction: 'top' });
+        }
+        return m.addTo(state.map);
     });
-    map.on('mousemove', e => {
-        if (!state.areaSelectMode || !start || !state.areaRect) return;
-        state.areaRect.setBounds(L.latLngBounds(start, e.latlng));
-    });
-    map.on('mouseup', e => {
-        if (!state.areaSelectMode || !start) return;
-        const bounds = L.latLngBounds(start, e.latlng);
-        start = null;
-        finalizeAreaSelect(bounds);
-    });
+}
+
+// Chiude il poligono e seleziona gli alberi interni.
+function closeAreaPolygon() {
+    if (state.areaVertices.length < 3) {
+        showStatus("Servono almeno 3 punti per chiudere l'area", 'warning');
+        return;
+    }
+    if (state.areaDraft) { state.map.removeLayer(state.areaDraft); state.areaDraft = null; }
+    state.areaMarkers.forEach(m => state.map.removeLayer(m));
+    state.areaMarkers = [];
+    state.areaPoly = L.polygon(state.areaVertices, {
+        color: '#1a5276', weight: 2, fillColor: '#1a5276', fillOpacity: 0.12, interactive: false
+    }).addTo(state.map);
+    state.areaClosed = true;
+    finalizeAreaSelect(state.areaVertices);
+}
+
+// Test punto-in-poligono (ray casting). poly: array di [lat, lng].
+function _pointInPolygon(lat, lng, poly) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const yi = poly[i][0], xi = poly[i][1];
+        const yj = poly[j][0], xj = poly[j][1];
+        const intersect = ((yi > lat) !== (yj > lat)) &&
+            (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+    }
+    return inside;
 }
 
 function toggleAreaSelect() {
@@ -2572,13 +2635,15 @@ function toggleAreaSelect() {
     const mapEl = state.map.getContainer();
     if (state.areaSelectMode) {
         state.map.dragging.disable();
+        state.map.doubleClickZoom.disable();
         mapEl.classList.add('area-select-cursor');
         if (btn)   btn.classList.add('active');
         if (panel) panel.style.display = 'flex';
         updateAreaPanel();
-        showStatus("Trascina sulla mappa per selezionare un'area", 'info');
+        showStatus("Clicca sulla mappa per disegnare l'area; clicca sul primo punto (o «Chiudi») per completarla", 'info');
     } else {
         state.map.dragging.enable();
+        state.map.doubleClickZoom.enable();
         mapEl.classList.remove('area-select-cursor');
         if (btn)   btn.classList.remove('active');
         if (panel) panel.style.display = 'none';
@@ -2587,16 +2652,25 @@ function toggleAreaSelect() {
 }
 
 function clearAreaSelect() {
-    if (state.areaRect && state.map) { state.map.removeLayer(state.areaRect); }
-    state.areaRect = null;
+    if (state.map) {
+        if (state.areaDraft) state.map.removeLayer(state.areaDraft);
+        if (state.areaPoly)  state.map.removeLayer(state.areaPoly);
+        state.areaMarkers.forEach(m => state.map.removeLayer(m));
+    }
+    state.areaDraft = null;
+    state.areaPoly = null;
+    state.areaMarkers = [];
+    state.areaVertices = [];
+    state.areaClosed = false;
     state.areaSelectedIds = [];
     updateAreaPanel();
 }
 
-function finalizeAreaSelect(bounds) {
+function finalizeAreaSelect(vertices) {
+    const poly = vertices.map(v => [v.lat, v.lng]);
     const inside = (state.mapTrees || []).filter(t =>
         t.latitude && t.longitude &&
-        bounds.contains([parseFloat(t.latitude), parseFloat(t.longitude)])
+        _pointInPolygon(parseFloat(t.latitude), parseFloat(t.longitude), poly)
     );
     state.areaSelectedIds = inside.map(t => t.id);
     updateAreaPanel();
