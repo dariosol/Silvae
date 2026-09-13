@@ -185,22 +185,52 @@ ponte con QGIS utilizzabile su dati veri e non solo su dimostrazioni.
 
 ### B1. Aree e popolamenti come entità di primo livello
 
-Poligoni: parchi, giardini scolastici, popolamenti, lotti di gara. Importarli
-e legarci gli alberi.
+Poligoni con un nome: parchi, giardini scolastici, viali, popolamenti, lotti
+di gara. Un livello **tra il comune e il singolo albero**, che oggi non
+esiste ed è proprio quello in cui l'agronomo lavora.
 
-**Perché**: sblocca le statistiche per area (le stesse già fatte a livello di
-comune, ma per parco), l'assegnazione dei lavori e — soprattutto — il
-collegamento naturale con il **TRG-P**, che è un protocollo *per popolamenti*
-e che è già implementato in
-[`tools/trg_p_calculator.py`](tools/trg_p_calculator.py) senza alcuna
-interfaccia.
+**Non presuppone QGIS.** Il poligono può arrivare da tre origini, in
+quest'ordine di importanza:
 
-**Cosa serve**: il poligono come GeoJSON o WKT in una colonna di testo; il
-punto-nel-poligono in Python con le stesse venti righe già scritte in
-JavaScript. **Non** usare `shapely`: dipende da GEOS compilato e ripropone il
-problema di PostGIS.
+1. **Disegnato in Silvae.** Lo strumento c'è già: la *selezione per area*
+   sulla mappa disegna un poligono e calcola gli alberi contenuti
+   (`_pointInPolygon` in [`frontend/app.js`](frontend/app.js)). Oggi quel
+   poligono vive nella sessione e sparisce. B1 è, in sostanza, un pulsante
+   **«Salva come area»** che gli dà un nome e lo mette nel database.
+2. **Importato** da `.gpkg`/GeoJSON, per chi i perimetri li ha già in QGIS:
+   stesso meccanismo del tab Importa, con geometria poligonale invece che
+   punti. È una porta in più, non un prerequisito.
+3. **Proposto da fonti pubbliche.** OpenStreetMap ha già i poligoni di
+   parchi, giardini e aree verdi (la stessa fonte usata per la geocodifica):
+   un «proponi aree da OSM per questo comune» fa partire un comune nuovo con
+   le aree già pronte. Da fare dopo, senza librerie GIS.
 
-**Sforzo**: una settimana.
+**Il caso concreto**: nel censimento di Bra
+(`file_da_importare/CENSIMENTO COMPLETO CON COORD.gpkg`) la colonna
+`_LOCALITA'` ha 72 valori — Piazza Roma, Giardino Rocca, Viale Rimembranze…
+*Quelle sono le aree*, ma come testo libero, quindi con doppioni ortografici
+(`V.le  Madonna fiori` / `Viale Maddonna dei Fiori`). Un poligono disegnato
+una volta assegna gli alberi per posizione e sostituisce l'etichetta a mano.
+
+**Perché**: sblocca le statistiche per area (gli stessi chip di
+rischio/condizione già fatti a livello di comune, ma «per il Giardino della
+Rocca»), filtri/export/schede «tutti gli alberi di quest'area» senza
+ridisegnare il poligono ogni volta, l'assegnazione dei lavori e — soprattutto
+— il collegamento naturale con il **TRG-P**, che è un protocollo *per
+popolamenti* ed è già implementato in
+[`tools/trg_p_calculator.py`](tools/trg_p_calculator.py) senza avere un
+oggetto a cui agganciarsi.
+
+**Cosa serve**: tabella `area` (nome, comune, poligono come GeoJSON in una
+colonna di testo, note); il punto-nel-poligono in Python con le stesse venti
+righe già scritte in JavaScript, calcolato al salvataggio dell'area e
+all'inserimento/spostamento di un albero; filtro per area nel tab Alberi e
+sulla mappa; import poligonale opzionale. **Non** usare `shapely`: dipende
+da GEOS compilato e ripropone il problema di PostGIS. Per qualche migliaio di
+alberi e qualche decina di aree il calcolo in Python è istantaneo.
+
+**Sforzo**: una settimana per disegno + salvataggio + filtri + statistiche;
+l'import poligonale e la proposta da OSM sono aggiunte separate.
 
 ### B2. Filari
 
