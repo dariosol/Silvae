@@ -37,6 +37,7 @@ from tools.ord_calculator import (
     calc_ecological_value,
 )
 from tools import report_templates as report_tpl
+from tools import palette
 
 # -----------------------
 # Configuration
@@ -1946,13 +1947,14 @@ def export_gpkg():
 # -----------------------
 # Export GPX (waypoint per GPS / QGIS)
 # -----------------------
-_RISK_SEVERITY = {'accettabile': 1, 'alarp': 2, 'per accordo': 3, 'inaccettabile': 4}
+# Ordine di gravità delle categorie: le chiavi sono quelle di tools/palette.py.
+_RISK_SEVERITY = {e['key']: i for i, e in enumerate(palette.RISK) if e['key'] != 'na'}
 
 def _risk_category(desc):
-    """Descrizione ARETE → categoria; stessa logica di riskStatCategory() nel frontend."""
+    """Descrizione ARETE → chiave di palette.RISK; stessa logica di riskStatCategory() nel frontend."""
     d = (desc or '').lower()
     if not d or 'non determinato' in d: return None
-    if 'per accordo' in d:               return 'per accordo'
+    if 'per accordo' in d:               return 'accordo'
     if 'inaccettabile' in d:             return 'inaccettabile'
     if 'alarp' in d:                     return 'alarp'
     if 'largamente accettabile' in d:    return 'accettabile'
@@ -1960,7 +1962,8 @@ def _risk_category(desc):
     return None
 
 def _worst_risk(t):
-    """Categoria di rischio peggiore della fase attuale (rami/tronco/colletto/zolla), o ''."""
+    """Chiave della categoria di rischio peggiore della fase attuale
+    (rami/tronco/colletto/zolla), o '' se non calcolato."""
     if not t.rischio: return ''
     try: att = json.loads(t.rischio).get('attuale') or {}
     except Exception: return ''
@@ -1971,6 +1974,11 @@ def _worst_risk(t):
             worst = cat
     return worst or ''
 
+def _risk_label(key):
+    """Etichetta leggibile di una chiave di palette.RISK ('' se vuota)."""
+    e = palette.by_key('risk', key) if key else None
+    return e['label'] if e else ''
+
 # Attributi scritti in <extensions> di ogni waypoint (nome tag, getter).
 # QGIS li legge come campi del layer; l'import li riconosce per nome.
 _GPX_EXT_FIELDS = [
@@ -1980,7 +1988,7 @@ _GPX_EXT_FIELDS = [
     ('condition',   lambda t: t.condition if t.condition != '—' else ''),
     ('cpc',         lambda t: t.cpc),
     ('address',     lambda t: t.address),
-    ('rischio',     _worst_risk),
+    ('rischio',     lambda t: _risk_label(_worst_risk(t))),
     ('next_check',  lambda t: t.next_check.strftime('%d/%m/%Y') if t.next_check else ''),
     ('comments',    lambda t: t.comments),
 ]
@@ -2013,7 +2021,7 @@ def export_gpx():
         ET.SubElement(wpt, f'{{{NS}}}name').text = t.custom_id or ''
         if t.species and t.species != 'Sconosciuta':
             ET.SubElement(wpt, f'{{{NS}}}cmt').text = t.species
-        worst = _worst_risk(t)
+        worst = _risk_label(_worst_risk(t))
         desc = ' | '.join(x for x in (
             (t.species if t.species != 'Sconosciuta' else ''),
             (f'Condizione: {t.condition}' if t.condition and t.condition != '—' else ''),
@@ -2589,6 +2597,18 @@ def voice_intent():
 # -----------------------
 # Frontend static serving
 # -----------------------
+# Tavolozza colori (tools/palette.py) come variabili CSS: caricata da index.html
+# prima di style.css, quindi senza autenticazione.
+@app.route('/palette.css')
+def palette_css():
+    resp = app.response_class(palette.css_vars(), mimetype='text/css')
+    resp.headers['Cache-Control'] = 'no-cache'
+    return resp
+
+@app.route('/palette', methods=['GET'])
+def palette_json():
+    return jsonify(palette.as_dict())
+
 @app.route('/')
 def serve_index():
     return send_from_directory('frontend', 'index.html')

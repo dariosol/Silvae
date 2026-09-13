@@ -87,6 +87,7 @@ tree_project/
 │   ├── lookup_tables.py        # Tabelle di lookup (specie, patologie, prescrizioni, ...)
 │   ├── dropdowns_ord.py        # Valori dei menu a tendina ORD
 │   ├── dropdowns_trg_p.py      # Valori dei menu a tendina TRG-P
+│   ├── palette.py              # Colori di rischio e condizione: UNICA fonte (webapp, mappa, QGIS)
 │   └── report_templates.py     # Registro dei template di scheda (ARETE .xlsx, base HTML)
 ├── Schede_Rilevamento_ARETE/
 │   └── Schede_Rilevamento_ARETE_DEMO_ver.2.0.xlsm   # Template ufficiale della scheda
@@ -361,6 +362,21 @@ Valori già in forma testuale (es. file esportati da Silvae Pro) vengono lasciat
 
 ---
 
+## Colori di rischio e condizione (palette)
+
+Tutti i colori che rappresentano una **classe di rischio ARETE** o una **condizione VTA/CPC** — badge, chip statistici, bordo delle righe, marker sulla mappa — sono definiti **una volta sola** in [`tools/palette.py`](tools/palette.py). Per ciascuna categoria ci sono tre valori: `main` (colore pieno: marker, pallini, simboli QGIS), `fg` e `bg` (testo e sfondo dei badge).
+
+Il flusso è:
+
+1. `GET /palette.css` genera un blocco `:root { --risk-<chiave>, --risk-<chiave>-fg, --risk-<chiave>-bg, --cond-<chiave>, … }` dalla palette; [`index.html`](frontend/index.html) lo carica **prima** di `style.css`.
+2. [`style.css`](frontend/style.css) usa solo quelle variabili (classi `.cb-*`, `.risk-*`, `.tr-*`, `.cond-dot`, `.tl-dot-*`) — nessun esadecimale per rischio/condizione.
+3. [`app.js`](frontend/app.js) le legge con `paletteVar()` / `condColor()` / `riskColors()` per i marker Leaflet e i colori inline.
+4. `GET /palette` restituisce la stessa tavolozza in JSON, per strumenti esterni.
+
+Le chiavi delle categorie (`accettabile`, `alarp`, `accordo`, `inaccettabile`, `na`; `good`, `buono`, `fair`, `poor`, `other`) sono le stesse usate da `riskStatCategory()`/`condCategory()` nel frontend e da `_risk_category()` in `app.py`. **Per cambiare un colore si modifica solo `palette.py`**: webapp e mappa lo ricevono al ricaricamento, e lo stile QGIS (quando disponibile) sarà generato dagli stessi valori.
+
+---
+
 ## Statistiche della vista
 
 Sopra la tabella del tab **Alberi** una barra riassume gli alberi **attualmente visibili** (quindi dopo i filtri per ID, indirizzo e "Vicino a me", su tutte le pagine — non solo quella corrente).
@@ -458,6 +474,13 @@ Stesso filtro per ruolo e stessa selezione `ids` degli export (vedi [Schede di r
 | `POST` | `/test_geocode` | Geocodifica un indirizzo → coordinate |
 | `POST` | `/reverse_geocode` | Coordinate → indirizzo e città |
 | `POST` | `/api/voice_intent` | Riconosce l'intento da un trascritto vocale (Groq) |
+
+### Palette
+
+| Metodo | Endpoint | Descrizione |
+|--------|----------|-------------|
+| `GET` | `/palette.css` | Variabili CSS `--risk-*` / `--cond-*` generate da [`tools/palette.py`](tools/palette.py) (senza autenticazione) |
+| `GET` | `/palette` | La stessa tavolozza in JSON |
 
 ---
 

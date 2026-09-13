@@ -586,11 +586,11 @@ th.sort-active .sort-ico { opacity: 1; color: var(--g700); }
 }
 
 /* condition left-border */
-.tr-good  td:first-child { border-left: 4px solid #2d6a4f; }
-.tr-buono td:first-child { border-left: 4px solid #52b788; }
-.tr-fair  td:first-child { border-left: 4px solid #e67e22; }
-.tr-poor  td:first-child { border-left: 4px solid #c0392b; }
-.tr-other td:first-child { border-left: 4px solid #adb5bd; }
+.tr-good  td:first-child { border-left: 4px solid var(--cond-good); }
+.tr-buono td:first-child { border-left: 4px solid var(--cond-buono); }
+.tr-fair  td:first-child { border-left: 4px solid var(--cond-fair); }
+.tr-poor  td:first-child { border-left: 4px solid var(--cond-poor); }
+.tr-other td:first-child { border-left: 4px solid var(--cond-other); }
 
 .id-chip {
   font-family: 'Courier New', monospace;
@@ -622,11 +622,13 @@ th.sort-active .sort-ico { opacity: 1; color: var(--g700); }
   font-size: 11px; font-weight: 700;
   text-transform: uppercase; letter-spacing: .4px;
 }
-.cb-good  { background: #d8f3dc; color: #1b5e2a; }
-.cb-buono { background: #eaf7ef; color: #2d6a4f; }
-.cb-fair  { background: #ffe5cc; color: #9a4a06; }
-.cb-poor  { background: #f8d7da; color: #842029; }
-.cb-other { background: #e9ecef; color: #495057; }
+/* Colori rischio/condizione: variabili --risk-* / --cond-* da palette.css
+   (generato da tools/palette.py) — non inserire esadecimali qui. */
+.cb-good  { background: var(--cond-good-bg);  color: var(--cond-good-fg); }
+.cb-buono { background: var(--cond-buono-bg); color: var(--cond-buono-fg); }
+.cb-fair  { background: var(--cond-fair-bg);  color: var(--cond-fair-fg); }
+.cb-poor  { background: var(--cond-poor-bg);  color: var(--cond-poor-fg); }
+.cb-other { background: var(--cond-other-bg); color: var(--cond-other-fg); }
 
 .act-cell { display: flex; gap: 5px; justify-content: flex-end; }
 
@@ -653,11 +655,11 @@ th.sort-active .sort-ico { opacity: 1; color: var(--g700); }
   flex-shrink: 0;
   vertical-align: middle;
 }
-.cond-dot.dot-good  { background: #2d6a4f; }
-.cond-dot.dot-buono { background: #52b788; }
-.cond-dot.dot-fair  { background: #e67e22; }
-.cond-dot.dot-poor  { background: #c0392b; }
-.cond-dot.dot-other { background: #adb5bd; }
+.cond-dot.dot-good  { background: var(--cond-good); }
+.cond-dot.dot-buono { background: var(--cond-buono); }
+.cond-dot.dot-fair  { background: var(--cond-fair); }
+.cond-dot.dot-poor  { background: var(--cond-poor); }
+.cond-dot.dot-other { background: var(--cond-other); }
 
 /* ── Mobile sort bar ── */
 .mobile-sort-bar {
@@ -708,11 +710,11 @@ th.sort-active .sort-ico { opacity: 1; color: var(--g700); }
 .tree-card-detail-grid i { width: 16px; color: var(--g600); }
 
 /* condition left accent on cards */
-.tr-good  .tree-card-main { border-left: 4px solid #2d6a4f; }
-.tr-buono .tree-card-main { border-left: 4px solid #52b788; }
-.tr-fair  .tree-card-main { border-left: 4px solid #e67e22; }
-.tr-poor  .tree-card-main { border-left: 4px solid #c0392b; }
-.tr-other .tree-card-main { border-left: 4px solid #adb5bd; }
+.tr-good  .tree-card-main { border-left: 4px solid var(--cond-good); }
+.tr-buono .tree-card-main { border-left: 4px solid var(--cond-buono); }
+.tr-fair  .tree-card-main { border-left: 4px solid var(--cond-fair); }
+.tr-poor  .tree-card-main { border-left: 4px solid var(--cond-poor); }
+.tr-other .tree-card-main { border-left: 4px solid var(--cond-other); }
 
 @media (max-width: 1024px) {
   .tbl-wrap { display: none; }
@@ -849,11 +851,11 @@ textarea.fc { resize: vertical; min-height: 72px; }
   z-index: 1;
   border: 2.5px solid #fff;
 }
-.tl-dot-good  { background: var(--g800); box-shadow: 0 0 0 2px var(--g300); }
-.tl-dot-buono { background: #52b788;    box-shadow: 0 0 0 2px #b7e4c7; }
-.tl-dot-fair  { background: #e67e22;    box-shadow: 0 0 0 2px #fde8c8; }
-.tl-dot-poor  { background: #c0392b;    box-shadow: 0 0 0 2px #f5c6cb; }
-.tl-dot-other { background: #adb5bd;    box-shadow: 0 0 0 2px #dee2e6; }
+.tl-dot-good  { background: var(--cond-good);  box-shadow: 0 0 0 2px var(--cond-good-bg); }
+.tl-dot-buono { background: var(--cond-buono); box-shadow: 0 0 0 2px var(--cond-buono-bg); }
+.tl-dot-fair  { background: var(--cond-fair);  box-shadow: 0 0 0 2px var(--cond-fair-bg); }
+.tl-dot-poor  { background: var(--cond-poor);  box-shadow: 0 0 0 2px var(--cond-poor-bg); }
+.tl-dot-other { background: var(--cond-other); box-shadow: 0 0 0 2px var(--cond-other-bg); }
 
 .tl-card {
   flex: 1;
@@ -919,10 +921,12 @@ textarea.fc { resize: vertical; min-height: 72px; }
   margin: 0 4px 6px 0;
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.risk-high   { background: #fde8e8; color: #c0392b; }
-.risk-medium { background: #fef3cd; color: #856404; }
-.risk-low    { background: #d4edda; color: #2d6a4f; }
-.risk-unknown{ background: #e9ecef; color: #6c757d; }
+/* Una classe per categoria di rischio (chiavi di tools/palette.py) */
+.risk-accettabile   { background: var(--risk-accettabile-bg);   color: var(--risk-accettabile-fg); }
+.risk-alarp         { background: var(--risk-alarp-bg);         color: var(--risk-alarp-fg); }
+.risk-accordo       { background: var(--risk-accordo-bg);       color: var(--risk-accordo-fg); }
+.risk-inaccettabile { background: var(--risk-inaccettabile-bg); color: var(--risk-inaccettabile-fg); }
+.risk-na            { background: var(--risk-na-bg);            color: var(--risk-na-fg); }
 
 /* Footer row with inspector + expand button */
 .tl-footer-row {
@@ -1088,8 +1092,7 @@ textarea.fc { resize: vertical; min-height: 72px; }
   cursor: pointer;
 }
 .stat-clear:hover { background: var(--g100); color: var(--g800); }
-.stat-accordo { background: #ffe5cc; color: #9a4a06; }
-.stat-na      { background: #e9ecef; color: #495057; }
+.stat-na      { background: var(--risk-na-bg); color: var(--risk-na-fg); }
 
 @media (max-width: 700px) {
   .tree-stats-bar { gap: 6px 12px; padding: 8px 12px; }

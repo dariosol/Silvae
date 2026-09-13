@@ -456,17 +456,8 @@ function renderRiskResults(data) {
     if (!box) return;
     const labels = {rami:'Rami/Branche', tronco:'Tronco/Castello', colletto:'Colletto', zolla:'Zolla radicale'};
 
-    // Colour map shared with rischioBadge
-    const colour = desc => {
-        if (!desc || desc === 'SOSPESO') return {fg:'#6b7280', bg:'#f3f4f6'};
-        if (desc.includes('inaccettabile') || desc.includes('imposto a terzi'))
-            return {fg:'#dc2626', bg:'#fef2f2'};
-        if (desc.includes('per accordo') || desc.includes('ALARP'))
-            return {fg:'#d97706', bg:'#fffbeb'};
-        if (desc.includes('tollerabile'))
-            return {fg:'#16a34a', bg:'#f0fdf4'};
-        return {fg:'#2563eb', bg:'#eff6ff'};  // largamente accettabile
-    };
+    // Colori dalla palette (tools/palette.py), stessa categoria dei chip statistici
+    const colour = desc => riskColors(riskStatCategory(desc));
 
     const html = ['attuale','residuo'].map(phase => {
         const d = data[phase];
@@ -483,7 +474,7 @@ function renderRiskResults(data) {
             if (!e) return '';
             const c = colour(e.risk_description);
             const ratio = e.risk_ratio === 'SOSPESO'
-                ? `<span style="color:#6b7280;font-weight:600;">SOSPESO</span>`
+                ? `<span style="color:${riskColors(null).fg};font-weight:600;">SOSPESO</span>`
                 : `<span style="font-weight:700;font-size:15px;color:${c.fg};">${e.risk_ratio}</span>`;
             const bip = `<span style="font-size:10px;color:var(--text-muted);margin-left:4px;">B${e.bersaglio_class}·I${e.impulso_class}·P${e.pericolo_class}</span>`;
             const plusbers = (e.risk_ratio_plusbers && e.risk_ratio_plusbers !== e.risk_ratio_1bers)
@@ -1332,10 +1323,10 @@ function condDot(cond) {
 // in due gruppi separati, non fusi in un'unica scala.
 
 const RISK_STATS = [
-    { key: 'accettabile',   label: 'Accettabile',   cls: 'risk-low',     hint: 'rischio largamente accettabile' },
-    { key: 'alarp',         label: 'ALARP',         cls: 'risk-medium',  hint: 'rischio tollerabile / ALARP' },
-    { key: 'accordo',       label: 'Per accordo',   cls: 'stat-accordo', hint: 'tollerabile per accordo, inaccettabile se imposto a terzi' },
-    { key: 'inaccettabile', label: 'Inaccettabile', cls: 'risk-high',    hint: 'rischio inaccettabile — intervento necessario' },
+    { key: 'accettabile',   label: 'Accettabile',   cls: 'risk-accettabile',   hint: 'rischio largamente accettabile' },
+    { key: 'alarp',         label: 'ALARP',         cls: 'risk-alarp',         hint: 'rischio tollerabile / ALARP' },
+    { key: 'accordo',       label: 'Per accordo',   cls: 'risk-accordo',       hint: 'tollerabile per accordo, inaccettabile se imposto a terzi' },
+    { key: 'inaccettabile', label: 'Inaccettabile', cls: 'risk-inaccettabile', hint: 'rischio inaccettabile — intervento necessario' },
 ];
 
 const COND_STATS = [
@@ -1831,7 +1822,7 @@ function openCoordCheck() {
     _ccTreeLayer.clearLayers();
     (state.allTrees || []).forEach(t => {
         if (!t.latitude || !t.longitude) return;
-        const color = COND_COLOR[condClass(t.condition)] || COND_COLOR['tr-other'];
+        const color = condColor(t.condition);
         L.circleMarker([parseFloat(t.latitude), parseFloat(t.longitude)], {
             radius: 5, fillColor: color, fillOpacity: 0.85,
             color: '#fff', weight: 1.5, interactive: false
@@ -2034,13 +2025,25 @@ function initMapAddressAutocomplete() {
     });
 }
 
-const COND_COLOR = {
-    'tr-good':  '#2d6a4f',
-    'tr-buono': '#52b788',
-    'tr-fair':  '#e67e22',
-    'tr-poor':  '#c0392b',
-    'tr-other': '#888888',
-};
+// ─── Palette ──────────────────────────────────────────────
+// I colori di rischio e condizione vivono in tools/palette.py, serviti come
+// variabili CSS da /palette.css: qui si leggono soltanto, mai esadecimali.
+
+const _paletteCache = {};
+function paletteVar(name) {
+    if (!(name in _paletteCache))
+        _paletteCache[name] = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return _paletteCache[name];
+}
+
+// Colore pieno del marker per la condizione dell'albero.
+function condColor(cond) { return paletteVar(`--cond-${condCategory(cond)}`); }
+
+// {main, fg, bg} per una categoria di rischio (null → 'na').
+function riskColors(key) {
+    const k = key || 'na';
+    return { main: paletteVar(`--risk-${k}`), fg: paletteVar(`--risk-${k}-fg`), bg: paletteVar(`--risk-${k}-bg`) };
+}
 
 function treeMarkerIcon() {
     return L.divIcon({
@@ -2082,7 +2085,7 @@ function _refreshMapMarkers() {
         const popup = `<strong>${t.custom_id}</strong><br><em>${t.species}</em><br>${condBadge(t.condition)}<br><span style="font-size:12px;color:#555">${t.address||t.city||''}</span><br><br><button class="btn btn-sm btn-primary" onclick="openEditForm(${t.id})"><i class="fa-solid fa-pen-to-square"></i> Modifica</button>`;
         let m;
         if (state.satelliteActive) {
-            const color = COND_COLOR[condClass(t.condition)] || COND_COLOR['tr-other'];
+            const color = condColor(t.condition);
             m = L.circleMarker([lat, lon], { radius: 5, fillColor: color, fillOpacity: 0.85, color: '#fff', weight: 1.5 });
         } else {
             m = L.marker([lat, lon], { icon: treeMarkerIcon(t) });
@@ -2185,14 +2188,7 @@ function rischioSeverity(desc) {
     return 0;
 }
 
-function rischioClass(desc) {
-    if (!desc) return 'risk-unknown';
-    if (desc.includes('inaccettabile')) return 'risk-high';
-    if (desc.includes('imposto a terzi')) return 'risk-high';
-    if (desc.includes('per accordo') || desc.includes('ALARP')) return 'risk-medium';
-    if (desc.includes('tollerabile')) return 'risk-low';
-    return 'risk-unknown';
-}
+function rischioClass(desc) { return 'risk-' + (riskStatCategory(desc) || 'na'); }
 
 function renderCardSummary(snap) {
     if (!snap) return '';
