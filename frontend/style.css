@@ -525,6 +525,8 @@ body {
 .btn-qgis:hover { background: #477a28; }
 .btn-gpkg { background: #4a5568; color: #fff; border-color: #4a5568; }
 .btn-gpkg:hover { background: #2d3748; }
+.btn-gpx  { background: #0e7490; color: #fff; border-color: #0e7490; }
+.btn-gpx:hover { background: #155e75; }
 
 /* ── Tree table card ── */
 .card {

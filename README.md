@@ -14,10 +14,10 @@ Applicazione web per il censimento e la valutazione del rischio degli alberi urb
 - **Valore ecologico**: stima di biomassa, CO₂ sequestrata, O₂ prodotto, intercettazione acqua e valore monetario (€)
 - **Statistiche della vista**: conteggio degli alberi visibili per classe di rischio ORD e per condizione VTA, con la quota di alberi non valutabili (NA); i contatori sono **cliccabili** e filtrano la lista
 - **Mappa interattiva** (Leaflet) con clustering, marker colorati per classe di rischio, ID albero nel popup e **selezione per area** (poligono disegnato sulla mappa) per esportare o generare le schede degli alberi inclusi
-- **Esportazione** in formato Excel (.xlsx) e GeoPackage (.gpkg), con scelta dei campi da esportare
+- **Esportazione** in formato Excel (.xlsx), GeoPackage (.gpkg) e waypoint GPX (.gpx), con scelta dei campi da esportare
 - **Schede di rilevamento ARETE** (foglio ORD): una scheda per albero generata dal **template ufficiale** `Schede_Rilevamento_ARETE_DEMO_ver.2.0.xlsm`, compilata coi dati del database e restituita in uno .zip con le cartelle `excel/` (.xlsx) e `pdf/` (se LibreOffice è disponibile sul server)
 - **Triage TRG-P** (popolamenti arborei): calcolatore di screening rapido con categoria di intervento 1–6 e valore ornamentale ([`tools/trg_p_calculator.py`](tools/trg_p_calculator.py)) — *modulo di calcolo pronto, non ancora esposto nell'interfaccia/API*
-- **Importazione** da file GeoPackage (.gpkg) — compatibile con i censimenti ARETE e con i file esportati dall'app, con anteprima e mappatura colonne
+- **Importazione** da file GeoPackage (.gpkg) o waypoint GPX (.gpx, es. rilievi GPS o esportati da QGIS) — compatibile con i censimenti ARETE e con i file esportati dall'app, con anteprima e mappatura colonne
 - **Input vocale** per la compilazione delle schede (Web Speech API + parsing dell'intento tramite Groq)
 - **Geocodifica** diretta e inversa degli indirizzi (Nominatim/OpenStreetMap) e autocompletamento dei comuni italiani
 - **Autenticazione JWT** multi-utente con tre ruoli (`superuser`, `city`, `user`) e reset password via email
@@ -293,8 +293,8 @@ web: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120 --preload
 | **Alberi** | Tabella degli alberi con ricerca, ordinamento, aggiunta/modifica/cancellazione, e **barra statistiche** con i conteggi per categoria (vedi [Statistiche della vista](#statistiche-della-vista)) |
 | **Mappa** | Mappa Leaflet con marker e clustering, filtri per città, ID albero nel popup e **selezione per area**: si disegna un poligono sulla mappa e si esportano/generano le schede degli alberi contenuti |
 | **Gestione** | Pannello amministratore: gestione utenti, città, agronomi, reset password |
-| **Esporta** | Esportazione in Excel (.xlsx) o GeoPackage (.gpkg) e **schede ARETE** — intera raccolta o selezione manuale, con **scelta dei campi da esportare** (esclusione singoli campi) |
-| **Importa** | Importazione da file .gpkg (censimenti esterni o file esportati dall'app) con anteprima, mappatura colonne e gestione conflitti (skip/update) |
+| **Esporta** | Esportazione in Excel (.xlsx), GeoPackage (.gpkg) o GPX (.gpx) e **schede ARETE** — intera raccolta o selezione manuale, con **scelta dei campi da esportare** (esclusione singoli campi) |
+| **Importa** | Importazione da file .gpkg o .gpx (censimenti esterni, rilievi GPS o file esportati dall'app) con anteprima, mappatura colonne e gestione conflitti (skip/update) |
 | **Algoritmo** | Documentazione tecnica del calcolo ARETE integrata nella webapp |
 
 ---
@@ -317,6 +317,16 @@ I template disponibili sono registrati in [`tools/report_templates.py`](tools/re
 | `scheda_base` | Scheda albero (base HTML) | HTML segnaposto, una pagina per albero |
 
 Le schede si generano dal tab **Esporta** (tutti gli alberi visibili o selezione manuale) oppure dalla **Mappa** tramite la selezione per area.
+
+---
+
+## Import / Export GPX
+
+Il formato GPX (waypoint) è il ponte con i GPS da campo, gli smartphone e QGIS (*Esporta → Salva come → GPX*). È gestito senza librerie esterne (`xml.etree`).
+
+**Import** (`POST /import/gpx`): ogni `<wpt>` diventa un albero. La mappatura automatica riconosce `lat`/`lon` (coordinate), `name` → ID albero, `cmt` → specie, `desc` → note; gli eventuali figli di `<extensions>` (attributi scritti da QGIS o da Silvae Pro) sono proposti come colonne aggiuntive nella finestra di mappatura, come per il GPKG. `ele` e `sym` vengono ignorati (non esiste un campo quota). Comune, conflitti (`skip`/`update`) e dedup per coordinate funzionano come per il GPKG.
+
+**Export** (`GET /export/gpx`): GPX 1.1 in WGS84, un `<wpt>` per albero con `name` = ID, `cmt` = specie, `desc` = riassunto leggibile (specie, condizione, CPC, classe di rischio, indirizzo, comune), `sym` = `Flag, Blue`, e in `<extensions>` i campi Silvae (`custom_id`, `city`, `species`, `condition`, `cpc`, `address`, `rischio`, `next_check`, `comments`) che QGIS mostra come attributi del layer. Nei file generati da Silvae (`creator="Silvae Pro"`) `cmt` e `desc` vengono ignorati alla reimportazione, perché derivati dai campi in `<extensions>`. Disponibile dal tab **Esporta**, dalla barra di selezione della tabella e dalla selezione per area sulla mappa.
 
 ---
 
@@ -428,6 +438,9 @@ Il calcolo è interamente lato client in [`frontend/app.js`](frontend/app.js) (`
 | `GET`  | `/export/gpkg/columns` | Nomi/tipi di default delle colonne del GPKG (per rinomina/esclusione in export) |
 | `POST` | `/import/gpkg/inspect` | Anteprima colonne e mappatura automatica di un .gpkg |
 | `POST` | `/import/gpkg` | Importa alberi da .gpkg (multipart: `file`, `city`, `on_conflict=skip\|update`) *(non consentito a `city`)* |
+| `GET`  | `/export/gpx` | Esporta alberi come waypoint GPX 1.1 (`?ids=` opzionale) — vedi [Import / Export GPX](#import--export-gpx) |
+| `POST` | `/import/gpx/inspect` | Anteprima colonne e mappatura automatica di un .gpx (stessa risposta di `/import/gpkg/inspect`) |
+| `POST` | `/import/gpx` | Importa alberi dai waypoint di un .gpx (stessi parametri di `/import/gpkg`) *(non consentito a `city`)* |
 
 ### Report — Schede albero
 

@@ -1714,6 +1714,60 @@ _GPKG_COLS = [
     ('prescrizioni_col',      'TEXT',    None,                                    'CSV:prescrizioni_col'),
 ]
 
+_GPX_WPT_TAGS = ('name', 'cmt', 'desc', 'ele', 'sym', 'type', 'time', 'src', 'link')
+
+def _xml_local(tag):
+    """'{ns}tag' → 'tag'."""
+    return tag.rsplit('}', 1)[-1]
+
+def _gpx_read_waypoints(f_or_path):
+    """Read the <wpt> of a GPX file (1.0 or 1.1, any namespace) and return
+    (cols, rows, 'waypoints') in the same shape as _gpkg_read_table(), so the
+    GPX import goes through the same column mapping and insert logic.
+    Columns: lat, lon, the standard child tags, plus the children of
+    <extensions> (e.g. the attributes QGIS or Silvae itself write there)."""
+    import xml.etree.ElementTree as ET
+    src = f_or_path.stream if hasattr(f_or_path, 'stream') else f_or_path
+    root = ET.parse(src).getroot()
+    if _xml_local(root.tag) != 'gpx':
+        raise ValueError('Il file non è un GPX (elemento radice diverso da <gpx>)')
+    # Nei file scritti da Silvae, <cmt> e <desc> sono derivati dai campi in
+    # <extensions>: ignorarli evita che il riassunto finisca nelle note.
+    derived = {'cmt', 'desc'} if (root.get('creator') or '').startswith('Silvae') else set()
+    cols, rows = ['lat', 'lon'], []
+    seen = set(cols)
+    for wpt in root.iter():
+        if _xml_local(wpt.tag) != 'wpt':
+            continue
+        row = {'lat': wpt.get('lat'), 'lon': wpt.get('lon')}
+        for child in wpt:
+            tag = _xml_local(child.tag)
+            if tag == 'extensions':
+                for ext in child.iter():
+                    if ext is child or len(ext):   # solo le foglie
+                        continue
+                    row[_xml_local(ext.tag)] = (ext.text or '').strip()
+            elif tag == 'link':
+                row['link'] = child.get('href') or ''
+            elif tag in derived:
+                continue
+            else:
+                row[tag] = (child.text or '').strip()
+        for k in row:
+            if k not in seen:
+                seen.add(k); cols.append(k)
+        rows.append(row)
+    if not rows:
+        raise ValueError('Nessun waypoint <wpt> trovato nel file GPX')
+    return cols, rows, 'waypoints'
+
+def _read_import_file(f):
+    """Dispatch on file extension: GPX → waypoints, everything else → GPKG."""
+    name = (f.filename or '').lower()
+    if name.endswith('.gpx'):
+        return _gpx_read_waypoints(f)
+    return _gpkg_read_table(f)
+
 def _gpkg_jlist(val):
     """DB JSON array → comma-separated string for GPKG storage."""
     if not val: return ''
@@ -1890,6 +1944,101 @@ def export_gpkg():
             except Exception: pass
 
 # -----------------------
+# Export GPX (waypoint per GPS / QGIS)
+# -----------------------
+_RISK_SEVERITY = {'accettabile': 1, 'alarp': 2, 'per accordo': 3, 'inaccettabile': 4}
+
+def _risk_category(desc):
+    """Descrizione ARETE → categoria; stessa logica di riskStatCategory() nel frontend."""
+    d = (desc or '').lower()
+    if not d or 'non determinato' in d: return None
+    if 'per accordo' in d:               return 'per accordo'
+    if 'inaccettabile' in d:             return 'inaccettabile'
+    if 'alarp' in d:                     return 'alarp'
+    if 'largamente accettabile' in d:    return 'accettabile'
+    if 'tollerabile' in d:               return 'alarp'
+    return None
+
+def _worst_risk(t):
+    """Categoria di rischio peggiore della fase attuale (rami/tronco/colletto/zolla), o ''."""
+    if not t.rischio: return ''
+    try: att = json.loads(t.rischio).get('attuale') or {}
+    except Exception: return ''
+    worst = None
+    for part in ('rami', 'tronco', 'colletto', 'zolla'):
+        cat = _risk_category((att.get(part) or {}).get('risk_description'))
+        if cat and (worst is None or _RISK_SEVERITY[cat] > _RISK_SEVERITY[worst]):
+            worst = cat
+    return worst or ''
+
+# Attributi scritti in <extensions> di ogni waypoint (nome tag, getter).
+# QGIS li legge come campi del layer; l'import li riconosce per nome.
+_GPX_EXT_FIELDS = [
+    ('custom_id',   lambda t: t.custom_id),
+    ('city',        lambda t: t.city),
+    ('species',     lambda t: t.species if t.species != 'Sconosciuta' else ''),
+    ('condition',   lambda t: t.condition if t.condition != '—' else ''),
+    ('cpc',         lambda t: t.cpc),
+    ('address',     lambda t: t.address),
+    ('rischio',     _worst_risk),
+    ('next_check',  lambda t: t.next_check.strftime('%d/%m/%Y') if t.next_check else ''),
+    ('comments',    lambda t: t.comments),
+]
+
+@app.route('/export/gpx', methods=['GET'])
+@auth_required
+def export_gpx():
+    """Waypoint GPX 1.1 (WGS84): <name> = ID albero, <cmt> = specie, <desc> =
+    riassunto leggibile, più i campi Silvae in <extensions>. Stesso filtro per
+    ruolo e stessa selezione `ids` degli altri export."""
+    import xml.etree.ElementTree as ET
+    trees = [t for t in _scoped_tree_query().order_by(Tree.custom_id).all()
+             if t.latitude is not None and t.longitude is not None]
+
+    NS = 'http://www.topografix.com/GPX/1/1'
+    SNS = 'https://silvae.pro/gpx/1'
+    ET.register_namespace('', NS)
+    ET.register_namespace('silvae', SNS)
+    root = ET.Element(f'{{{NS}}}gpx', {
+        'version': '1.1', 'creator': 'Silvae Pro',
+        'xmlns:xsi': 'http://www.w3.org/2001/XMLSchema-instance',
+        'xsi:schemaLocation': f'{NS} http://www.topografix.com/GPX/1/1/gpx.xsd',
+    })
+    meta = ET.SubElement(root, f'{{{NS}}}metadata')
+    ET.SubElement(meta, f'{{{NS}}}name').text = 'Silvae Pro — alberi'
+    ET.SubElement(meta, f'{{{NS}}}time').text = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+    for t in trees:
+        wpt = ET.SubElement(root, f'{{{NS}}}wpt', {'lat': f'{t.latitude:.9f}', 'lon': f'{t.longitude:.9f}'})
+        ET.SubElement(wpt, f'{{{NS}}}name').text = t.custom_id or ''
+        if t.species and t.species != 'Sconosciuta':
+            ET.SubElement(wpt, f'{{{NS}}}cmt').text = t.species
+        worst = _worst_risk(t)
+        desc = ' | '.join(x for x in (
+            (t.species if t.species != 'Sconosciuta' else ''),
+            (f'Condizione: {t.condition}' if t.condition and t.condition != '—' else ''),
+            (f'CPC: {t.cpc}' if t.cpc else ''),
+            (f'Rischio: {worst}' if worst else ''),
+            t.address or '', t.city or '',
+        ) if x)
+        if desc:
+            ET.SubElement(wpt, f'{{{NS}}}desc').text = desc
+        ET.SubElement(wpt, f'{{{NS}}}sym').text = 'Flag, Blue'
+        ET.SubElement(wpt, f'{{{NS}}}type').text = 'Albero'
+        ext = ET.SubElement(wpt, f'{{{NS}}}extensions')
+        for tag, getter in _GPX_EXT_FIELDS:
+            v = getter(t)
+            if v is not None and str(v).strip():
+                ET.SubElement(ext, f'{{{SNS}}}{tag}').text = str(v)
+
+    ET.indent(root)
+    buf = io.BytesIO()
+    ET.ElementTree(root).write(buf, encoding='utf-8', xml_declaration=True)
+    buf.seek(0)
+    return send_file(buf, download_name='alberi.gpx', as_attachment=True,
+                     mimetype='application/gpx+xml')
+
+# -----------------------
 # Report — Schede albero (PLACEHOLDER)
 # -----------------------
 
@@ -2006,7 +2155,7 @@ def _reverse_geocode_comune(lat, lon):
 
 _GPKG_FIELD_CANDIDATES = {
     'custom_id':          ['custom_id', 'name', '_numero', '_name', 'id_albero', 'numero'],
-    'species':            ['species', '_tassonomi', 'specie', 'nome_scientifico', 'taxon'],
+    'species':            ['species', '_tassonomi', 'specie', 'nome_scientifico', 'taxon', 'cmt'],
     'species_ita':        ['_nome ital', '_nome_ital', 'nome_italiano', 'nome_comune'],
     'condition':          ['condition', 'condizione', '_classe vt', '_classe_vt'],
     'cpc':                ['cpc', '_classe vt', '_classe_vt'],
@@ -2054,7 +2203,7 @@ _GPKG_FIELD_CANDIDATES = {
     'moltiplicatore':     ['moltiplicatore'],
     'monitoraggio':       ['monitoraggio'],
     'urgenza':            ['urgenza'],
-    'comments':           ['comments'],
+    'comments':           ['comments', 'desc'],
     'actions':            ['actions'],
     'conflitti_list':     ['conflitti'],
     'agenti_carie':       ['agenti_carie'],
@@ -2155,15 +2304,16 @@ def _gpkg_read_table(f_or_path):
             except Exception: pass
 
 @app.route('/import/gpkg/inspect', methods=['POST'])
+@app.route('/import/gpx/inspect', methods=['POST'])
 @auth_required
 def inspect_gpkg_route():
     f = request.files.get('file')
     if not f:
         return jsonify({'message': 'Nessun file inviato'}), 400
     try:
-        cols, rows, _ = _gpkg_read_table(f)
+        cols, rows, _ = _read_import_file(f)
     except Exception as e:
-        return jsonify({'message': f'Errore lettura GPKG: {e}'}), 400
+        return jsonify({'message': f'Errore lettura file: {e}'}), 400
 
     skip = {'fid', 'geom', 'geometry', 'the_geom', 'shape'}
     display_cols = [c for c in cols if c.lower() not in skip]
@@ -2180,6 +2330,7 @@ def inspect_gpkg_route():
     })
 
 @app.route('/import/gpkg', methods=['POST'])
+@app.route('/import/gpx', methods=['POST'])
 @auth_required
 def import_gpkg_route():
     if (denied := _city_readonly()): return denied
@@ -2203,9 +2354,9 @@ def import_gpkg_route():
         return jsonify({'message': 'Nessun file selezionato'}), 400
 
     try:
-        cols, rows, _ = _gpkg_read_table(f)
+        cols, rows, _ = _read_import_file(f)
     except Exception as e:
-        return jsonify({'message': f'Errore lettura GPKG: {e}'}), 400
+        return jsonify({'message': f'Errore lettura file: {e}'}), 400
 
     # --- Column detection ------------------------------------------------
     mapping_json = request.form.get('mapping')

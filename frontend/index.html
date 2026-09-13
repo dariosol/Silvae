@@ -287,6 +287,7 @@
           <span id="exportCount" style="font-size:13px;font-weight:600;color:#1d4ed8;"></span>
           <button class="btn btn-excel btn-sm" onclick="exportSelectedExcel()"><i class="fa-solid fa-file-excel"></i> Esporta Excel</button>
           <button class="btn btn-gpkg btn-sm" onclick="exportSelectedGPKG()"><i class="fa-solid fa-database"></i> Esporta GPKG</button>
+          <button class="btn btn-gpx btn-sm" onclick="exportSelectedGPX()"><i class="fa-solid fa-location-crosshairs"></i> Esporta GPX</button>
           <button class="btn btn-sm" style="background:#dc2626;color:#fff;border:none;" onclick="deleteSelectedTrees()"><i class="fa-solid fa-trash"></i> Elimina selezionati</button>
           <button class="btn btn-outline btn-sm" onclick="toggleExportMode()" style="margin-left:auto;"><i class="fa-solid fa-xmark"></i> Annulla</button>
         </div>
@@ -892,6 +893,7 @@
             <button class="btn btn-primary btn-sm" onclick="closeAreaPolygon()" id="areaCloseBtn" title="Chiudi il poligono e seleziona gli alberi"><i class="fa-solid fa-check"></i> Chiudi area</button>
             <button class="btn btn-excel btn-sm" onclick="exportAreaExcel()" id="areaExcelBtn" disabled><i class="fa-solid fa-file-excel"></i> Excel</button>
             <button class="btn btn-gpkg btn-sm" onclick="exportAreaGPKG()" id="areaGpkgBtn" disabled><i class="fa-solid fa-database"></i> GPKG</button>
+            <button class="btn btn-gpx btn-sm" onclick="exportAreaGPX()" id="areaGpxBtn" disabled><i class="fa-solid fa-location-crosshairs"></i> GPX</button>
             <button class="btn btn-outline btn-sm" onclick="exportAreaScheda()" id="areaSchedaBtn" disabled><i class="fa-solid fa-file-lines"></i> Schede</button>
             <button class="btn btn-outline btn-sm" onclick="clearAreaSelect()" title="Cancella selezione"><i class="fa-solid fa-eraser"></i></button>
             <button class="btn btn-outline btn-sm" onclick="toggleAreaSelect()" title="Esci dalla modalità selezione"><i class="fa-solid fa-xmark"></i></button>
@@ -990,6 +992,14 @@
               <button id="exportGPKGBtn" class="btn btn-gpkg"><i class="fa-solid fa-file-arrow-down"></i> Scarica .gpkg</button>
             </div>
           </div>
+          <div class="export-card">
+            <div class="export-card-icon" style="background:#0e7490;"><i class="fa-solid fa-location-crosshairs"></i></div>
+            <div class="export-card-body">
+              <h3>Waypoint GPS — GPX</h3>
+              <p>Un waypoint per albero (<code>name</code> = ID, <code>cmt</code> = specie) in formato <code>.gpx</code>: per il GPS da campo, il telefono o QGIS.</p>
+              <button id="exportGPXBtn" class="btn btn-gpx"><i class="fa-solid fa-file-arrow-down"></i> Scarica .gpx</button>
+            </div>
+          </div>
           <!-- PLACEHOLDER: schede albero (report) — struttura definitiva in arrivo -->
           <div class="export-card">
             <div class="export-card-icon" style="background:#b45309;"><i class="fa-solid fa-file-lines"></i></div>
@@ -1009,21 +1019,21 @@
     <section id="tab-import" class="tab-section">
       <div class="scroll-area">
         <h2 class="section-heading"><i class="fa-solid fa-upload"></i> Importa Dati</h2>
-        <p class="section-sub">Importa alberi da un file GeoPackage (.gpkg). I campi ARETE non presenti nel file potranno essere completati successivamente.</p>
+        <p class="section-sub">Importa alberi da un file GeoPackage (.gpkg) o da waypoint GPS (.gpx). I campi ARETE non presenti nel file potranno essere completati successivamente.</p>
         <div class="export-grid">
           <div class="export-card">
             <div class="export-card-icon" style="background:#7c3aed;"><i class="fa-solid fa-file-import"></i></div>
             <div class="export-card-body">
-              <h3>GeoPackage (.gpkg)</h3>
-              <p>Seleziona un file <code>.gpkg</code>. Le coordinate, la specie e la condizione vengono acquisite automaticamente dai campi disponibili.</p>
+              <h3>GeoPackage (.gpkg) o GPX (.gpx)</h3>
+              <p>Seleziona un file <code>.gpkg</code> oppure <code>.gpx</code> (waypoint: <code>name</code> → ID albero, <code>cmt</code> → specie). Le coordinate, la specie e la condizione vengono acquisite automaticamente dai campi disponibili.</p>
 
               <div id="importDropZone" style="border:2px dashed var(--border);border-radius:var(--r);padding:24px 16px;text-align:center;cursor:pointer;margin:12px 0;transition:border-color .2s,background .2s;">
                 <i class="fa-solid fa-cloud-arrow-up" style="font-size:28px;color:var(--text-muted);margin-bottom:8px;display:block;"></i>
-                <p style="font-size:13px;color:var(--text-muted);margin:0 0 10px;">Trascina il file <code>.gpkg</code> qui oppure</p>
+                <p style="font-size:13px;color:var(--text-muted);margin:0 0 10px;">Trascina il file <code>.gpkg</code> o <code>.gpx</code> qui oppure</p>
                 <label for="importFileInput" class="btn btn-outline btn-sm" style="cursor:pointer;">
                   <i class="fa-solid fa-folder-open"></i> Scegli file
                 </label>
-                <input type="file" id="importFileInput" accept=".gpkg" style="display:none;">
+                <input type="file" id="importFileInput" accept=".gpkg,.gpx" style="display:none;">
                 <p id="importFileName" style="margin:8px 0 0;font-size:12px;font-weight:600;color:var(--g700);"></p>
               </div>
 
@@ -1376,6 +1386,26 @@ rischio_finale   = lookup_inverso(probabilità_n)    ← foglio A, colonne AR:AS
       <button class="btn btn-gpkg btn-sm" onclick="confirmGpkgExport()">
         <i class="fa-solid fa-download"></i> Esporta
       </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modale: Esporta GPX (nome file) -->
+<div class="info-modal-overlay" id="gpxExportModal" onclick="if(event.target===this)closeGpxExport()">
+  <div class="info-modal" style="max-width:420px;padding:20px 20px 16px;">
+    <button class="info-modal-close" onclick="closeGpxExport()">&times;</button>
+    <h3 style="margin-bottom:4px;"><i class="fa-solid fa-location-crosshairs" style="color:#0e7490;margin-right:6px;"></i>Esporta GPX</h3>
+    <p style="font-size:12px;color:var(--text-muted);margin:0 0 14px;">Un waypoint per albero con coordinate WGS84, ID (<code>name</code>), specie (<code>cmt</code>) e i campi Silvae in <code>extensions</code>.</p>
+    <div style="margin-bottom:12px;">
+      <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px;">Nome del file</label>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <input id="gpxExportFilename" class="inp" type="text" value="alberi" style="flex:1;">
+        <span style="font-family:monospace;color:var(--text-muted);font-size:13px;">.gpx</span>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;">
+      <button class="btn btn-outline btn-sm" onclick="closeGpxExport()">Annulla</button>
+      <button class="btn btn-gpx btn-sm" onclick="confirmGpxExport()"><i class="fa-solid fa-file-arrow-down"></i> Scarica</button>
     </div>
   </div>
 </div>

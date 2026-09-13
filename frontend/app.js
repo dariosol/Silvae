@@ -2440,6 +2440,14 @@ const SILVAE_FIELDS = [
 
 let _importMapping = {};  // {gpkg_col: silvae_field}
 
+// 'gpkg' | 'gpx' in base all'estensione, null se non supportato.
+function _importKind(filename) {
+    const n = (filename || '').toLowerCase();
+    if (n.endsWith('.gpkg')) return 'gpkg';
+    if (n.endsWith('.gpx'))  return 'gpx';
+    return null;
+}
+
 function initImportDropZone() {
     const zone  = document.getElementById('importDropZone');
     const input = document.getElementById('importFileInput');
@@ -2462,14 +2470,16 @@ function initImportDropZone() {
         e.preventDefault();
         zone.style.borderColor = 'var(--border)'; zone.style.background = '';
         const file = e.dataTransfer.files[0];
-        if (file && file.name.endsWith('.gpkg')) setFile(file);
-        else showStatus('Il file deve essere in formato .gpkg', 'warning');
+        if (file && _importKind(file.name)) setFile(file);
+        else showStatus('Il file deve essere in formato .gpkg o .gpx', 'warning');
     });
 }
 
 async function openImportMapping() {
     const input = document.getElementById('importFileInput');
-    if (!input.files[0]) { showStatus('Seleziona prima un file .gpkg', 'warning'); return; }
+    if (!input.files[0]) { showStatus('Seleziona prima un file .gpkg o .gpx', 'warning'); return; }
+    const kind = _importKind(input.files[0].name);
+    if (!kind) { showStatus('Il file deve essere in formato .gpkg o .gpx', 'warning'); return; }
 
     const btn = document.getElementById('importSubmitBtn');
     btn.disabled = true;
@@ -2479,7 +2489,7 @@ async function openImportMapping() {
     fd.append('file', input.files[0]);
 
     try {
-        const res  = await fetch(`${API_BASE}/import/gpkg/inspect`, { method: 'POST', headers: authHeader(), body: fd });
+        const res  = await fetch(`${API_BASE}/import/${kind}/inspect`, { method: 'POST', headers: authHeader(), body: fd });
         const data = await res.json();
         if (!res.ok) { showStatus(data.message || 'Errore analisi file', 'danger'); return; }
 
@@ -2571,6 +2581,7 @@ async function _doImport(mapping) {
     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Importazione in corso…';
     result.style.display = 'none';
 
+    const kind = _importKind(input.files[0].name) || 'gpkg';
     const fd = new FormData();
     fd.append('file', input.files[0]);
     fd.append('city', city);
@@ -2578,7 +2589,7 @@ async function _doImport(mapping) {
     fd.append('mapping', JSON.stringify(mapping));
 
     try {
-        const res  = await fetch(`${API_BASE}/import/gpkg`, { method: 'POST', headers: authHeader(), body: fd });
+        const res  = await fetch(`${API_BASE}/import/${kind}`, { method: 'POST', headers: authHeader(), body: fd });
         const data = await res.json();
         if (!res.ok) {
             showStatus(data.message || 'Errore durante l\'importazione', 'danger');
@@ -2632,13 +2643,14 @@ async function _doImport(mapping) {
 // ─── Export ───────────────────────────────────────────────
 
 // Punto d'ingresso per tutti gli export.
-//   format: 'excel' | 'gpkg'
+//   format: 'excel' | 'gpkg' | 'gpx'
 //   ids:    array di id (esporta solo quelli) oppure null/[] per l'export completo
 //   defaultName: nome proposto, senza estensione
-//   Excel → chiede solo il nome file; GPKG → apre la finestra di rinomina chiavi.
+//   Excel → scelta campi; GPKG → rinomina chiavi; GPX → solo nome file.
 function downloadExport(format, ids, defaultName) {
     if (!state.token) { showStatus('Effettua prima il login', 'danger'); return; }
     if (format === 'gpkg') return openGpkgExportModal(ids || [], defaultName);
+    if (format === 'gpx')  return openGpxExportModal(ids || [], defaultName);
     return openExcelExportModal(ids || [], defaultName);
 }
 
@@ -2659,7 +2671,7 @@ function _safeFilename(name, defaultName, ext) {
 
 // Esegue il download vero e proprio (con eventuale mappa di rinomina per il GPKG).
 async function _performExport(format, ids, filename, renameObj, excludeArr) {
-    const ext = format === 'excel' ? 'xlsx' : 'gpkg';
+    const ext = { excel: 'xlsx', gpkg: 'gpkg', gpx: 'gpx' }[format];
     showStatus(`Preparazione ${ext.toUpperCase()}…`, 'info');
     const params = new URLSearchParams();
     if (ids && ids.length) params.set('ids', ids.join(','));
@@ -2813,6 +2825,25 @@ function confirmExcelExport() {
 
 function exportExcel() { return downloadExport('excel', null, 'alberi'); }
 function exportGPKG()  { return downloadExport('gpkg',  null, 'alberi'); }
+function exportGPX()   { return downloadExport('gpx',   null, 'alberi'); }
+
+// ─── Finestra export GPX: solo nome file ──────────────────
+
+function openGpxExportModal(ids, defaultName) {
+    state.gpxExportIds = ids || [];
+    document.getElementById('gpxExportFilename').value = defaultName || 'alberi';
+    document.getElementById('gpxExportModal').classList.add('open');
+}
+
+function closeGpxExport() {
+    document.getElementById('gpxExportModal').classList.remove('open');
+}
+
+function confirmGpxExport() {
+    const filename = _safeFilename(document.getElementById('gpxExportFilename').value, 'alberi', 'gpx');
+    closeGpxExport();
+    _performExport('gpx', state.gpxExportIds, filename);
+}
 
 // ─── Schede albero (report) — PLACEHOLDER ─────────────────
 // Carica l'elenco dei template nel <select> (una volta sola).
@@ -2865,6 +2896,11 @@ function exportAreaScheda() {
 function exportSelectedGPKG() {
     if (state.exportSelected.size === 0) { showStatus('Nessun albero selezionato', 'warning'); return; }
     return downloadExport('gpkg', [...state.exportSelected], 'alberi_selezione');
+}
+
+function exportSelectedGPX() {
+    if (state.exportSelected.size === 0) { showStatus('Nessun albero selezionato', 'warning'); return; }
+    return downloadExport('gpx', [...state.exportSelected], 'alberi_selezione');
 }
 
 // ─── Selezione area sulla mappa (rettangolo, stile Booking) ─
@@ -3029,9 +3065,11 @@ function updateAreaPanel() {
     if (countEl) countEl.textContent = n;
     const xls = document.getElementById('areaExcelBtn');
     const gpk = document.getElementById('areaGpkgBtn');
+    const gpx = document.getElementById('areaGpxBtn');
     const sch = document.getElementById('areaSchedaBtn');
     if (xls) xls.disabled = n === 0;
     if (gpk) gpk.disabled = n === 0;
+    if (gpx) gpx.disabled = n === 0;
     if (sch) sch.disabled = n === 0;
 }
 
@@ -3043,6 +3081,7 @@ function _areaExport(format) {
 
 function exportAreaExcel() { return _areaExport('excel'); }
 function exportAreaGPKG()  { return _areaExport('gpkg');  }
+function exportAreaGPX()   { return _areaExport('gpx');   }
 
 // ─── Status toast ─────────────────────────────────────────
 
@@ -3094,6 +3133,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initImportDropZone();
     document.getElementById('exportExcelBtn').addEventListener('click', exportExcel);
     document.getElementById('exportGPKGBtn').addEventListener('click', exportGPKG);
+    document.getElementById('exportGPXBtn').addEventListener('click', exportGPX);
     document.getElementById('exportSchedaBtn').addEventListener('click', exportScheda);
     loadReportTemplates();
     init();
