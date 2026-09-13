@@ -42,7 +42,7 @@ alcuni hanno già condizionato scelte di progetto.
 | **PostGIS non installabile** sul Postgres gestito di Railway | Nessun lavoro spaziale nel database. Le coordinate sono due `float` (`latitude`/`longitude`) e tutto il resto si fa altrove. |
 | **GDAL / GEOS non disponibili** sull'immagine di default | Niente `geopandas`, `shapely`, `fiona`. L'export GeoPackage è scritto a mano con `struct` e `sqlite3` in [`app.py`](app.py). |
 | **LibreOffice assente** | Le schede ARETE escono in `.xlsx`; la cartella `pdf/` dello zip resta vuota (già documentato nel README). |
-| **Il frontend carica tutti gli alberi del comune** in un colpo solo ([`frontend/app.js`](frontend/app.js), `loadTrees`) | Ricerca, ordinamento, selezione per area e statistiche funzionano in memoria. Regge qualche migliaio di alberi; è il vero limite di scala del progetto. |
+| **Il frontend carica tutti gli alberi visibili** in un colpo solo ([`frontend/app.js`](frontend/app.js), `fetchTrees`) | Al login il selettore è su «Tutti i comuni» e `/trees` viene chiamato senza filtro: per un agronomo con più comuni o per il superuser scarica *tutto*. Ricerca, ordinamento, selezione per area e statistiche funzionano in memoria. Regge qualche migliaio di alberi; è il vero limite di scala del progetto — vedi **P0**. |
 
 **Nota importante**: l'assenza di PostGIS *non* blocca nessuna delle proposte
 qui sotto. Il lavoro spaziale già oggi non passa dal database — la selezione
@@ -50,6 +50,63 @@ per area è un ray casting in JavaScript (`_pointInPolygon` in
 [`frontend/app.js`](frontend/app.js)). GeoJSON, GPX, QML e QLR sono formati di
 **serializzazione**: leggono due float e li impaginano. Non richiedono
 librerie, estensioni né immagini custom.
+
+---
+
+## P0 — Caricare gli alberi solo dopo aver scelto il comune
+
+*Priorità sopra tutto il resto: è il limite di scala reale, e la prima parte
+costa poche ore.*
+
+### Com'è oggi
+
+Al login `citySelect` vale `""` («Tutti i comuni») e `fetchTrees()` chiama
+`GET /trees` **senza filtro**: il server restituisce tutti gli alberi visibili
+al ruolo (tutti quelli dell'agronomo, tutti quelli del comune, *tutti quelli
+del database* per il superuser) e il browser li tiene in memoria. Il filtro
+per comune esiste già lato server (`?city=`), ma scatta solo quando l'utente
+cambia il selettore. Con il censimento di Bra (2 501 alberi) più altri comuni
+si superano subito le migliaia di righe, ognuna con il JSON completo di
+`rischio`, diagnosi e prescrizioni.
+
+### Proposta
+
+1. **Nessun caricamento finché non c'è un comune selezionato.** Al login il
+   tab Alberi mostra un invito («Seleziona un comune per vedere gli alberi»)
+   invece della lista; la mappa mostra il comune scelto. Si chiama `/trees`
+   solo con `?city=`.
+2. **Selezione automatica quando la scelta è obbligata**: se l'utente vede un
+   solo comune (il caso tipico di `city` e di molti agronomi) lo si seleziona
+   da soli, e l'esperienza resta quella di oggi.
+3. **Ricordare l'ultimo comune** scelto (`localStorage`), così al login
+   successivo si riparte da lì senza clic.
+4. **Pulsante «Mostra tutti»** per chi ne ha davvero bisogno (superuser,
+   agronomo che vuole la vista d'insieme): esplicito, con il conteggio
+   accanto («Mostra tutti · 4 120 alberi») così si sa cosa si sta chiedendo.
+
+### Cosa cambia nel codice
+
+Quasi tutto in [`frontend/app.js`](frontend/app.js): `fetchTrees()` esce
+subito se `citySelect` è vuoto e non è stato premuto «Mostra tutti»;
+`populateCities()` seleziona il comune unico o l'ultimo usato; le chiamate a
+`fetchTrees()` dopo import/aggiunta/eliminazione restano invariate perché
+lavorano già sul comune corrente. Lato server basta aggiungere un
+`GET /trees/count` (o un campo nella risposta di `/cities`) per il numero
+accanto a «Mostra tutti». Nessuna migrazione, nessuna nuova dipendenza.
+
+**Sforzo**: mezza giornata.
+
+### Cosa NON risolve, e quando servirà
+
+Dopo questo passo il carico è *per comune*: 2 500 alberi di Bra si caricano
+comunque tutti insieme, e va bene — ricerca, chip statistici e selezione per
+area continuano a lavorare in memoria e restano istantanei. Il passo
+successivo, da fare solo quando un singolo comune supera le decine di
+migliaia di alberi, è strutturale: paginazione lato server, risposta di
+`/trees` «leggera» (senza i JSON di rischio/diagnosi, caricati sul dettaglio)
+e marker calcolati per bounding box della mappa. Non serve PostGIS neanche
+per quello: un filtro `latitude BETWEEN … AND longitude BETWEEN …` su due
+colonne indicizzate basta.
 
 ---
 
@@ -315,6 +372,8 @@ potrebbe rifiutare lo strumento a prescindere da quanto è buono tutto il resto.
 
 ## Ordine consigliato
 
+0. **P0** — caricare solo il comune selezionato, con «Mostra tutti». Poche
+   ore, toglie il limite di scala più vicino.
 1. **A1 + A2** (A3 GPX già fatto) — stile QML, layer live. Giorni, non settimane;
    riusano codice esistente e cambiano il posizionamento del prodotto.
 2. **C2** (WMS catastale) e **D1** (foto) — il miglior rapporto
@@ -339,7 +398,8 @@ potrebbe rifiutare lo strumento a prescindere da quanto è buono tutto il resto.
   servizio invece del Postgres gestito — da verificare sulla Railway del
   momento, e al prezzo di gestirsi backup e aggiornamenti.
 - **Ottimizzare per la scala prima di averla.** Il limite vero non è PostGIS:
-  è il caricamento di tutti gli alberi nel browser. Diventa un problema
-  nell'ordine delle decine di migliaia di alberi per comune, e a quel punto
-  richiede una ristrutturazione (paginazione, query spaziali lato server,
-  clustering server-side), non una libreria in più.
+  è il caricamento di tutti gli alberi nel browser. **P0** lo riporta a «un
+  comune alla volta», che basta fino alle migliaia di alberi; oltre le decine
+  di migliaia *per comune* serve una ristrutturazione (paginazione, query per
+  bounding box lato server, clustering server-side), non una libreria in
+  più.
