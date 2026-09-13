@@ -59,17 +59,73 @@ librerie, estensioni né immagini custom.
 
 ### A1. Stile QGIS pronto (`.qml`)
 
-File di stile scaricabile che colora gli alberi per classe di rischio ARETE e
-per condizione VTA, con gli stessi colori della webapp.
+File di stile che colora gli alberi per classe di rischio ARETE e per
+condizione VTA, con gli stessi colori della webapp.
 
 **Perché**: l'agronomo apre il GPKG esportato e vede subito la mappa tematica
 giusta, senza configurare nulla. La mappa in QGIS e quella in Silvae si
 somigliano, il che vale più di quanto sembri per la fiducia nello strumento.
 
-**Cosa serve**: un template XML statico popolato con i colori già definiti in
-[`frontend/style.css`](frontend/style.css). Nessuna dipendenza.
+**Stato**: il prerequisito è fatto — i colori stanno in un posto solo,
+[`tools/palette.py`](tools/palette.py) (vedi README, sezione *Palette*). Il
+`.qml` verrà **generato** da lì, non scritto a mano: cambiando un colore in
+`palette.py` cambiano webapp, mappa e stile QGIS insieme.
 
-**Sforzo**: mezza giornata.
+#### Da discutere con l'agronomo prima di implementare
+
+1. **Ha già un `.qml` di riferimento?** Se in studio usano uno stile
+   consolidato (colori, simboli, etichette che i comuni conoscono), conviene
+   fare il **contrario**: importare *quello* in Silvae, cioè leggere i colori
+   dal suo `.qml` e travasarli in `palette.py`, così la webapp si adegua allo
+   standard che l'agronomo usa già e non viceversa. Un `.qml` è XML: la parte
+   che ci interessa è il renderer categorizzato (`<categories>` con
+   `value`/`label`/`symbol` e il `color` di ogni simbolo), facile da leggere.
+   Da chiedere: il file, e su quale campo/valori è categorizzato.
+
+2. **Colorare per rischio o per condizione?** In QGIS un layer ha uno stile
+   attivo alla volta. Proposta: due stili — *rischio ARETE* (predefinito) e
+   *condizione VTA* — selezionabili dal menu stili del layer. Chiedere quale
+   preferisce come predefinito nella pratica (per la relazione al comune
+   probabilmente il rischio, per il monitoraggio fitosanitario la condizione).
+
+3. **Come deve arrivare lo stile in QGIS.** Tre modalità, non esclusive:
+   - **dentro il `.gpkg`** (tabella `layer_styles`, stile marcato come
+     predefinito): QGIS lo applica da solo quando aggiungi il layer — nessun
+     passaggio manuale. È la modalità consigliata di default, dato che il
+     GPKG lo scriviamo noi in `export_gpkg`;
+   - **`.qml` accanto al file** con lo stesso nome (`alberi.gpkg` +
+     `alberi.qml`): QGIS lo carica automaticamente, ma si perde se si rinomina
+     o sposta uno dei due;
+   - **`.qml` scaricabile a parte** dal tab Esporta: serve comunque per i GPKG
+     esportati in passato, per layer già presenti nei progetti QGIS
+     dell'agronomo, o per riapplicarlo dopo modifiche
+     (*Proprietà layer → Simbologia → Stile → Carica stile*).
+
+4. **Etichette e simbolo.** Oltre al colore: vuole l'ID albero come etichetta
+   sul punto? Dimensione del simbolo fissa o proporzionale (es. al diametro
+   della chioma)? Un contorno diverso per gli alberi con rischio non
+   calcolato? Sono tutte cose che il `.qml` può contenere e che oggi la
+   webapp non rappresenta — deciderle con lui evita di generare uno stile che
+   poi sovrascrive a mano.
+
+5. **Campo `rischio` nel GPKG.** Oggi nell'export il rischio è spalmato su
+   più colonne (rami/tronco/colletto/zolla, attuale/residuo); uno stile
+   categorizzato ha bisogno di **una** colonna con la categoria peggiore
+   (`accettabile` / `alarp` / `accordo` / `inaccettabile` / vuoto), come già
+   fatto per il GPX. Va aggiunta all'export GPKG e — se si segue il punto 1 —
+   i valori devono coincidere con quelli su cui è categorizzato il suo
+   `.qml`.
+
+**Cosa serve**: un generatore XML in Python (`tools/qgis_style.py`) che
+produce il renderer categorizzato dai valori di `palette.py`; un endpoint
+`GET /export/qml?by=rischio|condizione`; l'inserimento in `layer_styles`
+dentro `export_gpkg`; la colonna `rischio` nel GPKG. Nessuna dipendenza
+esterna (solo `xml.etree`, come per il GPX). Se si parte dal `.qml`
+dell'agronomo, in più uno script una-tantum che ne estrae i colori.
+
+**Sforzo**: mezza giornata per la generazione; un'altra mezza per
+l'inserimento nel GPKG e i test in QGIS. Sostanzialmente invariato se si
+parte dal suo `.qml`.
 
 ### A2. Layer live invece del file scaricato
 
