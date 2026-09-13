@@ -12,6 +12,7 @@ Applicazione web per il censimento e la valutazione del rischio degli alberi urb
 - **Valutazione del rischio ORD** secondo il protocollo ARETE: prodotto di Bersaglio (B), Inclinazione (I) e Probabilità (P)
 - **Calcolo automatico del bersaglio** da tipo di uso del suolo e flusso (pedoni, traffico, proprietà, occupazione)
 - **Valore ecologico**: stima di biomassa, CO₂ sequestrata, O₂ prodotto, intercettazione acqua e valore monetario (€)
+- **Statistiche della vista**: conteggio degli alberi visibili per classe di rischio ORD e per condizione VTA, con la quota di alberi non valutabili (NA); i contatori sono **cliccabili** e filtrano la lista
 - **Mappa interattiva** (Leaflet) con clustering, marker colorati per classe di rischio, ID albero nel popup e **selezione per area** (poligono disegnato sulla mappa) per esportare o generare le schede degli alberi inclusi
 - **Esportazione** in formato Excel (.xlsx) e GeoPackage (.gpkg), con scelta dei campi da esportare
 - **Schede di rilevamento ARETE** (foglio ORD): una scheda per albero generata dal **template ufficiale** `Schede_Rilevamento_ARETE_DEMO_ver.2.0.xlsm`, compilata coi dati del database e restituita in uno .zip con le cartelle `excel/` (.xlsx) e `pdf/` (se LibreOffice è disponibile sul server)
@@ -289,7 +290,7 @@ web: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120 --preload
 
 | Tab | Contenuto |
 |-----|-----------|
-| **Alberi** | Tabella degli alberi con ricerca, ordinamento, aggiunta/modifica/cancellazione |
+| **Alberi** | Tabella degli alberi con ricerca, ordinamento, aggiunta/modifica/cancellazione, e **barra statistiche** con i conteggi per categoria (vedi [Statistiche della vista](#statistiche-della-vista)) |
 | **Mappa** | Mappa Leaflet con marker e clustering, filtri per città, ID albero nel popup e **selezione per area**: si disegna un poligono sulla mappa e si esportano/generano le schede degli alberi contenuti |
 | **Gestione** | Pannello amministratore: gestione utenti, città, agronomi, reset password |
 | **Esporta** | Esportazione in Excel (.xlsx) o GeoPackage (.gpkg) e **schede ARETE** — intera raccolta o selezione manuale, con **scelta dei campi da esportare** (esclusione singoli campi) |
@@ -347,6 +348,29 @@ Durante l'importazione da file `.gpkg`, le classi VTA nel campo `_CLASSE VT` ven
 | `ABBATTUTO` | Abbattuto (invariato) |
 
 Valori già in forma testuale (es. file esportati da Silvae Pro) vengono lasciati invariati.
+
+---
+
+## Statistiche della vista
+
+Sopra la tabella del tab **Alberi** una barra riassume gli alberi **attualmente visibili** (quindi dopo i filtri per ID, indirizzo e "Vicino a me", su tutte le pagine — non solo quella corrente).
+
+Ogni albero finisce in **una sola** casella, scelta con la prima fonte disponibile:
+
+| # | Fonte | Categorie |
+|---|-------|-----------|
+| 1 | **Rischio ORD** calcolato (`rischio.attuale`) | Accettabile · ALARP · Per accordo · Inaccettabile |
+| 2 | **Classe VTA/CPC** (`A`, `B`, `C`, `C/D`, `D`) | Ottimo · Buono · Discreto · Scarso |
+| 3 | **Condizione** testuale (Ottimo, Buono, Discreto, …) | come sopra |
+| 4 | nessuna delle precedenti | **NA** — non valutabile |
+
+Quando il rischio è calcolato si usa la classe **peggiore** tra rami, tronco, colletto e zolla della valutazione *attuale*. Un albero i cui valori risultano tutti `SOSPESO` non conta come valutato e ricade sulla fonte successiva.
+
+Rischio e condizione restano su **due assi distinti**: sono mostrati in due gruppi separati e non vengono fusi in un'unica scala, perché misurano cose diverse (il rischio per i bersagli vs. lo stato fitosanitario della pianta). I totali dei tre gruppi sommano sempre agli alberi in vista.
+
+**Filtro per categoria**: un clic su un contatore riduce la lista a quella sola categoria; un secondo clic (o il pulsante *Mostra tutti*) lo rimuove. I conteggi restano quelli dell'insieme non filtrato, così si può passare da una categoria all'altra. Il filtro si combina con gli altri filtri e con la modalità **Seleziona**, quindi è possibile isolare per esempio gli alberi `NA`, selezionarli tutti ed esportarli o generarne le schede. Si azzera al cambio di comune.
+
+Il calcolo è interamente lato client in [`frontend/app.js`](frontend/app.js) (`treeStatBucket`, `computeTreeStats`, `renderTreeStats`): non richiede endpoint dedicati, perché `rischio`, `cpc` e `condition` sono già nella risposta di `/trees`.
 
 ---
 

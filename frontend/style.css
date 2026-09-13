@@ -1037,3 +1037,59 @@ textarea.fc { resize: vertical; min-height: 72px; }
   0%, 100% { box-shadow: 0 4px 14px rgba(220,38,38,.4); }
   50%       { box-shadow: 0 4px 28px rgba(220,38,38,.75); }
 }
+
+/* ── Statistiche della vista (tab Alberi) ── */
+.tree-stats-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px;
+  padding: 9px 18px;
+  background: var(--g50);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.stat-group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.stat-group-label {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase;
+  color: var(--text-muted);
+  margin-right: 2px;
+}
+.stat-group-label b {
+  background: var(--g800); color: #fff;
+  border-radius: 20px; padding: 1px 8px;
+  font-size: 11px;
+}
+/* Il colore arriva dalle classi cb-* / risk-* / stat-*: qui niente background,
+   altrimenti vincerebbe su quelle per ordine di cascata. */
+.stat-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px; border: 0; border-radius: 20px;
+  font-family: inherit; font-size: 11px; font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: box-shadow .12s, transform .08s, opacity .12s;
+}
+.stat-chip b { font-size: 12px; font-weight: 800; }
+.stat-chip:hover:not(:disabled) { box-shadow: var(--shadow-sm); transform: translateY(-1px); }
+.stat-chip:focus-visible { outline: 2px solid var(--g700); outline-offset: 2px; }
+.stat-chip.is-active { box-shadow: 0 0 0 2px var(--g800); font-weight: 800; }
+.stat-chip.is-zero { opacity: .45; }
+.stat-chip:disabled { cursor: default; }
+/* Filtro attivo: le altre categorie passano in secondo piano. */
+.tree-stats-bar.has-filter .stat-chip:not(.is-active):not(.is-zero) { opacity: .55; }
+.tree-stats-bar.has-filter .stat-chip:not(.is-active):hover { opacity: 1; }
+
+.stat-clear {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px; border: 1px solid var(--border); border-radius: 20px;
+  background: var(--surface); color: var(--text-mid);
+  font-family: inherit; font-size: 11px; font-weight: 600;
+  cursor: pointer;
+}
+.stat-clear:hover { background: var(--g100); color: var(--g800); }
+.stat-accordo { background: #ffe5cc; color: #9a4a06; }
+.stat-na      { background: #e9ecef; color: #495057; }
+
+@media (max-width: 700px) {
+  .tree-stats-bar { gap: 6px 12px; padding: 8px 12px; }
+  .stat-group { width: 100%; }
+}

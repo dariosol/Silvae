@@ -3,7 +3,8 @@ const API_BASE = '';
 let state = {
     token: localStorage.getItem('token') || null,
     user:  JSON.parse(localStorage.getItem('user') || 'null'),
-    allTrees: [], filteredTrees: [],
+    allTrees: [], filteredTrees: [], viewTrees: [],
+    statFilter: null,            // {group:'risk'|'cond'|'na', key} — chip attivo nella barra statistiche
     currentPage: 1, pageSize: 25,
     activeTab: 'trees',
     sortField: null, sortDir: 'asc',
@@ -934,9 +935,10 @@ async function submitChangePassword(e) {
 function logout() {
     state.token = null; state.user = null;
     localStorage.removeItem('token'); localStorage.removeItem('user');
-    state.allTrees = []; state.filteredTrees = [];
+    state.allTrees = []; state.filteredTrees = []; state.viewTrees = []; state.statFilter = null;
     document.getElementById('treeList').innerHTML = '';
     document.getElementById('treeCount').textContent = '0';
+    renderTreeStats([]);
     setupAuthUI();
 }
 
@@ -1116,6 +1118,7 @@ async function fetchTrees() {
     if (!res.ok) { const d = await res.json().catch(()=>({})); showStatus(d.message||'Errore nel caricamento alberi','danger'); return; }
     state.allTrees    = await res.json();
     state.currentPage = 1;
+    state.statFilter  = null;
     document.getElementById('idFilter').value = '';
     applyIdFilter();
     if (state.activeTab === 'map') { resetMapAddressFilter(); showOnMap(state.allTrees); }
@@ -1220,27 +1223,35 @@ function renderPage() {
     } else if (state.sortField) {
         trees = sortTrees(trees, state.sortField, state.sortDir);
     }
+    // Le statistiche si calcolano PRIMA del filtro per categoria: così i conteggi
+    // restano confrontabili e si può passare da un chip all'altro.
+    renderTreeStats(trees);
+    trees = applyStatFilter(trees);
+    state.viewTrees = trees;
+    // Filtrando, la pagina corrente può finire oltre l'ultima disponibile.
+    const lastPage = Math.max(1, Math.ceil(trees.length / state.pageSize));
+    if (state.currentPage > lastPage) state.currentPage = lastPage;
     const {currentPage, pageSize} = state;
     const start = (currentPage - 1) * pageSize;
     const pageSlice = trees.slice(start, start + pageSize);
     renderTreeList(pageSlice);
     renderTreeCards(pageSlice);
     renderPagination(); updateSortHeaders();
-    const total = state.allTrees.length, filtered = state.filteredTrees.length;
-    document.getElementById('treeCount').textContent = filtered < total ? `${filtered} / ${total}` : total;
+    const total = state.allTrees.length, shown = state.viewTrees.length;
+    document.getElementById('treeCount').textContent = shown < total ? `${shown} / ${total}` : total;
     if (state.exportMode) {
         const sel = state.exportSelected.size;
         document.getElementById('exportCount').textContent = `${sel} alber${sel !== 1 ? 'i' : 'o'} selezionat${sel !== 1 ? 'i' : 'o'}`;
         const allCb = document.getElementById('selectAllCb');
         if (allCb) {
-            const tot = state.filteredTrees.length, selAll = state.filteredTrees.filter(t => state.exportSelected.has(t.id)).length;
+            const tot = state.viewTrees.length, selAll = state.viewTrees.filter(t => state.exportSelected.has(t.id)).length;
             allCb.checked = tot > 0 && selAll === tot; allCb.indeterminate = selAll > 0 && selAll < tot;
         }
     }
 }
 
 function renderPagination() {
-    const total = state.filteredTrees.length, totalPages = Math.ceil(total / state.pageSize);
+    const total = state.viewTrees.length, totalPages = Math.ceil(total / state.pageSize);
     const cur = state.currentPage, start = (cur-1)*state.pageSize+1, end = Math.min(cur*state.pageSize, total);
     const bar = document.getElementById('paginationBar');
     bar.style.display = total > 0 ? 'flex' : 'none';
@@ -1311,11 +1322,174 @@ function condDot(cond) {
     return `<span class="cond-dot dot-${condCategory(cond)}" title="${cond || '—'}"></span>`;
 }
 
+// ─── Statistiche della vista ──────────────────────────────
+// Ogni albero è classificato con la PRIMA fonte disponibile, nell'ordine:
+//   1. rischio ORD attuale (il peggiore tra rami/tronco/colletto/zolla)
+//   2. classe VTA/CPC (A, B, C, C/D, D)
+//   3. condizione testuale (Ottimo, Buono, Discreto, …)
+//   4. nessuna delle precedenti → NA (non valutabile)
+// Rischio e condizione restano su due assi distinti: i conteggi sono mostrati
+// in due gruppi separati, non fusi in un'unica scala.
+
+const RISK_STATS = [
+    { key: 'accettabile',   label: 'Accettabile',   cls: 'risk-low',     hint: 'rischio largamente accettabile' },
+    { key: 'alarp',         label: 'ALARP',         cls: 'risk-medium',  hint: 'rischio tollerabile / ALARP' },
+    { key: 'accordo',       label: 'Per accordo',   cls: 'stat-accordo', hint: 'tollerabile per accordo, inaccettabile se imposto a terzi' },
+    { key: 'inaccettabile', label: 'Inaccettabile', cls: 'risk-high',    hint: 'rischio inaccettabile — intervento necessario' },
+];
+
+const COND_STATS = [
+    { key: 'good',  label: 'Ottimo',       cls: 'cb-good',  hint: 'classe VTA A' },
+    { key: 'buono', label: 'Buono',        cls: 'cb-buono', hint: 'classe VTA B' },
+    { key: 'fair',  label: 'Discreto',     cls: 'cb-fair',  hint: 'classe VTA C' },
+    { key: 'poor',  label: 'Scarso',       cls: 'cb-poor',  hint: 'classe VTA C/D o D, critico, abbattuto' },
+    { key: 'other', label: 'Non classif.', cls: 'cb-other', hint: 'condizione presente ma non riconducibile a una classe' },
+];
+
+// Descrizione ARETE → categoria di rischio. L'ordine dei test conta: la voce
+// "tollerabile per accordo ma inaccettabile se imposto a terzi" contiene la
+// parola "inaccettabile" pur non essendo un rischio inaccettabile.
+function riskStatCategory(desc) {
+    if (!desc) return null;
+    const d = String(desc).toLowerCase();
+    if (d.includes('non determinato')) return null;   // SOSPESO
+    if (d.includes('per accordo'))     return 'accordo';
+    if (d.includes('inaccettabile'))   return 'inaccettabile';
+    if (d.includes('alarp'))           return 'alarp';
+    if (d.includes('largamente accettabile')) return 'accettabile';
+    if (d.includes('tollerabile'))     return 'alarp';
+    return null;
+}
+
+const RISK_STAT_SEVERITY = { accettabile: 1, alarp: 2, accordo: 3, inaccettabile: 4 };
+
+// Categoria di rischio peggiore della fase "attuale", o null se non calcolabile.
+function worstRiskStat(rischio) {
+    const d = rischio && rischio.attuale;
+    if (!d) return null;
+    let worst = null;
+    for (const k of ['rami', 'tronco', 'colletto', 'zolla']) {
+        const cat = riskStatCategory(d[k] && d[k].risk_description);
+        if (cat && (!worst || RISK_STAT_SEVERITY[cat] > RISK_STAT_SEVERITY[worst])) worst = cat;
+    }
+    return worst;
+}
+
+// Un valore di condizione/CPC conta solo se non è vuoto o un segnaposto.
+function hasCondValue(v) {
+    const s = String(v == null ? '' : v).trim().toLowerCase();
+    return s !== '' && s !== '—' && s !== '-' && s !== 'na' && s !== 'n/a';
+}
+
+// Casella di appartenenza dell'albero: {group, key}. Unica fonte di verità,
+// usata sia per i conteggi sia per il filtro attivabile dai chip.
+function treeStatBucket(t) {
+    const r = worstRiskStat(t.rischio);
+    if (r) return { group: 'risk', key: r };
+    const src = hasCondValue(t.cpc) ? t.cpc : (hasCondValue(t.condition) ? t.condition : null);
+    if (src) return { group: 'cond', key: condCategory(src) };
+    return { group: 'na', key: 'na' };
+}
+
+function computeTreeStats(trees) {
+    const risk = {}, cond = {};
+    RISK_STATS.forEach(r => risk[r.key] = 0);
+    COND_STATS.forEach(c => cond[c.key] = 0);
+    let na = 0, riskTot = 0, condTot = 0;
+    trees.forEach(t => {
+        const b = treeStatBucket(t);
+        if      (b.group === 'risk') { risk[b.key]++; riskTot++; }
+        else if (b.group === 'cond') { cond[b.key]++; condTot++; }
+        else                         { na++; }
+    });
+    return { risk, cond, na, riskTot, condTot, total: trees.length };
+}
+
+// ─── Filtro per categoria (chip cliccabili) ───────────────
+
+function applyStatFilter(trees) {
+    const f = state.statFilter;
+    if (!f) return trees;
+    return trees.filter(t => {
+        const b = treeStatBucket(t);
+        return b.group === f.group && b.key === f.key;
+    });
+}
+
+// Riclicca lo stesso chip per togliere il filtro.
+function toggleStatFilter(group, key) {
+    const f = state.statFilter;
+    state.statFilter = (f && f.group === group && f.key === key) ? null : { group, key };
+    state.currentPage = 1;
+    renderPage();
+}
+
+function clearStatFilter() {
+    if (!state.statFilter) return;
+    state.statFilter = null; state.currentPage = 1; renderPage();
+}
+
+// Etichetta leggibile del filtro attivo (usata negli stati vuoti).
+function statFilterLabel() {
+    const f = state.statFilter;
+    if (!f) return '';
+    if (f.group === 'na') return 'NA — non valutabili';
+    const item = (f.group === 'risk' ? RISK_STATS : COND_STATS).find(i => i.key === f.key);
+    return (f.group === 'risk' ? 'Rischio ' : 'Condizione ') + (item ? item.label : f.key);
+}
+
+function renderTreeStats(trees) {
+    const bar = document.getElementById('treeStatsBar');
+    if (!bar) return;
+    if (!trees.length && !state.statFilter) { bar.innerHTML = ''; bar.style.display = 'none'; return; }
+    const s = computeTreeStats(trees);
+    const f = state.statFilter;
+
+    // Un chip a zero non è cliccabile (filtrerebbe su una lista vuota), a meno
+    // che non sia proprio il filtro attivo: serve per poterlo disattivare.
+    const chip = (grp, key, label, n, cls, hint) => {
+        const active = !!f && f.group === grp && f.key === key;
+        const dead   = n === 0 && !active;
+        const title  = dead ? hint : `${hint} — clicca per ${active ? 'rimuovere il filtro' : 'filtrare la lista'}`;
+        const attrs  = dead ? 'disabled' : `onclick="toggleStatFilter('${grp}','${key}')"`;
+        return `<button type="button" class="stat-chip ${cls}${dead ? ' is-zero' : ''}${active ? ' is-active' : ''}" title="${title}" ${attrs}>${label} <b>${n}</b></button>`;
+    };
+    const group = (grp, name, icon, tot, items, counts, note) => `
+        <div class="stat-group">
+          <span class="stat-group-label" title="${note}"><i class="fa-solid ${icon}"></i> ${name} <b>${tot}</b></span>
+          ${items.map(i => chip(grp, i.key, i.label, counts[i.key], i.cls, `${i.label} — ${i.hint}`)).join('')}
+        </div>`;
+
+    bar.innerHTML =
+        group('risk', 'Rischio ORD', 'fa-triangle-exclamation', s.riskTot, RISK_STATS, s.risk,
+              'Alberi con rischio ORD calcolato: conta la classe peggiore della valutazione attuale') +
+        group('cond', 'Condizione', 'fa-leaf', s.condTot, COND_STATS, s.cond,
+              'Alberi senza rischio calcolato: si usa la classe VTA/CPC, altrimenti la condizione') +
+        `<div class="stat-group">` +
+          chip('na', 'na', 'NA', s.na, 'stat-na',
+               'Non valutabile: né rischio ORD, né classe VTA, né condizione') +
+          (f ? `<button type="button" class="stat-clear" onclick="clearStatFilter()" title="Rimuovi il filtro per categoria"><i class="fa-solid fa-xmark"></i> Mostra tutti</button>` : '') +
+        `</div>`;
+    bar.classList.toggle('has-filter', !!f);
+    bar.style.display = 'flex';
+}
+
+// Stato vuoto della lista: spiega quale filtro l'ha svuotata.
+function emptyListMessage() {
+    const q = document.getElementById('idFilter')?.value.trim() || '';
+    if (state.statFilter) {
+        return `<p>Nessun albero nella categoria <strong>${statFilterLabel()}</strong>${q ? ` con ID "<strong>${q}</strong>"` : ''}.</p>
+            <button class="btn btn-outline btn-sm" onclick="clearStatFilter()"><i class="fa-solid fa-xmark"></i> Mostra tutti</button>`;
+    }
+    if (q) return `<p>Nessun albero corrisponde all'ID "<strong>${q}</strong>".</p>`;
+    return `<p>Nessun albero trovato. Seleziona un comune in alto, poi usa <strong>Aggiungi Albero</strong> per aggiungere il primo.</p>`;
+}
+
 function renderTreeCards(trees) {
     const container = document.getElementById('treeCardList');
     container.innerHTML = '';
     if (trees.length === 0) {
-        container.innerHTML = `<div class="empty-state"><i class="fa-solid fa-tree"></i><p>Nessun albero trovato.</p></div>`;
+        container.innerHTML = `<div class="empty-state"><i class="fa-solid fa-tree"></i>${emptyListMessage()}</div>`;
         return;
     }
     trees.forEach(t => {
@@ -1390,10 +1564,8 @@ function toggleMobileSortDir() {
 function renderTreeList(trees) {
     const tbody = document.getElementById('treeList'); tbody.innerHTML = '';
     if (trees.length === 0) {
-        const q = document.getElementById('idFilter').value.trim();
         tbody.innerHTML = `<tr><td colspan="${state.exportMode ? 8 : 7}"><div class="empty-state"><i class="fa-solid fa-tree"></i>
-            <p>${q ? `Nessun albero corrisponde all'ID "<strong>${q}</strong>".` : 'Nessun albero trovato. Seleziona un comune in alto, poi usa <strong>Aggiungi Albero</strong> per aggiungere il primo.'}</p>
-        </div></td></tr>`;
+            ${emptyListMessage()}</div></td></tr>`;
         return;
     }
     trees.forEach(t => {
@@ -1527,6 +1699,7 @@ async function deleteTreeById(id) {
     if (res.ok) {
         state.allTrees      = state.allTrees.filter(t => t.id !== id);
         state.filteredTrees = state.filteredTrees.filter(t => t.id !== id);
+        state.viewTrees     = state.viewTrees.filter(t => t.id !== id);
         showStatus('Albero eliminato', 'success'); renderPage();
         if (state.activeTab === 'map') showOnMap(state.allTrees);
     } else showStatus(data.message||'Errore durante l\'eliminazione','danger');
@@ -2192,7 +2365,7 @@ function toggleExportMode() {
 }
 
 function toggleSelectAll(cb) {
-    if (cb.checked) state.filteredTrees.forEach(t => state.exportSelected.add(t.id));
+    if (cb.checked) state.viewTrees.forEach(t => state.exportSelected.add(t.id));
     else state.exportSelected.clear();
     renderPage();
 }
@@ -2201,8 +2374,8 @@ function toggleTreeSelect(id, checked) {
     if (checked) state.exportSelected.add(id); else state.exportSelected.delete(id);
     const allCb = document.getElementById('selectAllCb');
     if (allCb) {
-        const total = state.filteredTrees.length;
-        const sel   = state.filteredTrees.filter(t => state.exportSelected.has(t.id)).length;
+        const total = state.viewTrees.length;
+        const sel   = state.viewTrees.filter(t => state.exportSelected.has(t.id)).length;
         allCb.checked       = total > 0 && sel === total;
         allCb.indeterminate = sel > 0 && sel < total;
     }
