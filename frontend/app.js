@@ -767,13 +767,17 @@ function switchTab(name) {
     if (name === 'manage' && (state.user?.role === 'city' || state.user?.role === 'superuser')) loadAgronomists();
     if (name === 'map') {
         if (!state.map) {
-            state.map = L.map('map').setView([45.4642, 9.19], 12);
+            // Le tessere esistono fino a 19 (OSM) / 20 (Esri): oltre, Leaflet ingrandisce
+            // l'ultimo livello disponibile (maxNativeZoom) così da poter separare
+            // alberi vicini fra loro anche a costo di un'immagine più sfocata.
+            const MAP_MAX_ZOOM = 22;
+            state.map = L.map('map', { maxZoom: MAP_MAX_ZOOM }).setView([45.4642, 9.19], 12);
             const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                maxZoom: 19, attribution: '© OpenStreetMap'
+                maxZoom: MAP_MAX_ZOOM, maxNativeZoom: 19, attribution: '© OpenStreetMap'
             });
             const satelliteLayer = L.tileLayer(
                 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-                maxZoom: 19,
+                maxZoom: MAP_MAX_ZOOM, maxNativeZoom: 20,
                 attribution: 'Tiles © Esri — Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
             });
             osmLayer.addTo(state.map);
@@ -1868,10 +1872,10 @@ function openCoordCheck() {
     document.getElementById('coordCheckModal').classList.add('open');
 
     if (!_ccMap) {
-        _ccMap = L.map('coordCheckMap', { zoomControl: true }).setView([lat, lon], 19);
+        _ccMap = L.map('coordCheckMap', { zoomControl: true, maxZoom: 22 }).setView([lat, lon], 19);
         L.tileLayer(
             'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-            { maxZoom: 20, attribution: '© Esri' }
+            { maxZoom: 22, maxNativeZoom: 20, attribution: '© Esri' }
         ).addTo(_ccMap);
         _ccTreeLayer = L.layerGroup().addTo(_ccMap);
     } else {
