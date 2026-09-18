@@ -53,10 +53,13 @@ librerie, estensioni né immagini custom.
 
 ---
 
-## P0 — Caricare gli alberi solo dopo aver scelto il comune
+## P0 — Caricare gli alberi solo dopo aver scelto il comune — ✅ fatto (settembre 2026)
 
-*Priorità sopra tutto il resto: è il limite di scala reale, e la prima parte
-costa poche ore.*
+Implementato nella forma minima: nessun caricamento senza comune, l'account
+`city` parte già sul suo, voce esplicita «Carica tutti gli alberi» in fondo
+al menu. Non fatti (da valutare): selezione automatica per l'agronomo con un
+solo comune, memoria dell'ultimo comune scelto, conteggio accanto a «Carica
+tutti». Resta valida la parte «Cosa NON risolve».
 
 ### Com'è oggi
 
@@ -372,8 +375,8 @@ potrebbe rifiutare lo strumento a prescindere da quanto è buono tutto il resto.
 
 ## Ordine consigliato
 
-0. **P0** — caricare solo il comune selezionato, con «Mostra tutti». Poche
-   ore, toglie il limite di scala più vicino.
+0. **P0** — ✅ fatto: si carica solo il comune selezionato, «Carica tutti gli
+   alberi» su richiesta.
 1. **A1 + A2** (A3 GPX già fatto) — stile QML, layer live. Giorni, non settimane;
    riusano codice esistente e cambiano il posizionamento del prodotto.
 2. **C2** (WMS catastale) e **D1** (foto) — il miglior rapporto

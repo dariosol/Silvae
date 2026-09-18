@@ -1010,6 +1010,9 @@ function renderComuneDropdown(input, dropdown, results) {
 
 // ─── City ─────────────────────────────────────────────────
 
+// Valore del selettore che chiede esplicitamente tutti gli alberi visibili.
+const ALL_CITIES = '__all__';
+
 async function populateCities() {
     const sel = document.getElementById('citySelect');
     if (!state.token) { sel.innerHTML = ''; return; }
@@ -1017,15 +1020,22 @@ async function populateCities() {
     const res = await fetch(`${API_BASE}/cities`, { headers: authHeader() });
     if (!res.ok) return;
     const cities = await res.json();
-    // L'account comune ha un solo comune: niente "Tutti i comuni", resta fisso sul suo.
+    // L'account comune ha un solo comune: resta fisso sul suo. Gli altri ruoli
+    // partono senza comune (nessun albero caricato) e scelgono; "carica tutti"
+    // è una scelta esplicita in fondo al menu, perché può essere pesante.
     const single = state.user?.role === 'city';
-    sel.innerHTML = single ? '' : '<option value="">Tutti i comuni</option>';
+    sel.innerHTML = single ? '' : '<option value="">— Seleziona un comune —</option>';
     cities.forEach(c => {
         const o = document.createElement('option');
         o.value = o.text = c; sel.appendChild(o);
     });
-    sel.value = single ? (cities[0] || '') : (cities.includes(prev) ? prev : '');
+    if (!single) {
+        const o = document.createElement('option');
+        o.value = ALL_CITIES; o.text = 'Carica tutti gli alberi'; sel.appendChild(o);
+    }
+    sel.value = single ? (cities[0] || '') : ([...sel.options].some(o => o.value === prev) ? prev : '');
 }
+
 
 async function createCity() {
     const name = document.getElementById('cityName').value.trim();
@@ -1118,9 +1128,19 @@ async function submitEditUser(e) {
 async function fetchTrees() {
     if (!state.token) return;
     const city   = document.getElementById('citySelect').value;
+    const label  = document.getElementById('inventoryLabel');
+    // Senza comune scelto non si carica nulla: la lista resta vuota con l'invito.
+    if (!city) {
+        label.textContent = 'Inventario Alberi';
+        state.allTrees = []; state.currentPage = 1; state.statFilter = null;
+        document.getElementById('idFilter').value = '';
+        applyIdFilter();
+        if (state.activeTab === 'map') { resetMapAddressFilter(); showOnMap([]); }
+        return;
+    }
     const params = new URLSearchParams();
-    if (city) params.append('city', city);
-    document.getElementById('inventoryLabel').textContent = city ? `Alberi — ${city}` : 'Inventario Alberi';
+    if (city !== ALL_CITIES) params.append('city', city);
+    label.textContent = city === ALL_CITIES ? 'Alberi — tutti i comuni' : `Alberi — ${city}`;
     const res = await fetch(`${API_BASE}/trees?${params}`, {headers: authHeader()});
     if (!res.ok) { const d = await res.json().catch(()=>({})); showStatus(d.message||'Errore nel caricamento alberi','danger'); return; }
     state.allTrees    = await res.json();
@@ -1511,7 +1531,9 @@ function emptyListMessage() {
             <button class="btn btn-outline btn-sm" onclick="clearStatFilter()"><i class="fa-solid fa-xmark"></i> Mostra tutti</button>`;
     }
     if (q) return `<p>Nessun albero corrisponde all'ID "<strong>${q}</strong>".</p>`;
-    return `<p>Nessun albero trovato. Seleziona un comune in alto, poi usa <strong>Aggiungi Albero</strong> per aggiungere il primo.</p>`;
+    if (!document.getElementById('citySelect').value)
+        return `<p><strong>Seleziona un comune</strong> nella barra in alto per caricare i suoi alberi, oppure scegli <em>Carica tutti gli alberi</em> in fondo al menu.</p>`;
+    return `<p>Nessun albero trovato. Usa <strong>Aggiungi Albero</strong> per aggiungere il primo.</p>`;
 }
 
 function renderTreeCards(trees) {
