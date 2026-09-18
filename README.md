@@ -292,7 +292,7 @@ web: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120 --preload
 | Tab | Contenuto |
 |-----|-----------|
 | **Alberi** | Tabella degli alberi con ricerca, ordinamento, aggiunta/modifica/cancellazione, e **barra statistiche** con i conteggi per categoria (vedi [Statistiche della vista](#statistiche-della-vista)). Gli alberi si caricano **solo dopo aver scelto un comune** nel selettore in alto (per `city` è automatico); la voce *Carica tutti gli alberi* in fondo al menu richiede esplicitamente tutti quelli visibili all'account |
-| **Mappa** | Mappa Leaflet con marker e clustering, filtri per città, ID albero nel popup e **selezione per area**: si disegna un poligono sulla mappa e si esportano/generano le schede degli alberi contenuti |
+| **Mappa** | Mappa Leaflet con marker e clustering, filtri per città e indirizzo, **barra statistiche** con filtro per categoria (condiviso con il tab Alberi), ID albero nel popup e **selezione per area**: si disegna un poligono sulla mappa e si esportano/generano le schede degli alberi contenuti |
 | **Gestione** | Pannello amministratore: gestione utenti, città, agronomi, reset password |
 | **Esporta** | Esportazione in Excel (.xlsx), GeoPackage (.gpkg) o GPX (.gpx) e **schede ARETE** — intera raccolta o selezione manuale, con **scelta dei campi da esportare** (esclusione singoli campi) |
 | **Importa** | Importazione da file .gpkg o .gpx (censimenti esterni, rilievi GPS o file esportati dall'app) con anteprima, mappatura colonne e gestione conflitti (skip/update) |
@@ -395,6 +395,8 @@ Ogni albero finisce in **una sola** casella, scelta con la prima fonte disponibi
 Quando il rischio è calcolato si usa la classe **peggiore** tra rami, tronco, colletto e zolla della valutazione *attuale*. Un albero i cui valori risultano tutti `SOSPESO` non conta come valutato e ricade sulla fonte successiva.
 
 Rischio e condizione restano su **due assi distinti**: sono mostrati in due gruppi separati e non vengono fusi in un'unica scala, perché misurano cose diverse (il rischio per i bersagli vs. lo stato fitosanitario della pianta). I totali dei tre gruppi sommano sempre agli alberi in vista.
+
+**Anche sulla mappa**: la stessa barra compare nel tab Mappa (pulsante *Statistiche* accanto al filtro per indirizzo), calcolata sugli alberi attualmente mostrati (dopo il filtro per indirizzo). Il filtro per categoria è **unico** per lista e mappa: un chip attivato sulla mappa filtra anche la tabella e viceversa, e la selezione per area considera solo gli alberi filtrati.
 
 **Filtro per categoria**: un clic su un contatore riduce la lista a quella sola categoria; un secondo clic (o il pulsante *Mostra tutti*) lo rimuove. I conteggi restano quelli dell'insieme non filtrato, così si può passare da una categoria all'altra. Il filtro si combina con gli altri filtri e con la modalità **Seleziona**, quindi è possibile isolare per esempio gli alberi `NA`, selezionarli tutti ed esportarli o generarne le schede. Si azzera al cambio di comune.
 

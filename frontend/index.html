@@ -888,7 +888,12 @@
         <button id="mapAddrClearBtn" class="btn btn-sm btn-outline" onclick="resetMapAddressFilter()" title="Mostra tutti" style="display:none">
           <i class="fa-solid fa-xmark"></i>
         </button>
+        <button class="btn btn-outline btn-sm" id="mapStatsToggleBtn" onclick="toggleStatsBar()" title="Mostra/nascondi le statistiche della mappa" style="margin-left:auto;">
+          <i class="fa-solid fa-chart-simple"></i><span class="btn-txt"> Statistiche</span><span id="mapStatsFilterBadge" class="stats-filter-badge" style="display:none;"></span>
+        </button>
       </div>
+      <!-- Statistiche degli alberi sulla mappa (stesso filtro per categoria della lista) -->
+      <div id="mapStatsBar" class="tree-stats-bar" style="display:none;"></div>
       <div id="mapWrap">
         <div id="map"></div>
         <div id="areaSelectPanel" style="display:none;">

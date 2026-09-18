@@ -1453,11 +1453,13 @@ function toggleStatFilter(group, key) {
     state.statFilter = (f && f.group === group && f.key === key) ? null : { group, key };
     state.currentPage = 1;
     renderPage();
+    if (state.map) _applyMapView();
 }
 
 function clearStatFilter() {
     if (!state.statFilter) return;
     state.statFilter = null; state.currentPage = 1; renderPage();
+    if (state.map) _applyMapView();
 }
 
 // Etichetta leggibile del filtro attivo (usata negli stati vuoti).
@@ -1473,13 +1475,14 @@ function toggleStatsBar() {
     state.statsVisible = !state.statsVisible;
     localStorage.setItem('statsVisible', state.statsVisible ? '1' : '0');
     renderTreeStats(state.viewTrees || []);
+    if (state.map) _applyMapView();
 }
 
 // Pulsante "Statistiche": acceso quando la barra è aperta; se la barra è chiusa
 // ma c'è un filtro per categoria attivo, lo mostra lì (la lista è filtrata).
-function _renderStatsToggle(hasData) {
-    const btn = document.getElementById('statsToggleBtn');
-    const badge = document.getElementById('statsFilterBadge');
+function _renderStatsToggle(hasData, btnId = 'statsToggleBtn', badgeId = 'statsFilterBadge') {
+    const btn = document.getElementById(btnId);
+    const badge = document.getElementById(badgeId);
     if (!btn) return;
     btn.classList.toggle('btn-primary', state.statsVisible && hasData);
     btn.classList.toggle('btn-outline', !(state.statsVisible && hasData));
@@ -1489,11 +1492,18 @@ function _renderStatsToggle(hasData) {
     if (showBadge) badge.textContent = statFilterLabel().replace(/^(Rischio|Condizione) /, '').replace(/ — .*$/, '');
 }
 
+// Barra statistiche del tab Alberi (sopra la tabella).
 function renderTreeStats(trees) {
-    const bar = document.getElementById('treeStatsBar');
+    renderStatsBar('treeStatsBar', 'statsToggleBtn', 'statsFilterBadge', trees);
+}
+
+// Barra statistiche generica: stessa logica e stesso filtro per categoria
+// (state.statFilter) sia per la lista sia per la mappa.
+function renderStatsBar(barId, btnId, badgeId, trees) {
+    const bar = document.getElementById(barId);
     if (!bar) return;
     const hasData = trees.length > 0 || !!state.statFilter;
-    _renderStatsToggle(hasData);
+    _renderStatsToggle(hasData, btnId, badgeId);
     if (!hasData || !state.statsVisible) { bar.innerHTML = ''; bar.style.display = 'none'; return; }
     const s = computeTreeStats(trees);
     const f = state.statFilter;
@@ -2117,6 +2127,15 @@ function treeMarkerIcon() {
     });
 }
 
+// Statistiche + filtro per categoria sugli alberi della mappa, senza toccare
+// l'inquadratura (usata anche quando si clicca un chip).
+function _applyMapView() {
+    const base = state.mapBaseTrees || [];
+    renderStatsBar('mapStatsBar', 'mapStatsToggleBtn', 'mapStatsFilterBadge', base);
+    state.mapTrees = applyStatFilter(base);
+    _refreshMapMarkers();
+}
+
 // Grid-based spatial decimation: one tree per cell, cell halves every zoom step.
 // At zoom >= 18 show everything (viewport is small enough, trees are dense enough).
 function _decimateTrees(trees, zoom) {
@@ -2170,18 +2189,20 @@ function _refreshMapMarkers() {
     });
 }
 
+// Insieme di base della mappa (dopo il filtro per indirizzo): le statistiche
+// si calcolano su questo, poi il filtro per categoria decide i marker.
 function showOnMap(trees) {
     if (!state.map) return;
-    state.mapTrees = trees;
+    state.mapBaseTrees = trees;
 
     if (!state.markerLayer) {
         state.markerLayer = L.layerGroup().addTo(state.map);
         state.map.on('zoomend moveend', _refreshMapMarkers);
     }
 
-    _refreshMapMarkers();
+    _applyMapView();
 
-    const pts = trees.filter(t => t.latitude && t.longitude);
+    const pts = state.mapTrees.filter(t => t.latitude && t.longitude);
     if (pts.length > 0) {
         const lats = pts.map(t => parseFloat(t.latitude));
         const lons = pts.map(t => parseFloat(t.longitude));
