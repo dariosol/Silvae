@@ -210,7 +210,7 @@ Senza `--sqlite` usa `DATABASE_URL` (PostgreSQL) come `app.py`.
 | Ruolo | Permessi |
 |-------|----------|
 | **superuser** | Accesso completo: gestione utenti, città, tutti gli alberi (lettura e scrittura) |
-| **city** (comune) | **Sola lettura** sugli alberi del proprio comune: li visualizza, li esporta e genera le schede; collega gli agronomi (`user`) al comune |
+| **city** (comune) | **Sola lettura** sugli alberi del proprio comune: li visualizza, li esporta e genera le schede; collega gli agronomi (`user`) al comune. Il selettore dei comuni mostra solo il suo (gli altri comuni del database non gli vengono elencati) |
 | **user** (agronomo) | Censisce, modifica e valuta i propri alberi nei comuni a cui è collegato |
 
 L'accesso agli alberi è filtrato per comune tramite il modello `CityMembership` (relazione città ↔ agronomi).
@@ -424,7 +424,7 @@ Il calcolo è interamente lato client in [`frontend/app.js`](frontend/app.js) (`
 | Metodo | Endpoint | Descrizione |
 |--------|----------|-------------|
 | `POST`   | `/admin/cities` | Crea una città (solo `superuser`) |
-| `GET`    | `/cities` | Lista delle città presenti |
+| `GET`    | `/cities` | Comuni per il selettore in alto: tutti quelli presenti per `superuser` e `user`; **solo il proprio** per `city` |
 | `GET`    | `/comuni/search` | Autocompletamento comuni italiani (`?q=`) |
 | `GET`    | `/city/agronomers` | Agronomi collegati al comune (`?city_user_id=` per il `superuser`) |
 | `POST`   | `/city/agronomers` | Collega un agronomo al comune tramite `code` (codice agronomo); il `superuser` può usare anche `username` e `city_user_id` |

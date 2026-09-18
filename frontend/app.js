@@ -506,7 +506,7 @@ function renderRiskResults(data) {
 // ─── Auth UI ──────────────────────────────────────────────
 
 async function init() {
-    await Promise.all([populateCities(), fetchDropdowns()]);
+    await fetchDropdowns();
     const resetToken = new URLSearchParams(window.location.search).get('token');
     if (resetToken) {
         document.getElementById('loginPage').style.display = 'flex';
@@ -514,9 +514,17 @@ async function init() {
         showLoginView('resetView');
         return;
     }
-    setupAuthUI();
-    if (state.token && state.user) fetchTrees();
+    if (state.token && state.user) await enterApp(); else setupAuthUI();
     voiceInit();
+}
+
+// Dopo il login (o al ricaricamento con sessione salvata): il selettore dei
+// comuni dipende dal ruolo, quindi va riempito con il token prima di
+// caricare gli alberi.
+async function enterApp() {
+    setupAuthUI();
+    await populateCities();
+    fetchTrees();
 }
 
 function setupAuthUI() {
@@ -615,7 +623,7 @@ async function register() {
         state.token = data.token; state.user = data.user;
         localStorage.setItem('token', state.token);
         localStorage.setItem('user', JSON.stringify(state.user));
-        setupAuthUI(); fetchTrees();
+        await enterApp();
         showStatus(`Benvenuto, ${data.user.username}! Account creato.`, 'success');
     } else {
         showStatus(data.message || 'Errore nella registrazione', 'danger');
@@ -866,7 +874,7 @@ async function login() {
         state.token = data.token; state.user = data.user;
         localStorage.setItem('token', state.token);
         localStorage.setItem('user', JSON.stringify(state.user));
-        setupAuthUI(); fetchTrees();
+        await enterApp();
         if (data.user.role === 'city') loadAgronomists();
         showStatus(`Benvenuto, ${data.user.username}`, 'success');
     } else {
@@ -1004,14 +1012,19 @@ function renderComuneDropdown(input, dropdown, results) {
 
 async function populateCities() {
     const sel = document.getElementById('citySelect');
-    sel.innerHTML = '<option value="">Tutti i comuni</option>';
-    const res = await fetch(`${API_BASE}/cities`);
+    if (!state.token) { sel.innerHTML = ''; return; }
+    const prev = sel.value;
+    const res = await fetch(`${API_BASE}/cities`, { headers: authHeader() });
     if (!res.ok) return;
     const cities = await res.json();
+    // L'account comune ha un solo comune: niente "Tutti i comuni", resta fisso sul suo.
+    const single = state.user?.role === 'city';
+    sel.innerHTML = single ? '' : '<option value="">Tutti i comuni</option>';
     cities.forEach(c => {
         const o = document.createElement('option');
         o.value = o.text = c; sel.appendChild(o);
     });
+    sel.value = single ? (cities[0] || '') : (cities.includes(prev) ? prev : '');
 }
 
 async function createCity() {

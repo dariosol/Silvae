@@ -1026,7 +1026,13 @@ def add_city():
     return jsonify({'message': 'City created', 'city': {'id': c.id, 'name': c.name}}), 201
 
 @app.route('/cities', methods=['GET'])
+@auth_required
 def get_cities():
+    """Comuni per il selettore in alto. L'account `city` vede solo il proprio
+    comune: l'elenco completo dei comuni nel database non lo riguarda."""
+    if request.user.get('role') == 'city':
+        own = request.user.get('city')
+        return jsonify([own] if own else [])
     from_table = {c.name for c in City.query.all()}
     from_trees = {row[0] for row in db.session.query(Tree.city).distinct() if row[0]}
     return jsonify(sorted(from_table | from_trees))
