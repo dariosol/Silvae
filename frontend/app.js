@@ -5,6 +5,9 @@ let state = {
     user:  JSON.parse(localStorage.getItem('user') || 'null'),
     allTrees: [], filteredTrees: [], viewTrees: [],
     statFilter: null,            // {group:'risk'|'cond'|'na', key} — chip attivo nella barra statistiche
+    // Barra statistiche aperta/chiusa: scelta ricordata; su schermi piccoli parte chiusa
+    // perché altrimenti non resta spazio per la lista degli alberi.
+    statsVisible: (() => { const v = localStorage.getItem('statsVisible'); return v === null ? window.innerWidth > 700 : v === '1'; })(),
     currentPage: 1, pageSize: 25,
     activeTab: 'trees',
     sortField: null, sortDir: 'asc',
@@ -1429,10 +1432,32 @@ function statFilterLabel() {
     return (f.group === 'risk' ? 'Rischio ' : 'Condizione ') + (item ? item.label : f.key);
 }
 
+function toggleStatsBar() {
+    state.statsVisible = !state.statsVisible;
+    localStorage.setItem('statsVisible', state.statsVisible ? '1' : '0');
+    renderTreeStats(state.viewTrees || []);
+}
+
+// Pulsante "Statistiche": acceso quando la barra è aperta; se la barra è chiusa
+// ma c'è un filtro per categoria attivo, lo mostra lì (la lista è filtrata).
+function _renderStatsToggle(hasData) {
+    const btn = document.getElementById('statsToggleBtn');
+    const badge = document.getElementById('statsFilterBadge');
+    if (!btn) return;
+    btn.classList.toggle('btn-primary', state.statsVisible && hasData);
+    btn.classList.toggle('btn-outline', !(state.statsVisible && hasData));
+    btn.disabled = !hasData;
+    const showBadge = !state.statsVisible && !!state.statFilter;
+    badge.style.display = showBadge ? 'inline-flex' : 'none';
+    if (showBadge) badge.textContent = statFilterLabel().replace(/^(Rischio|Condizione) /, '').replace(/ — .*$/, '');
+}
+
 function renderTreeStats(trees) {
     const bar = document.getElementById('treeStatsBar');
     if (!bar) return;
-    if (!trees.length && !state.statFilter) { bar.innerHTML = ''; bar.style.display = 'none'; return; }
+    const hasData = trees.length > 0 || !!state.statFilter;
+    _renderStatsToggle(hasData);
+    if (!hasData || !state.statsVisible) { bar.innerHTML = ''; bar.style.display = 'none'; return; }
     const s = computeTreeStats(trees);
     const f = state.statFilter;
 

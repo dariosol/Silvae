@@ -381,6 +381,8 @@ Le chiavi delle categorie (`accettabile`, `alarp`, `accordo`, `inaccettabile`, `
 
 Sopra la tabella del tab **Alberi** una barra riassume gli alberi **attualmente visibili** (quindi dopo i filtri per ID, indirizzo e "Vicino a me", su tutte le pagine — non solo quella corrente).
 
+La barra si apre e chiude con il pulsante **Statistiche** nella barra strumenti: su schermi larghi è aperta di default, su telefono parte chiusa per lasciare spazio alla lista; la scelta viene ricordata nel browser (`localStorage`). Se la barra è chiusa mentre è attivo un filtro per categoria, il pulsante mostra la categoria filtrata (es. *Scarso*), così è chiaro perché la lista è ridotta.
+
 Ogni albero finisce in **una sola** casella, scelta con la prima fonte disponibile:
 
 | # | Fonte | Categorie |

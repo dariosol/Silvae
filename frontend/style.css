@@ -1094,6 +1094,14 @@ textarea.fc { resize: vertical; min-height: 72px; }
 .stat-clear:hover { background: var(--g100); color: var(--g800); }
 .stat-na      { background: var(--risk-na-bg); color: var(--risk-na-fg); }
 
+/* Filtro per categoria attivo mentre la barra è chiusa: lo si vede sul pulsante */
+.stats-filter-badge {
+  display: inline-flex; align-items: center;
+  margin-left: 6px; padding: 1px 7px; border-radius: 20px;
+  background: var(--surface); color: var(--g800);
+  font-size: 10px; font-weight: 800; white-space: nowrap;
+}
+
 @media (max-width: 700px) {
   .tree-stats-bar { gap: 6px 12px; padding: 8px 12px; }
   .stat-group { width: 100%; }
