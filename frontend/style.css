@@ -366,6 +366,14 @@ body {
   font-size: 12px; color: var(--text-muted); pointer-events: none;
 }
 .addr-filter-group { display: flex; align-items: center; gap: 6px; }
+/* I campi filtro restano figli diretti del flex della toolbar (display: contents);
+   su telefono spariscono e al loro posto c'è il pulsante "Filtra". */
+.list-filters { display: contents; }
+.phone-only { display: none; }
+@media (max-width: 700px) {
+  .list-filters { display: none; }
+  .phone-only { display: inline-flex; }
+}
 
 .section-label { font-size: 14px; font-weight: 600; color: var(--g800); }
 

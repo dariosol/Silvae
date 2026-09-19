@@ -1235,6 +1235,47 @@ function applyIdFilter() {
     if (qa) trees = trees.filter(t => (t.address || '').toLowerCase().includes(qa));
     state.filteredTrees = trees;
     state.currentPage = 1; renderPage();
+    _updateListFilterBadge();
+}
+
+// ─── Filtro lista su telefono: pulsante "Filtra" + finestra ──
+// I campi veri restano quelli della toolbar (idFilter / listAddrInput), così
+// tutti i punti che li leggono o azzerano non cambiano; la finestra li copia.
+
+function _updateListFilterBadge() {
+    const badge = document.getElementById('listFilterBadge');
+    if (!badge) return;
+    const q  = document.getElementById('idFilter').value.trim();
+    const qa = document.getElementById('listAddrInput')?.value.trim() || '';
+    const parts = [];
+    if (q)  parts.push(`ID ${q}`);
+    if (qa) parts.push(qa);
+    badge.textContent = parts.join(' · ');
+    badge.style.display = parts.length ? '' : 'none';
+}
+
+function openListFilter() {
+    document.getElementById('listFilterId').value   = document.getElementById('idFilter').value;
+    document.getElementById('listFilterAddr').value = document.getElementById('listAddrInput').value;
+    document.getElementById('listFilterModal').classList.add('open');
+    setTimeout(() => document.getElementById('listFilterId').focus(), 50);
+}
+
+function closeListFilter() {
+    document.getElementById('listFilterModal').classList.remove('open');
+}
+
+function applyListFilter() {
+    document.getElementById('idFilter').value      = document.getElementById('listFilterId').value;
+    document.getElementById('listAddrInput').value = document.getElementById('listFilterAddr').value;
+    closeListFilter();
+    applyIdFilter();
+}
+
+function clearListFilter() {
+    document.getElementById('listFilterId').value = '';
+    document.getElementById('listFilterAddr').value = '';
+    applyListFilter();
 }
 
 function changePageSize() { state.pageSize = parseInt(document.getElementById('pageSizeSelect').value); state.currentPage = 1; renderPage(); }
@@ -3276,6 +3317,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('createUserBtn').addEventListener('click', createUser);
     document.getElementById('createCityBtn').addEventListener('click', createCity);
     document.getElementById('idFilter').addEventListener('input', applyIdFilter);
+    ['listFilterId', 'listFilterAddr'].forEach(id =>
+        document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') applyListFilter(); }));
     document.getElementById('pageSizeSelect').addEventListener('change', changePageSize);
     document.getElementById('addTreeForm').addEventListener('submit', submitTreeForm);
     document.getElementById('openFormBtn').addEventListener('click', () => { resetForm(); showTreeView('edit'); });

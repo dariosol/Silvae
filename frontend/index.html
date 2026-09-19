@@ -251,16 +251,22 @@
       <div id="view-list" class="tab-view active">
         <div class="section-toolbar">
           <div class="toolbar-left">
-            <div class="filter-wrap">
-              <i class="fa-solid fa-magnifying-glass filter-ico"></i>
-              <input id="idFilter" class="inp" type="text" style="padding-left:32px;min-width:160px;" placeholder="Filtra per ID…">
-            </div>
-            <div class="addr-filter-group">
+            <!-- Su telefono i due campi sono nascosti e sostituiti dal pulsante "Filtra" (finestra) -->
+            <div class="list-filters">
               <div class="filter-wrap">
-                <i class="fa-solid fa-location-dot filter-ico"></i>
-                <input id="listAddrInput" class="inp" type="text" style="padding-left:32px;min-width:150px;" placeholder="Filtra per indirizzo…" oninput="applyIdFilter()">
+                <i class="fa-solid fa-magnifying-glass filter-ico"></i>
+                <input id="idFilter" class="inp" type="text" style="padding-left:32px;min-width:160px;" placeholder="Filtra per ID…">
+              </div>
+              <div class="addr-filter-group">
+                <div class="filter-wrap">
+                  <i class="fa-solid fa-location-dot filter-ico"></i>
+                  <input id="listAddrInput" class="inp" type="text" style="padding-left:32px;min-width:150px;" placeholder="Filtra per indirizzo…" oninput="applyIdFilter()">
+                </div>
               </div>
             </div>
+            <button class="btn btn-outline btn-sm phone-only" id="listFilterBtn" onclick="openListFilter()" title="Filtra per ID o indirizzo">
+              <i class="fa-solid fa-filter"></i> Filtra<span id="listFilterBadge" class="stats-filter-badge" style="display:none;"></span>
+            </button>
             <span id="inventoryLabel" class="section-label">Inventario Alberi</span>
             <span class="count-badge" id="treeCount">0</span>
           </div>
@@ -1410,6 +1416,32 @@ rischio_finale   = lookup_inverso(probabilità_n)    ← foglio A, colonne AR:AS
 </div>
 
 <!-- Modale: Esporta GPX (nome file) -->
+<!-- Modale: filtro lista su telefono (ID / indirizzo) -->
+<div class="info-modal-overlay" id="listFilterModal" onclick="if(event.target===this)closeListFilter()">
+  <div class="info-modal" style="max-width:420px;padding:20px 20px 16px;">
+    <button class="info-modal-close" onclick="closeListFilter()">&times;</button>
+    <h3 style="margin-bottom:14px;"><i class="fa-solid fa-filter" style="color:var(--g800);margin-right:6px;"></i>Filtra alberi</h3>
+    <div style="margin-bottom:12px;">
+      <label for="listFilterId" style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px;">ID albero</label>
+      <div class="filter-wrap">
+        <i class="fa-solid fa-magnifying-glass filter-ico"></i>
+        <input id="listFilterId" class="inp" type="text" style="padding-left:32px;width:100%;" placeholder="Es. BRA-012" autocomplete="off">
+      </div>
+    </div>
+    <div style="margin-bottom:12px;">
+      <label for="listFilterAddr" style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px;">Indirizzo</label>
+      <div class="filter-wrap">
+        <i class="fa-solid fa-location-dot filter-ico"></i>
+        <input id="listFilterAddr" class="inp" type="text" style="padding-left:32px;width:100%;" placeholder="Es. Viale Rimembranze" autocomplete="off">
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;">
+      <button class="btn btn-outline btn-sm" onclick="clearListFilter()"><i class="fa-solid fa-eraser"></i> Azzera</button>
+      <button class="btn btn-primary btn-sm" onclick="applyListFilter()"><i class="fa-solid fa-check"></i> Applica</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modale: Mappa per la relazione (PNG/PDF) -->
 <div class="info-modal-overlay" id="mapExportModal" onclick="if(event.target===this)closeMapExport()">
   <div class="info-modal" style="max-width:440px;padding:20px 20px 16px;">
