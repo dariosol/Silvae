@@ -292,6 +292,7 @@
           <button class="btn btn-excel btn-sm" onclick="exportSelectedExcel()"><i class="fa-solid fa-file-excel"></i> Esporta Excel</button>
           <button class="btn btn-gpkg btn-sm" onclick="exportSelectedGPKG()"><i class="fa-solid fa-database"></i> Esporta GPKG</button>
           <button class="btn btn-gpx btn-sm" onclick="exportSelectedGPX()"><i class="fa-solid fa-location-crosshairs"></i> Esporta GPX</button>
+          <button class="btn btn-map btn-sm" onclick="exportSelectedMap()"><i class="fa-solid fa-map"></i> Mappa</button>
           <button class="btn btn-sm" style="background:#dc2626;color:#fff;border:none;" onclick="deleteSelectedTrees()"><i class="fa-solid fa-trash"></i> Elimina selezionati</button>
           <button class="btn btn-outline btn-sm" onclick="toggleExportMode()" style="margin-left:auto;"><i class="fa-solid fa-xmark"></i> Annulla</button>
         </div>
@@ -904,6 +905,7 @@
             <button class="btn btn-gpkg btn-sm" onclick="exportAreaGPKG()" id="areaGpkgBtn" disabled><i class="fa-solid fa-database"></i> GPKG</button>
             <button class="btn btn-gpx btn-sm" onclick="exportAreaGPX()" id="areaGpxBtn" disabled><i class="fa-solid fa-location-crosshairs"></i> GPX</button>
             <button class="btn btn-outline btn-sm" onclick="exportAreaScheda()" id="areaSchedaBtn" disabled><i class="fa-solid fa-file-lines"></i> Schede</button>
+            <button class="btn btn-map btn-sm" onclick="exportAreaMap()" id="areaMapBtn" disabled title="Tavola cartografica PNG/PDF dell'area"><i class="fa-solid fa-map"></i> Mappa</button>
             <button class="btn btn-outline btn-sm" onclick="clearAreaSelect()" title="Cancella selezione"><i class="fa-solid fa-eraser"></i></button>
             <button class="btn btn-outline btn-sm" onclick="toggleAreaSelect()" title="Esci dalla modalità selezione"><i class="fa-solid fa-xmark"></i></button>
           </div>
@@ -1007,6 +1009,14 @@
               <h3>Waypoint GPS — GPX</h3>
               <p>Un waypoint per albero (<code>name</code> = ID, <code>cmt</code> = specie) in formato <code>.gpx</code>: per il GPS da campo, il telefono o QGIS.</p>
               <button id="exportGPXBtn" class="btn btn-gpx"><i class="fa-solid fa-file-arrow-down"></i> Scarica .gpx</button>
+            </div>
+          </div>
+          <div class="export-card">
+            <div class="export-card-icon" style="background:#1a5276;"><i class="fa-solid fa-map"></i></div>
+            <div class="export-card-body">
+              <h3>Mappa per la relazione</h3>
+              <p>Tavola A4 in <code>.png</code> o <code>.pdf</code> con basemap OpenStreetMap o ortofoto, alberi colorati per classe di rischio/condizione, ID, legenda, scala e nord. Degli alberi caricati (o di quelli selezionati in tabella).</p>
+              <button id="exportMapBtn" class="btn btn-map"><i class="fa-solid fa-file-arrow-down"></i> Genera mappa</button>
             </div>
           </div>
           <!-- PLACEHOLDER: schede albero (report) — struttura definitiva in arrivo -->
@@ -1400,6 +1410,40 @@ rischio_finale   = lookup_inverso(probabilità_n)    ← foglio A, colonne AR:AS
 </div>
 
 <!-- Modale: Esporta GPX (nome file) -->
+<!-- Modale: Mappa per la relazione (PNG/PDF) -->
+<div class="info-modal-overlay" id="mapExportModal" onclick="if(event.target===this)closeMapExport()">
+  <div class="info-modal" style="max-width:440px;padding:20px 20px 16px;">
+    <button class="info-modal-close" onclick="closeMapExport()">&times;</button>
+    <h3 style="margin-bottom:4px;"><i class="fa-solid fa-map" style="color:#1a5276;margin-right:6px;"></i>Mappa per la relazione</h3>
+    <p style="font-size:12px;color:var(--text-muted);margin:0 0 14px;">Tavola A4 con basemap, alberi colorati per categoria, ID, legenda, barra di scala e nord. <span id="mapExportCount"></span></p>
+    <div style="margin-bottom:12px;">
+      <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px;">Sfondo</label>
+      <div class="map-export-choice">
+        <label><input type="radio" name="mapExportBasemap" value="osm" checked> <i class="fa-solid fa-map"></i> OpenStreetMap</label>
+        <label><input type="radio" name="mapExportBasemap" value="satellite"> <i class="fa-solid fa-satellite"></i> Ortofoto</label>
+      </div>
+    </div>
+    <div style="margin-bottom:12px;">
+      <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px;">Formato</label>
+      <div class="map-export-choice">
+        <label><input type="radio" name="mapExportFormat" value="pdf" checked> <i class="fa-solid fa-file-pdf"></i> PDF (A4)</label>
+        <label><input type="radio" name="mapExportFormat" value="png"> <i class="fa-solid fa-file-image"></i> PNG (250 dpi)</label>
+      </div>
+    </div>
+    <div style="margin-bottom:12px;">
+      <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px;">Nome del file</label>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <input id="mapExportFilename" class="inp" type="text" value="mappa" style="flex:1;">
+        <span id="mapExportExt" style="font-family:monospace;color:var(--text-muted);font-size:13px;">.pdf</span>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;">
+      <button class="btn btn-outline btn-sm" onclick="closeMapExport()">Annulla</button>
+      <button class="btn btn-map btn-sm" onclick="confirmMapExport()"><i class="fa-solid fa-file-arrow-down"></i> Genera</button>
+    </div>
+  </div>
+</div>
+
 <div class="info-modal-overlay" id="gpxExportModal" onclick="if(event.target===this)closeGpxExport()">
   <div class="info-modal" style="max-width:420px;padding:20px 20px 16px;">
     <button class="info-modal-close" onclick="closeGpxExport()">&times;</button>

@@ -15,6 +15,7 @@ Applicazione web per il censimento e la valutazione del rischio degli alberi urb
 - **Statistiche della vista**: conteggio degli alberi visibili per classe di rischio ORD e per condizione VTA, con la quota di alberi non valutabili (NA); i contatori sono **cliccabili** e filtrano la lista
 - **Mappa interattiva** (Leaflet) con clustering, marker colorati per classe di rischio, ID albero nel popup e **selezione per area** (poligono disegnato sulla mappa) per esportare o generare le schede degli alberi inclusi
 - **Esportazione** in formato Excel (.xlsx), GeoPackage (.gpkg) e waypoint GPX (.gpx), con scelta dei campi da esportare
+- **Mappa per la relazione**: tavola A4 in PNG o PDF con basemap OpenStreetMap o ortofoto, alberi colorati per classe di rischio/condizione, ID, perimetro dell'area, legenda, barra di scala e nord — generata sul server senza librerie GIS né browser (vedi [Mappa per la relazione](#mappa-per-la-relazione))
 - **Schede di rilevamento ARETE** (foglio ORD): una scheda per albero generata dal **template ufficiale** `Schede_Rilevamento_ARETE_DEMO_ver.2.0.xlsm`, compilata coi dati del database e restituita in uno .zip con le cartelle `excel/` (.xlsx) e `pdf/` (se LibreOffice è disponibile sul server)
 - **Triage TRG-P** (popolamenti arborei): calcolatore di screening rapido con categoria di intervento 1–6 e valore ornamentale ([`tools/trg_p_calculator.py`](tools/trg_p_calculator.py)) — *modulo di calcolo pronto, non ancora esposto nell'interfaccia/API*
 - **Importazione** da file GeoPackage (.gpkg) o waypoint GPX (.gpx, es. rilievi GPS o esportati da QGIS) — compatibile con i censimenti ARETE e con i file esportati dall'app, con anteprima e mappatura colonne
@@ -88,6 +89,8 @@ tree_project/
 │   ├── dropdowns_ord.py        # Valori dei menu a tendina ORD
 │   ├── dropdowns_trg_p.py      # Valori dei menu a tendina TRG-P
 │   ├── palette.py              # Colori di rischio e condizione: UNICA fonte (webapp, mappa, QGIS)
+│   ├── map_render.py           # Tavola cartografica PNG/PDF (tessere basemap + Pillow)
+│   ├── fonts/                  # DejaVu Sans, usato dalla tavola cartografica
 │   └── report_templates.py     # Registro dei template di scheda (ARETE .xlsx, base HTML)
 ├── Schede_Rilevamento_ARETE/
 │   └── Schede_Rilevamento_ARETE_DEMO_ver.2.0.xlsm   # Template ufficiale della scheda
@@ -292,9 +295,9 @@ web: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120 --preload
 | Tab | Contenuto |
 |-----|-----------|
 | **Alberi** | Tabella degli alberi con ricerca, ordinamento, aggiunta/modifica/cancellazione, e **barra statistiche** con i conteggi per categoria (vedi [Statistiche della vista](#statistiche-della-vista)). Gli alberi si caricano **solo dopo aver scelto un comune** nel selettore in alto (per `city` è automatico); la voce *Carica tutti gli alberi* in fondo al menu richiede esplicitamente tutti quelli visibili all'account |
-| **Mappa** | Mappa Leaflet con marker e clustering, filtri per città e indirizzo, **barra statistiche** con filtro per categoria (condiviso con il tab Alberi), ID albero nel popup e **selezione per area**: si disegna un poligono sulla mappa e si esportano/generano le schede degli alberi contenuti |
+| **Mappa** | Mappa Leaflet con marker e clustering, filtri per città e indirizzo, **barra statistiche** con filtro per categoria (condiviso con il tab Alberi), ID albero nel popup e **selezione per area**: si disegna un poligono sulla mappa e si esportano gli alberi contenuti, se ne generano le schede o la **mappa per la relazione** (PNG/PDF) |
 | **Gestione** | Pannello amministratore: gestione utenti, città, agronomi, reset password |
-| **Esporta** | Esportazione in Excel (.xlsx), GeoPackage (.gpkg) o GPX (.gpx) e **schede ARETE** — intera raccolta o selezione manuale, con **scelta dei campi da esportare** (esclusione singoli campi) |
+| **Esporta** | Esportazione in Excel (.xlsx), GeoPackage (.gpkg) o GPX (.gpx), **mappa per la relazione** (PNG/PDF) e **schede ARETE** — intera raccolta o selezione manuale, con **scelta dei campi da esportare** (esclusione singoli campi) |
 | **Importa** | Importazione da file .gpkg o .gpx (censimenti esterni, rilievi GPS o file esportati dall'app) con anteprima, mappatura colonne e gestione conflitti (skip/update) |
 | **Algoritmo** | Documentazione tecnica del calcolo ARETE integrata nella webapp |
 
@@ -328,6 +331,17 @@ Il formato GPX (waypoint) è il ponte con i GPS da campo, gli smartphone e QGIS 
 **Import** (`POST /import/gpx`): ogni `<wpt>` diventa un albero. La mappatura automatica riconosce `lat`/`lon` (coordinate), `name` → ID albero, `cmt` → specie, `desc` → note; gli eventuali figli di `<extensions>` (attributi scritti da QGIS o da Silvae Pro) sono proposti come colonne aggiuntive nella finestra di mappatura, come per il GPKG. `ele` e `sym` vengono ignorati (non esiste un campo quota). Comune, conflitti (`skip`/`update`) e dedup per coordinate funzionano come per il GPKG.
 
 **Export** (`GET /export/gpx`): GPX 1.1 in WGS84, un `<wpt>` per albero con `name` = ID, `cmt` = specie, `desc` = riassunto leggibile (specie, condizione, CPC, classe di rischio, indirizzo, comune), `sym` = `Flag, Blue`, e in `<extensions>` i campi Silvae (`custom_id`, `city`, `species`, `condition`, `cpc`, `address`, `rischio`, `next_check`, `comments`) che QGIS mostra come attributi del layer. Nei file generati da Silvae (`creator="Silvae Pro"`) `cmt` e `desc` vengono ignorati alla reimportazione, perché derivati dai campi in `<extensions>`. Disponibile dal tab **Esporta**, dalla barra di selezione della tabella e dalla selezione per area sulla mappa.
+
+---
+
+## Mappa per la relazione
+
+Dal tab **Esporta** (alberi caricati o selezionati in tabella), dalla barra di selezione della tabella o dalla **selezione per area** sulla mappa si genera una **tavola cartografica A4** da inserire nella relazione al comune: `GET /report/map`.
+
+- **Sfondo**: OpenStreetMap (default) oppure ortofoto Esri World Imagery — le stesse basemap della mappa web. Le tessere vengono scaricate dal server, cucite e ritagliate sull'inquadratura degli alberi (zoom frazionario, fino a 2 livelli oltre quello nativo ingrandendo le tessere, come sulla mappa web; una tessera mancante viene sostituita dal quadrante della tessera padre).
+- **Contenuto**: un marker per albero colorato con la stessa casella della [barra statistiche](#statistiche-della-vista) (rischio ORD se calcolato, altrimenti condizione VTA/CPC, altrimenti NA) e i colori di [`tools/palette.py`](tools/palette.py); l'ID albero come etichetta (omessa oltre i 200 alberi, dove i marker si rimpiccioliscono); il perimetro dell'area selezionata; legenda con i conteggi per classe; barra di scala; freccia del nord; attribuzione della basemap; titolo con comune, numero di alberi e data.
+- **Formato**: `pdf` (pagina A4, orientamento scelto in base alla forma dell'inquadratura) o `png` a 250 dpi, per incollarla in un documento. Il PDF è la stessa immagine impaginata da Pillow (JPEG interno): un'unica pipeline, nessun browser, LibreOffice o libreria GIS sul server.
+- **Implementazione**: [`tools/map_render.py`](tools/map_render.py) non conosce il dominio — riceve punti già colorati e le voci della legenda da `report_map()` in [`app.py`](app.py). Usa solo `urllib`, Pillow e i font DejaVu in `tools/fonts/`. Le tessere sono in una cache in memoria per processo (`lru_cache`), e le richieste a OSM portano lo User-Agent `SilvaePro-MapExport` come richiesto dalla tile usage policy.
 
 ---
 
@@ -470,6 +484,7 @@ Stesso filtro per ruolo e stessa selezione `ids` degli export (vedi [Schede di r
 |--------|----------|-------------|
 | `GET`  | `/report/templates` | Elenco dei template di scheda disponibili |
 | `GET`  | `/report/scheda` | Genera le schede albero (`?ids=` e `?template=` opzionali; default `scheda_arete` → `schede_albero.zip`) |
+| `GET`  | `/report/map` | Tavola cartografica A4 (`?basemap=osm\|satellite`, `?format=pdf\|png`, `?ids=` e `?polygon=lat,lon;lat,lon;…` opzionali) — vedi [Mappa per la relazione](#mappa-per-la-relazione) |
 
 ### Geocodifica e voce
 

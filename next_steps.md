@@ -317,16 +317,22 @@ TRG-P.
 
 ## C — Togliere i motivi di aprire QGIS
 
-### C1. Mappa PDF per la relazione
+### C1. Mappa PDF per la relazione — ✅ fatto (settembre 2026)
 
-Per mettere una mappa nella relazione al comune, oggi si apre il compositore
-di stampa di QGIS. Un «genera mappa PDF» dell'area selezionata — con legenda
-per classe di rischio, scala e nord — elimina un intero giro esterno e si
-sposa con le schede ARETE già generate.
+`GET /report/map` e [`tools/map_render.py`](tools/map_render.py): tavola A4 in
+PNG o PDF, basemap OSM (default) o ortofoto, marker colorati con la casella
+della barra statistiche, ID, perimetro dell'area, legenda, scala, nord.
+Download separato dalle schede, dal tab Esporta, dalla barra di selezione
+della tabella e dalla selezione per area. Fatto **lato server** senza
+strumenti aggiuntivi: tessere scaricate con `urllib`, cucite con Pillow, PDF
+scritto da Pillow stesso. Rimasto fuori (da valutare se serve): PDF vettoriale
+(testo selezionabile) via `fpdf2`, più pagine per aree grandi, scelta del
+livello di zoom a mano.
 
-**Sforzo**: qualche giorno. Attenzione: il rendering lato server di una mappa
-è meno banale di quanto sembri, e LibreOffice non è disponibile — valutare la
-generazione lato client.
+Per mettere una mappa nella relazione al comune, prima si apriva il
+compositore di stampa di QGIS. Un «genera mappa» dell'area selezionata — con
+legenda per classe di rischio, scala e nord — elimina un intero giro esterno
+e si sposa con le schede ARETE già generate.
 
 ### C2. Basemap catastale e ortofoto ufficiali (WMS)
 
@@ -380,7 +386,7 @@ potrebbe rifiutare lo strumento a prescindere da quanto è buono tutto il resto.
 1. **A1 + A2** (A3 GPX già fatto) — stile QML, layer live. Giorni, non settimane;
    riusano codice esistente e cambiano il posizionamento del prodotto.
 2. **C2** (WMS catastale) e **D1** (foto) — il miglior rapporto
-   valore/fatica tra le proposte sostanziali.
+   valore/fatica tra le proposte sostanziali. (**C1** mappa PDF: ✅ fatta.)
 3. **A4** — quando il ponte con QGIS comincia a essere usato su dati veri.
 4. **B1 + B3 + TRG-P in interfaccia** — la scommessa strategica: apre un
    mercato diverso (gestione di popolamenti, non perizie su singoli alberi)

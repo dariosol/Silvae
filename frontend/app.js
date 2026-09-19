@@ -16,6 +16,7 @@ let state = {
     map: null, markers: [], markerLayer: null, mapTrees: [], userMarker: null, satelliteActive: false,
     areaSelectMode: false, areaVertices: [], areaDraft: null, areaMarkers: [], areaPoly: null, areaClosed: false, areaSelectedIds: [],
     gpkgColumns: null, gpkgExportIds: [],
+    mapExportIds: [], mapExportPolygon: null,
     dropdowns: {}
 };
 
@@ -3148,10 +3149,12 @@ function updateAreaPanel() {
     const gpk = document.getElementById('areaGpkgBtn');
     const gpx = document.getElementById('areaGpxBtn');
     const sch = document.getElementById('areaSchedaBtn');
+    const mp  = document.getElementById('areaMapBtn');
     if (xls) xls.disabled = n === 0;
     if (gpk) gpk.disabled = n === 0;
     if (gpx) gpx.disabled = n === 0;
     if (sch) sch.disabled = n === 0;
+    if (mp)  mp.disabled  = n === 0;
 }
 
 function _areaExport(format) {
@@ -3163,6 +3166,76 @@ function _areaExport(format) {
 function exportAreaExcel() { return _areaExport('excel'); }
 function exportAreaGPKG()  { return _areaExport('gpkg');  }
 function exportAreaGPX()   { return _areaExport('gpx');   }
+
+// Barra selezione area: tavola cartografica degli alberi nell'area, con il perimetro disegnato.
+function exportAreaMap() {
+    const ids = state.areaSelectedIds || [];
+    if (ids.length === 0) { showStatus("Nessun albero nell'area selezionata", 'warning'); return; }
+    return openMapExportModal(ids, state.areaVertices, 'mappa_area');
+}
+
+// ─── Mappa per la relazione (PNG/PDF) ─────────────────────
+
+// ids: alberi da mappare; polygon: vertici dell'area (LatLng Leaflet o [lat,lng]), opzionale.
+function openMapExportModal(ids, polygon, defaultName) {
+    if (!state.token) { showStatus('Effettua prima il login', 'danger'); return; }
+    state.mapExportIds = ids || [];
+    state.mapExportPolygon = polygon || null;
+    document.getElementById('mapExportFilename').value = defaultName || 'mappa';
+    document.getElementById('mapExportCount').textContent = `${state.mapExportIds.length} alberi.`;
+    _syncMapExportExt();
+    document.getElementById('mapExportModal').classList.add('open');
+}
+
+function closeMapExport() {
+    document.getElementById('mapExportModal').classList.remove('open');
+}
+
+function _mapExportChoice(name) {
+    const el = document.querySelector(`input[name="${name}"]:checked`);
+    return el ? el.value : '';
+}
+
+function _syncMapExportExt() {
+    document.getElementById('mapExportExt').textContent = '.' + (_mapExportChoice('mapExportFormat') || 'pdf');
+}
+
+async function confirmMapExport() {
+    const fmt = _mapExportChoice('mapExportFormat') || 'pdf';
+    const basemap = _mapExportChoice('mapExportBasemap') || 'osm';
+    const filename = _safeFilename(document.getElementById('mapExportFilename').value, 'mappa', fmt);
+    closeMapExport();
+    const params = new URLSearchParams({ basemap, format: fmt });
+    if (state.mapExportIds.length) params.set('ids', state.mapExportIds.join(','));
+    if (state.mapExportPolygon && state.mapExportPolygon.length >= 3)
+        params.set('polygon', state.mapExportPolygon.map(v => { const p = L.latLng(v); return `${p.lat},${p.lng}`; }).join(';'));
+    showStatus('Preparazione mappa… (qualche secondo)', 'info');
+    const res = await fetch(`${API_BASE}/report/map?${params}`, { headers: authHeader() });
+    if (!res.ok) {
+        let msg = 'Generazione mappa fallita';
+        try { msg = (await res.json()).error || msg; } catch {}
+        return showStatus(msg, 'danger');
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(await res.blob());
+    a.download = filename; a.click();
+    URL.revokeObjectURL(a.href);
+    showStatus(`Mappa scaricata: ${filename}`, 'success');
+}
+
+// Card "Esporta": alberi selezionati in tabella, altrimenti tutti quelli caricati (comune corrente).
+function exportMap() {
+    if (state.exportSelected.size) return openMapExportModal([...state.exportSelected], null, 'mappa');
+    const ids = (state.allTrees || []).filter(t => t.latitude && t.longitude).map(t => t.id);
+    if (ids.length === 0) { showStatus('Nessun albero caricato: seleziona prima un comune', 'warning'); return; }
+    return openMapExportModal(ids, null, 'mappa');
+}
+
+// Barra selezione della tabella.
+function exportSelectedMap() {
+    if (state.exportSelected.size === 0) { showStatus('Nessun albero selezionato', 'warning'); return; }
+    return openMapExportModal([...state.exportSelected], null, 'mappa_selezione');
+}
 
 // ─── Status toast ─────────────────────────────────────────
 
@@ -3216,6 +3289,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('exportGPKGBtn').addEventListener('click', exportGPKG);
     document.getElementById('exportGPXBtn').addEventListener('click', exportGPX);
     document.getElementById('exportSchedaBtn').addEventListener('click', exportScheda);
+    document.getElementById('exportMapBtn').addEventListener('click', exportMap);
+    document.querySelectorAll('input[name="mapExportFormat"]').forEach(r => r.addEventListener('change', _syncMapExportExt));
     loadReportTemplates();
     init();
 });

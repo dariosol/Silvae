@@ -38,6 +38,7 @@ from tools.ord_calculator import (
 )
 from tools import report_templates as report_tpl
 from tools import palette
+from tools import map_render
 
 # -----------------------
 # Configuration
@@ -1985,6 +1986,30 @@ def _risk_label(key):
     e = palette.by_key('risk', key) if key else None
     return e['label'] if e else ''
 
+def _cond_category(cond):
+    """Condizione / classe CPC → chiave di palette.CONDITION; stessa logica di condCategory() nel frontend."""
+    c = (cond or '').strip().lower()
+    if not c: return 'other'
+    if c == 'a': return 'good'
+    if c == 'b': return 'buono'
+    if c == 'c': return 'fair'
+    if c in ('d', 'c/d'): return 'poor'
+    if any(k in c for k in ('ottimo', 'eccellente', 'excel', 'good')): return 'good'
+    if 'buono' in c: return 'buono'
+    if any(k in c for k in ('discreto', 'mediocre', 'fair', 'moder')): return 'fair'
+    if any(k in c for k in ('scarso', 'critico', 'morto', 'abbattuto', 'poor', 'crit', 'dead')): return 'poor'
+    return 'other'
+
+def _tree_bucket(t):
+    """Casella statistica dell'albero, come treeStatBucket() nel frontend:
+    ('risk', chiave) se il rischio è calcolato, altrimenti ('cond', chiave) da
+    CPC o condizione, altrimenti ('na', 'na')."""
+    r = _worst_risk(t)
+    if r: return 'risk', r
+    src = (t.cpc or '').strip() or (t.condition or '').strip()
+    if src: return 'cond', _cond_category(src)
+    return 'na', 'na'
+
 # Attributi scritti in <extensions> di ogni waypoint (nome tag, getter).
 # QGIS li legge come campi del layer; l'import li riconosce per nome.
 _GPX_EXT_FIELDS = [
@@ -2108,6 +2133,85 @@ def report_scheda():
     buf.seek(0)
     return send_file(buf, download_name=filename, as_attachment=True,
                      mimetype=mimetype)
+
+
+@app.route('/report/map', methods=['GET'])
+@auth_required
+def report_map():
+    """Tavola cartografica (PNG o PDF, A4) degli alberi visibili/selezionati:
+    basemap OSM o ortofoto, marker colorati per categoria (rischio ORD, oppure
+    condizione VTA, oppure NA — la stessa logica della barra statistiche),
+    ID albero come etichetta, perimetro dell'area, legenda, scala e nord.
+
+    Parametri:
+      - ids:     selezione opzionale (`1,2,3`); assente = tutti i visibili
+      - basemap: `osm` (default) | `satellite`
+      - format:  `pdf` (default) | `png`
+      - polygon: vertici dell'area selezionata `lat,lon;lat,lon;…` (opzionale)
+    """
+    basemap = request.args.get('basemap', 'osm')
+    fmt = request.args.get('format', 'pdf')
+    if basemap not in map_render.BASEMAPS:
+        return jsonify({'error': f'Basemap non valida: {basemap}'}), 400
+    if fmt not in map_render.FORMATS:
+        return jsonify({'error': f'Formato non valido: {fmt}'}), 400
+
+    polygon = []
+    for pair in (request.args.get('polygon') or '').split(';'):
+        parts = pair.split(',')
+        if len(parts) == 2:
+            try: polygon.append((float(parts[0]), float(parts[1])))
+            except ValueError: pass
+
+    trees = [t for t in _scoped_tree_query().order_by(Tree.custom_id).all()
+             if t.latitude is not None and t.longitude is not None]
+    if not trees:
+        return jsonify({'error': 'Nessun albero con coordinate da mappare'}), 404
+
+    counts = {}
+    points = []
+    for t in trees:
+        group, key = _tree_bucket(t)
+        counts[(group, key)] = counts.get((group, key), 0) + 1
+        entry = palette.by_key('risk' if group != 'cond' else 'cond', key)
+        points.append({'lat': t.latitude, 'lon': t.longitude,
+                       'label': t.custom_id, 'color': entry['main']})
+
+    # Legenda: un gruppo compare solo se ha almeno un albero; dentro un gruppo
+    # si stampano tutte le classi, così la scala resta leggibile per intero.
+    legend = []
+    if any(g == 'risk' for g, _ in counts):
+        legend += [{'group': 'Rischio ORD', 'label': e['label'], 'color': e['main'],
+                    'count': counts.get(('risk', e['key']), 0)}
+                   for e in palette.RISK if e['key'] != 'na']
+    if any(g == 'cond' for g, _ in counts):
+        legend += [{'group': 'Condizione VTA', 'label': e['label'], 'color': e['main'],
+                    'count': counts.get(('cond', e['key']), 0)}
+                   for e in palette.CONDITION]
+    if counts.get(('na', 'na')):
+        e = palette.by_key('risk', 'na')
+        legend.append({'group': '', 'label': e['label'], 'color': e['main'],
+                       'count': counts[('na', 'na')]})
+
+    cities = sorted({t.city for t in trees if t.city})
+    place = cities[0] if len(cities) == 1 else f'{len(cities)} comuni'
+    now = datetime.now()
+    title = f'Mappa alberi — {place}'
+    subtitle = (f'{len(trees)} alberi · {"area selezionata" if polygon else "intera vista"} · '
+                f'{map_render.BASEMAPS[basemap]["label"]} · {now.strftime("%d/%m/%Y")}')
+    footer = f'Silvae Pro · generato il {now.strftime("%d/%m/%Y %H:%M")} da {request.user.get("username", "")}'
+
+    try:
+        content, mimetype = map_render.render(points, polygon or None, basemap, fmt,
+                                              title=title, subtitle=subtitle,
+                                              legend=legend, footer=footer)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+    safe_place = re.sub(r'[^\w-]+', '_', place).strip('_') or 'alberi'
+    filename = f'mappa_{safe_place}_{now.strftime("%Y%m%d")}.{fmt}'
+    return send_file(io.BytesIO(content), download_name=filename,
+                     as_attachment=True, mimetype=mimetype)
 
 # -----------------------
 # Import GPKG
