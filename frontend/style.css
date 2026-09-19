@@ -238,6 +238,7 @@ body {
 
 .nav-user {
   display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  position: relative;
 }
 .nav-user-badge {
   display: flex; align-items: center; gap: 7px;
@@ -267,6 +268,45 @@ body {
   white-space: nowrap;
 }
 .btn-logout:hover { background: rgba(255,255,255,.14); }
+
+/* Menu utente: si apre cliccando sul nome nell'header */
+.nav-user-btn {
+  border: 1.5px solid transparent; cursor: pointer; font-family: inherit;
+  transition: background .15s;
+}
+.nav-user-btn:hover, .nav-user-btn[aria-expanded="true"] { background: rgba(255,255,255,.22); }
+.nav-user-btn { max-width: 280px; }
+.nav-user-btn #loggedInUser, .nav-user-btn #loggedInRole { overflow: hidden; text-overflow: ellipsis; }
+.nav-user-btn #loggedInUser { flex-shrink: 0; }
+.nav-user-btn #loggedInRole { white-space: pre; opacity: .8; }
+.nav-user-caret { font-size: 10px; transition: transform .15s; }
+.nav-user-btn[aria-expanded="true"] .nav-user-caret { transform: rotate(180deg); }
+.nav-user-menu {
+  position: absolute; top: calc(100% + 6px); right: 0;
+  min-width: 250px; max-width: calc(100vw - 32px);
+  background: #fff; color: var(--text);
+  border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.18);
+  padding: 6px; z-index: 400;
+}
+.nav-user-menu-info {
+  padding: 8px 10px 10px; margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px; color: var(--text-muted); line-height: 1.4;
+  word-break: break-word;
+}
+.nav-user-menu-info strong { color: var(--text); font-size: 13px; }
+.nav-user-menu-item {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 9px 10px; border: none; border-radius: 7px;
+  background: transparent; color: var(--text);
+  font-size: 13px; font-family: inherit; text-align: left; cursor: pointer;
+}
+.nav-user-menu-item:hover { background: var(--g50, #f1f5f1); }
+.nav-user-menu-item i:first-child { width: 16px; text-align: center; color: var(--g700); }
+.nav-user-menu-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .5px; white-space: nowrap; }
+.nav-user-menu-logout { color: #b3261e; }
+.nav-user-menu-logout i:first-child { color: #b3261e; }
 
 /* ── Tab bar ── */
 .tab-bar {
@@ -1002,6 +1042,10 @@ textarea.fc { resize: vertical; min-height: 72px; }
 @media (max-width: 768px) {
   .navbar { height: auto; flex-wrap: wrap; padding: 12px 16px; gap: 8px; }
   .nav-filters { order: 3; width: 100%; max-width: 100%; }
+  /* su telefono account, codice ed Esci stanno nel menu utente */
+  .nav-user { margin-left: auto; }
+  .nav-user .nav-wide-only { display: none !important; }
+  .nav-user-btn { max-width: 170px; }
   #tab-trees { padding: 10px 12px; }
   .tab-btn span { display: none; }
   .tab-btn { padding: 12px 16px; }

@@ -534,8 +534,15 @@ function setupAuthUI() {
     if (state.token && state.user) {
         loginPage.style.display = 'none';
         appPage.style.display   = 'flex';
-        document.getElementById('loggedInUser').textContent =
-            `${state.user.username}  (${state.user.role}${state.user.city ? ' · ' + state.user.city : ''})`;
+        // su telefono resta solo lo username: ruolo e comune sono nel menu
+        document.getElementById('loggedInUser').textContent = state.user.username;
+        document.getElementById('loggedInRole').textContent =
+            `  (${state.user.role}${state.user.city ? ' · ' + state.user.city : ''})`;
+        const info = document.getElementById('userMenuInfo');
+        info.innerHTML = '<strong></strong><br><span></span>';
+        info.querySelector('strong').textContent = state.user.username;
+        info.querySelector('span').textContent =
+            (ROLE_LABELS[state.user.role] || state.user.role) + (state.user.city ? ' · ' + state.user.city : '');
         showRoleFeatures(state.user.role);
         showAgronomerCode();
         populateUsers();
@@ -552,7 +559,11 @@ function setupAuthUI() {
 async function showAgronomerCode() {
     const badge = document.getElementById('agroCodeBadge');
     if (!badge) return;
-    if (!state.user || state.user.role !== 'user') { badge.style.display = 'none'; return; }
+    if (!state.user || state.user.role !== 'user') {
+        badge.style.display = 'none';
+        document.getElementById('userMenuCode').style.display = 'none';
+        return;
+    }
     let code = state.user.agronomer_code;
     if (!code) {
         try {
@@ -564,10 +575,24 @@ async function showAgronomerCode() {
             }
         } catch (_) { /* rete assente: il badge resta nascosto */ }
     }
-    if (!code) { badge.style.display = 'none'; return; }
+    const menuItem = document.getElementById('userMenuCode');
+    if (!code) { badge.style.display = 'none'; menuItem.style.display = 'none'; return; }
     document.getElementById('agroCodeText').textContent = code;
+    document.getElementById('userMenuCodeText').textContent = code;
     badge.style.display = 'flex';
+    menuItem.style.display = 'flex';
 }
+
+// Menu utente nell'header (account, codice agronomo, esci): si apre cliccando
+// sul nome e si chiude con un clic fuori, con Esc o scegliendo una voce.
+function toggleUserMenu(open) {
+    const btn  = document.getElementById('userMenuBtn');
+    const menu = document.getElementById('userMenu');
+    if (open === undefined) open = menu.hidden;
+    menu.hidden = !open;
+    btn.setAttribute('aria-expanded', String(open));
+}
+function closeUserMenu() { toggleUserMenu(false); }
 
 async function copyAgronomerCode() {
     const code = document.getElementById('agroCodeText').textContent;
@@ -940,6 +965,7 @@ async function submitChangePassword(e) {
 }
 
 function logout() {
+    closeUserMenu();
     state.token = null; state.user = null;
     localStorage.removeItem('token'); localStorage.removeItem('user');
     state.allTrees = []; state.filteredTrees = []; state.viewTrees = []; state.statFilter = null;
@@ -3313,6 +3339,11 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
     document.querySelectorAll('th.sortable').forEach(th => th.addEventListener('click', () => applySort(th.dataset.sort)));
     document.getElementById('logoutBtn').addEventListener('click', logout);
+    document.getElementById('userMenuBtn').addEventListener('click', e => { e.stopPropagation(); toggleUserMenu(); });
+    document.addEventListener('click', e => {
+        if (!document.getElementById('userMenu').hidden && !e.target.closest('.nav-user')) closeUserMenu();
+    });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeUserMenu(); });
     document.getElementById('refreshCitiesBtn').addEventListener('click', populateCities);
     document.getElementById('createUserBtn').addEventListener('click', createUser);
     document.getElementById('createCityBtn').addEventListener('click', createCity);

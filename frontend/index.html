@@ -213,21 +213,40 @@
       </button>
     </div>
     <div class="nav-user">
-      <div class="nav-user-badge">
+      <!-- Il nome utente apre un menu (account, codice agronomo, esci): su telefono
+           è l'unico accesso a queste voci, perché i pulsanti accanto vengono nascosti -->
+      <button id="userMenuBtn" class="nav-user-badge nav-user-btn" type="button"
+              aria-haspopup="true" aria-expanded="false" title="Menu utente">
         <i class="fa-solid fa-circle-user"></i>
-        <span id="loggedInUser"></span>
+        <span id="loggedInUser"></span><span id="loggedInRole" class="nav-wide-only"></span>
+        <i class="fa-solid fa-chevron-down nav-user-caret"></i>
+      </button>
+      <div id="userMenu" class="nav-user-menu" hidden>
+        <div id="userMenuInfo" class="nav-user-menu-info"></div>
+        <button class="nav-user-menu-item" type="button" onclick="closeUserMenu(); openAccount()">
+          <i class="fa-solid fa-user-gear"></i> Il mio account
+        </button>
+        <button id="userMenuCode" class="nav-user-menu-item" type="button" style="display:none;"
+                onclick="closeUserMenu(); copyAgronomerCode()" title="Clicca per copiare il codice">
+          <i class="fa-solid fa-id-card"></i>
+          <span>Codice <span id="userMenuCodeText" class="nav-user-menu-code"></span></span>
+          <i class="fa-regular fa-copy" style="font-size:11px;margin-left:auto;opacity:.6;"></i>
+        </button>
+        <button class="nav-user-menu-item nav-user-menu-logout" type="button" onclick="closeUserMenu(); logout()">
+          <i class="fa-solid fa-right-from-bracket"></i> Esci
+        </button>
       </div>
       <!-- Codice agronomo (solo ruolo user): da comunicare al comune per il collegamento -->
-      <button id="agroCodeBadge" class="nav-user-badge nav-code-badge" style="display:none;" type="button"
+      <button id="agroCodeBadge" class="nav-user-badge nav-code-badge nav-wide-only" style="display:none;" type="button"
               title="Il tuo codice agronomo: comunicalo al comune per farti collegare. Clicca per copiarlo.">
         <i class="fa-solid fa-id-card"></i>
         <span id="agroCodeText"></span>
         <i class="fa-regular fa-copy" style="font-size:11px;"></i>
       </button>
-      <button id="accountBtn" class="btn-logout" type="button" title="Il mio account: email e password" onclick="openAccount()">
+      <button id="accountBtn" class="btn-logout nav-wide-only" type="button" title="Il mio account: email e password" onclick="openAccount()">
         <i class="fa-solid fa-user-gear"></i>
       </button>
-      <button id="logoutBtn" class="btn-logout"><i class="fa-solid fa-right-from-bracket"></i> Esci</button>
+      <button id="logoutBtn" class="btn-logout nav-wide-only"><i class="fa-solid fa-right-from-bracket"></i> Esci</button>
     </div>
   </nav>
 
