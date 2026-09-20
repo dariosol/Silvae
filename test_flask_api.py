@@ -746,6 +746,104 @@ class TestExport:
         assert client.get('/export/geojson').status_code == 401
 
 
+# ---------------------------------------------------------------------------
+# Fase 0 QGIS (qgis.md): token API, uuid/updated_*, _upsert_tree
+# ---------------------------------------------------------------------------
+
+import io, sqlite3, tempfile, os
+from app import ApiToken, _upsert_tree, _role_tree_query
+
+
+def _edit_gpkg(data, sql):
+    """Applica una UPDATE al layer `alberi` di un GPKG in memoria."""
+    path = tempfile.mktemp(suffix='.gpkg'); open(path, 'wb').write(data)
+    con = sqlite3.connect(path); con.execute(sql); con.commit(); con.close()
+    out = open(path, 'rb').read(); os.remove(path)
+    return out
+
+
+class TestApiToken:
+    def test_token_lifecycle(self, client, auth_headers):
+        res = client.post('/me/tokens', json={'name': 'pytest'}, headers=auth_headers)
+        assert res.status_code == 201
+        body = res.get_json()
+        assert body['token'].startswith('slv_') and body['prefix'] == body['token'][:12]
+        tok_headers = {'Authorization': f"Bearer {body['token']}"}
+        try:
+            me = client.get('/me', headers=tok_headers)
+            assert me.status_code == 200 and me.get_json()['username'] == 'admin'
+            # un token API non crea altri token
+            assert client.post('/me/tokens', json={}, headers=tok_headers).status_code == 403
+            assert any(t['id'] == body['id'] for t in client.get('/me/tokens', headers=auth_headers).get_json())
+        finally:
+            assert client.delete(f"/me/tokens/{body['id']}", headers=auth_headers).status_code == 200
+        assert client.get('/me', headers=tok_headers).status_code == 401
+        with flask_app.app_context():
+            t = db.session.get(ApiToken, body['id'])
+            if t: db.session.delete(t); db.session.commit()
+
+    def test_demo_cannot_create_token(self, client):
+        res = client.post('/login', json={'username': 'demo_user', 'password': 'demo_password'})
+        if res.status_code != 200:
+            pytest.skip('account demo non disponibile')
+        h = {'Authorization': f"Bearer {res.get_json()['token']}"}
+        assert client.post('/me/tokens', json={}, headers=h).status_code == 403
+
+
+class TestTreeTracking:
+    def test_uuid_and_updated_fields(self, client, auth_headers, added_tree_id):
+        d = client.get(f'/tree/{added_tree_id}', headers=auth_headers).get_json()
+        assert d['uuid'] and len(d['uuid']) == 36
+        assert d['updated_at'] and d['updated_by'] == 'admin'
+        before = d['updated_at']
+        assert client.patch(f'/tree/{added_tree_id}', json={'comments': 'x'}, headers=auth_headers).status_code == 200
+        after = client.get(f'/tree/{added_tree_id}', headers=auth_headers).get_json()
+        assert after['updated_at'] > before and after['uuid'] == d['uuid']
+
+
+class TestUpsertImport:
+    def _import(self, client, headers, data, on_conflict='update'):
+        res = client.post('/import/gpkg',
+                          data={'file': (io.BytesIO(data), 'x.gpkg'), 'city': TEST_TREE['city'],
+                                'on_conflict': on_conflict},
+                          headers=headers, content_type='multipart/form-data')
+        assert res.status_code == 200, res.get_json()
+        return res.get_json()
+
+    def test_reimport_is_idempotent(self, client, auth_headers, added_tree_id):
+        g = client.get(f'/export/gpkg?ids={added_tree_id}', headers=auth_headers).data
+        r = self._import(client, auth_headers, g)
+        assert (r['created'], r['updated'], r['unchanged'], r['errors']) == (0, 0, 1, 0)
+        assert r['inserted'] == 1  # compatibilità con il frontend
+
+    def test_moved_point_updates_by_uuid(self, client, auth_headers, added_tree_id):
+        g = client.get(f'/export/gpkg?ids={added_tree_id}', headers=auth_headers).data
+        g = _edit_gpkg(g, "UPDATE alberi SET latitude = latitude + 0.001")
+        r = self._import(client, auth_headers, g)
+        assert (r['created'], r['updated']) == (0, 1)
+        d = client.get(f'/tree/{added_tree_id}', headers=auth_headers).get_json()
+        assert abs(d['latitude'] - (TEST_TREE['latitude'] + 0.001)) < 1e-6
+
+    def test_empty_values_and_derived_fields_are_ignored(self, client, auth_headers, added_tree_id):
+        g = client.get(f'/export/gpkg?ids={added_tree_id}', headers=auth_headers).data
+        g = _edit_gpkg(g, "UPDATE alberi SET species = NULL, bersaglio_chioma = 7")
+        r = self._import(client, auth_headers, g)
+        assert r['unchanged'] == 1
+        d = client.get(f'/tree/{added_tree_id}', headers=auth_headers).get_json()
+        assert d['species'] == TEST_TREE['species'] and d['bersaglio_chioma'] is None
+
+    def test_strict_uuid_rejects_unknown(self, client, auth_headers, added_tree_id):
+        with flask_app.app_context():
+            admin = User.query.filter_by(username='admin').first()
+            scope = _role_tree_query('superuser', admin.id, None)
+            with pytest.raises(ValueError):
+                _upsert_tree({'uuid': '00000000-0000-0000-0000-000000000000', 'custom_id': 'X',
+                              'latitude': 1.0, 'longitude': 1.0},
+                             city=TEST_TREE['city'], on_conflict='update',
+                             user_id=admin.id, scope=scope, strict_uuid=True)
+            db.session.rollback()
+
+
 if __name__ == '__main__':
     import sys
     sys.exit(pytest.main([__file__, '-v']))

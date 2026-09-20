@@ -2557,6 +2557,7 @@ function exportSelectedExcel() {
 const SILVAE_FIELDS = [
     { value: '',                  label: '— non importare —' },
     { value: 'custom_id',         label: 'ID Albero' },
+    { value: 'uuid',              label: 'UUID Silvae (chiave di collegamento)' },
     { value: 'species',           label: 'Specie (latino)' },
     { value: 'species_ita',       label: 'Specie (italiano)' },
     { value: 'condition',         label: 'Condizione' },

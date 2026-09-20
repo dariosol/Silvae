@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 import sys, os, io, json, re, secrets, struct, tempfile, sqlite3, urllib.request
+import uuid as uuid_lib, hashlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from dotenv import load_dotenv
 load_dotenv()  # loads .env when running locally; no-op on Railway
 
-from flask import Flask, request, jsonify, send_file, send_from_directory
+from flask import Flask, request, jsonify, send_file, send_from_directory, has_request_context
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from geopy.geocoders import Nominatim
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import inspect, text, case
+from sqlalchemy import inspect, text, case, event
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 import smtplib
@@ -235,6 +236,15 @@ class Tree(db.Model):
     ia_kg_anno                  = db.Column(db.Float)  # intercett. acqua (kg/anno)
     valore_ecologico            = db.Column(db.Float)  # valore monetario (€)
 
+    # --- Collegamento esterno e tracciabilità (QGIS, vedi qgis.md §4) ---
+    # `uuid` è la chiave stabile con cui un layer esterno resta collegato
+    # all'albero (custom_id è rinominabile e unico solo per comune).
+    uuid       = db.Column(db.String(36), unique=True, default=lambda: str(uuid_lib.uuid4()))
+    updated_at = db.Column(db.DateTime(timezone=True),
+                           default=lambda: datetime.now(timezone.utc),
+                           onupdate=lambda: datetime.now(timezone.utc))
+    updated_by = db.Column(db.String(80))   # username dell'ultima modifica
+
 class Inspection(db.Model):
     __tablename__ = 'inspection'
     id            = db.Column(db.Integer, primary_key=True)
@@ -249,6 +259,62 @@ class Inspection(db.Model):
     rischio       = db.Column(db.Text)   # JSON: assess_tree result at inspection time
     created_at    = db.Column(db.DateTime(timezone=True),
                               default=lambda: datetime.now(timezone.utc))
+
+class ApiToken(db.Model):
+    """Token d'accesso longevo e revocabile per client esterni (plugin QGIS,
+    vedi qgis.md §5). Il JWT di /login scade e congela ruolo e comune: qui in
+    DB sta solo l'hash, e ruolo/comune vengono riletti dall'utente a ogni
+    richiesta. Il token in chiaro (`slv_…`) si vede una volta sola, alla
+    creazione."""
+    __tablename__ = 'api_token'
+    id           = db.Column(db.Integer, primary_key=True)
+    user_id      = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'), nullable=False)
+    name         = db.Column(db.String(80), nullable=False)
+    token_hash   = db.Column(db.String(64), unique=True, nullable=False)   # sha256 esadecimale
+    prefix       = db.Column(db.String(12), nullable=False)                # per riconoscerlo in lista
+    created_at   = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    last_used_at = db.Column(db.DateTime(timezone=True))
+    revoked_at   = db.Column(db.DateTime(timezone=True))
+
+    def to_dict(self):
+        fmt = lambda d: d.strftime('%Y-%m-%d %H:%M') if d else None
+        return {'id': self.id, 'name': self.name, 'prefix': self.prefix,
+                'created_at': fmt(self.created_at), 'last_used_at': fmt(self.last_used_at),
+                'revoked': self.revoked_at is not None}
+
+API_TOKEN_PREFIX = 'slv_'
+
+def _hash_api_token(raw):
+    return hashlib.sha256(raw.encode('utf-8')).hexdigest()
+
+def _new_api_token(user, name):
+    """Crea un ApiToken per `user`; ritorna (token_in_chiaro, oggetto). Non committa."""
+    raw = API_TOKEN_PREFIX + secrets.token_urlsafe(30)
+    tok = ApiToken(user_id=user.id, name=(name or 'QGIS').strip()[:80],
+                   token_hash=_hash_api_token(raw), prefix=raw[:12])
+    db.session.add(tok)
+    return raw, tok
+
+def _resolve_api_token(raw):
+    """(ApiToken, User) per un token in chiaro valido e non revocato, altrimenti None."""
+    tok = ApiToken.query.filter_by(token_hash=_hash_api_token(raw), revoked_at=None).first()
+    if not tok:
+        return None
+    user = db.session.get(User, tok.user_id)
+    if not user:
+        return None
+    return tok, user
+
+@event.listens_for(db.session, 'before_flush')
+def _stamp_updated_by(session, flush_context, instances):
+    """Scrive `Tree.updated_by` con l'utente della richiesta corrente su ogni
+    albero creato o modificato (`updated_at` lo gestisce la colonna stessa)."""
+    if not (has_request_context() and hasattr(request, 'user')):
+        return
+    username = request.user.get('username')
+    for obj in list(session.new) + list(session.dirty):
+        if isinstance(obj, Tree) and (obj in session.new or session.is_modified(obj)):
+            obj.updated_by = username
 
 # -----------------------
 # DB init + migrate new columns
@@ -285,11 +351,25 @@ with app.app_context():
         ('bio_kg','FLOAT'), ('co2_kg_anno','FLOAT'),
         ('o2_kg_anno','FLOAT'), ('ia_kg_anno','FLOAT'),
         ('valore_ecologico','FLOAT'),
+        ('uuid','VARCHAR(36)'), ('updated_at','TIMESTAMPTZ'), ('updated_by','VARCHAR(80)'),
     ]
     with db.engine.connect() as conn:
         for col_name, col_type in new_cols:
             if col_name not in existing_cols:
                 conn.execute(text(f'ALTER TABLE tree ADD COLUMN {col_name} {col_type}'))
+        conn.commit()
+    # Backfill una tantum (alberi creati prima delle colonne): uuid per riga,
+    # updated_at = adesso. L'indice univoco su uuid va creato DOPO il backfill.
+    if 'uuid' not in existing_cols or 'updated_at' not in existing_cols:
+        for t in Tree.query.filter(Tree.uuid.is_(None)).all():
+            t.uuid = str(uuid_lib.uuid4())
+        db.session.commit()
+        with db.engine.connect() as conn:
+            conn.execute(text('UPDATE tree SET updated_at = :now WHERE updated_at IS NULL'),
+                         {'now': datetime.now(timezone.utc)})
+            conn.commit()
+    with db.engine.connect() as conn:
+        conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS uq_tree_uuid ON tree (uuid)'))
         conn.commit()
     existing_insp_cols = {c['name'] for c in insp.get_columns('inspection')}
     insp_new_cols = [('snapshot', 'TEXT'), ('rischio', 'TEXT')]
@@ -350,6 +430,9 @@ def tree_to_dict(t):
         'location': t.location, 'cpc': t.cpc,
         'next_check': t.next_check.strftime("%Y-%m-%d") if t.next_check else None,
         'owner_id': t.owner_id,
+        'uuid': t.uuid,
+        'updated_at': t.updated_at.isoformat() if t.updated_at else None,
+        'updated_by': t.updated_by,
         # ARETE
         'dimora': t.dimora, 'stadio_sviluppo': t.stadio_sviluppo,
         'posizione_sociale': t.posizione_sociale, 'localizzazione': t.localizzazione,
@@ -524,6 +607,100 @@ def _make_inspection(tree_obj, user_id, username):
         rischio=json.dumps(rischio_val) if rischio_val else None,
     )
 
+# --- Scrittura da fonti esterne (import file, plugin QGIS) --------------------
+# Campi che il server calcola da altri o che governano identità e permessi:
+# chi scrive dall'esterno non li può impostare (qgis.md §7).
+_DERIVED_TREE_FIELDS = frozenset({
+    'id', 'uuid', 'owner_id', 'city', 'updated_at', 'updated_by',
+    'rischio', 'bersaglio_chioma', 'bersaglio_ramo',
+    'bio_kg', 'co2_kg_anno', 'o2_kg_anno', 'ia_kg_anno', 'valore_ecologico',
+})
+_TREE_COMPARE_FIELDS = [c.key for c in Tree.__table__.columns
+                        if c.key not in ('id', 'updated_at', 'updated_by')]
+_COORD_MATCH_TOL = 1e-6   # gradi (~10 cm): due punti più vicini sono lo stesso albero
+
+def _tree_values(tree):
+    return {k: getattr(tree, k) for k in _TREE_COMPARE_FIELDS}
+
+def _match_tree(record, city, scope, strict_uuid=True):
+    """Albero esistente corrispondente a `record` dentro `scope` (query già
+    filtrata per ruolo), o None. Ordine: uuid → coordinate entro
+    _COORD_MATCH_TOL → custom_id, quest'ultimo solo se la riga non ha
+    coordinate: nei censimenti la numerazione riparte per località (nel file
+    di Bra «7» compare due volte, in due punti diversi), quindi con le
+    coordinate decidono quelle e un albero spostato senza uuid è un albero
+    nuovo. Un uuid di un altro comune è sempre un errore; un uuid sconosciuto
+    lo è solo con `strict_uuid` (push da QGIS: non si resuscita un albero
+    cancellato), altrimenti si prosegue con gli altri criteri (import da
+    file, che può venire da un altro account)."""
+    u = record.get('uuid')
+    if u:
+        t = scope.filter(Tree.uuid == u).first()
+        if t:
+            if t.city != city:
+                raise ValueError(f'uuid {u} appartiene al comune {t.city}, non a {city}')
+            return t
+        if strict_uuid:
+            raise ValueError(f'uuid {u} sconosciuto o non visibile')
+    q = scope.filter(Tree.city == city)
+    lat, lon = record.get('latitude'), record.get('longitude')
+    if lat is not None and lon is not None:
+        return q.filter(Tree.latitude.between(lat - _COORD_MATCH_TOL, lat + _COORD_MATCH_TOL),
+                        Tree.longitude.between(lon - _COORD_MATCH_TOL, lon + _COORD_MATCH_TOL)).first()
+    cid = record.get('custom_id')
+    if cid:
+        return q.filter(Tree.custom_id == cid).first()
+    return None
+
+def _upsert_tree(record, *, city, on_conflict, user_id, scope, strict_uuid=True):
+    """Crea o aggiorna un albero da `record`: dict con i nomi dei campi di
+    `Tree` e valori già convertiti (float per i numeri, stringhe JSON per le
+    liste, `date` per next_check). Regole (qgis.md §13):
+      - un valore None non tocca il campo; i derivati vengono ignorati;
+      - si abbina solo tra gli alberi di `scope` e non si cambia mai l'owner;
+      - il server ricalcola bersaglio, valore ecologico e rischio.
+    Ritorna (esito, albero, campi_cambiati) con esito in
+    'created' | 'updated' | 'unchanged' | 'skipped'. Non committa."""
+    record = {k: v for k, v in record.items() if v is not None}
+    existing = _match_tree(record, city, scope, strict_uuid)   # uuid/custom_id/coordinate
+    if existing is not None and on_conflict != 'update':
+        return 'skipped', existing, []
+    file_uuid = record.get('uuid')
+    record = {k: v for k, v in record.items() if k not in _DERIVED_TREE_FIELDS}
+    if existing is None:
+        custom_id = str(record.get('custom_id') or '').strip()
+        if not custom_id:
+            raise ValueError('custom_id mancante')
+        tree = Tree(custom_id=custom_id, city=city, owner_id=user_id,
+                    species='Sconosciuta', condition='—')
+        # Un uuid del file che non appartiene a nessun albero (es. cancellato)
+        # viene riusato, così il layer di origine resta collegato.
+        if file_uuid and not Tree.query.filter(Tree.uuid == file_uuid).first():
+            tree.uuid = file_uuid
+        db.session.add(tree)
+    else:
+        tree = existing
+    before = _tree_values(tree)
+
+    if record.get('custom_id'):
+        tree.custom_id = str(record['custom_id']).strip() or tree.custom_id
+    lat, lon = record.get('latitude'), record.get('longitude')
+    if lat is not None and lon is not None:
+        tree.latitude, tree.longitude = float(lat), float(lon)
+    if record.get('next_check') is not None:
+        tree.next_check = record['next_check']
+    apply_tree_fields(tree, record)
+    if tree.cpc:
+        tree.condition = tree.cpc
+    tree.rischio = json.dumps(r) if (r := _calc_rischio(tree)) else None
+
+    after = _tree_values(tree)
+    changed = [k for k in after if after[k] != before[k]]
+    if existing is not None and not changed:
+        return 'unchanged', tree, []
+    return ('created' if existing is None else 'updated'), tree, changed
+
+
 # -----------------------
 # Demo account seeding
 # -----------------------
@@ -639,6 +816,24 @@ def auth_required(f):
         if not auth:
             return jsonify({'message': 'Missing Authorization header'}), 401
         token = auth.split(" ", 1)[1] if auth.startswith("Bearer ") else auth
+        if token.startswith(API_TOKEN_PREFIX):
+            # Token API (plugin QGIS): ruolo e comune letti ora dal DB, non
+            # congelati nel token come nel JWT.
+            found = _resolve_api_token(token)
+            if not found:
+                return jsonify({'message': 'Invalid token'}), 401
+            tok, user = found
+            request.user = {'user_id': user.id, 'username': user.username,
+                            'role': user.role, 'city': user.city,
+                            'auth': 'api_token', 'token_id': tok.id}
+            now = datetime.now(timezone.utc)
+            last = tok.last_used_at
+            if last and last.tzinfo is None:   # SQLite perde il fuso
+                last = last.replace(tzinfo=timezone.utc)
+            if not last or (now - last).total_seconds() > 60:
+                tok.last_used_at = now
+                db.session.commit()
+            return f(*args, **kwargs)
         try:
             data = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
         except jwt.ExpiredSignatureError:
@@ -737,6 +932,40 @@ def update_me():
     db.session.commit()
     return jsonify({'message': 'Email aggiornata' if email else 'Email rimossa',
                     'email': user.email or ''}), 200
+
+
+# --- Token API (plugin QGIS, qgis.md §5) ---
+@app.route('/me/tokens', methods=['GET'])
+@auth_required
+def list_api_tokens():
+    toks = (ApiToken.query.filter_by(user_id=request.user['user_id'], revoked_at=None)
+            .order_by(ApiToken.created_at.desc()).all())
+    return jsonify([t.to_dict() for t in toks])
+
+@app.route('/me/tokens', methods=['POST'])
+@auth_required
+def create_api_token():
+    """Crea un token API per l'utente loggato (solo con JWT, non con un altro
+    token API). Il token in chiaro è nella risposta e non è più recuperabile."""
+    if request.user.get('auth') == 'api_token':
+        return jsonify({'message': 'Un token API non può crearne altri: accedi dalla webapp.'}), 403
+    user = db.session.get(User, request.user['user_id'])
+    if not user or _is_demo_account(user.username):
+        return jsonify({'message': 'Gli account demo non possono creare token API.'}), 403
+    name = (request.json or {}).get('name') or 'QGIS'
+    raw, tok = _new_api_token(user, name)
+    db.session.commit()
+    return jsonify({'token': raw, **tok.to_dict()}), 201
+
+@app.route('/me/tokens/<int:token_id>', methods=['DELETE'])
+@auth_required
+def revoke_api_token(token_id):
+    tok = db.session.get(ApiToken, token_id)
+    if not tok or tok.user_id != request.user['user_id'] or tok.revoked_at:
+        return jsonify({'message': 'Token non trovato'}), 404
+    tok.revoked_at = datetime.now(timezone.utc)
+    db.session.commit()
+    return jsonify({'message': 'Token revocato'})
 
 @app.route('/register', methods=['POST'])
 def register():
@@ -1666,6 +1895,7 @@ def export_excel():
 # Multi-value fields (conflitti etc.) use a special prefix 'CSV:' handled below.
 _GPKG_COLS = [
     ('id',                    'INTEGER', lambda t: t.id,                          None),
+    ('uuid',                  'TEXT',    lambda t: t.uuid,                        'uuid'),  # chiave stabile per il round-trip
     ('custom_id',             'TEXT',    lambda t: t.custom_id,                   'custom_id'),
     ('city',                  'TEXT',    lambda t: t.city,                        None),  # city comes from the form
     ('address',               'TEXT',    lambda t: t.address or '',               'address'),
@@ -2014,6 +2244,7 @@ def _tree_bucket(t):
 # QGIS li legge come campi del layer; l'import li riconosce per nome.
 _GPX_EXT_FIELDS = [
     ('custom_id',   lambda t: t.custom_id),
+    ('uuid',        lambda t: t.uuid),
     ('city',        lambda t: t.city),
     ('species',     lambda t: t.species if t.species != 'Sconosciuta' else ''),
     ('condition',   lambda t: t.condition if t.condition != '—' else ''),
@@ -2081,16 +2312,21 @@ def export_gpx():
 # Report — Schede albero (PLACEHOLDER)
 # -----------------------
 
-def _scoped_tree_query():
-    """Query alberi filtrata per ruolo del chiamante e per il parametro `ids`.
-    Stessa logica di visibilità/selezione usata dagli export (excel/gpkg)."""
-    role, user_id, user_city = (request.user.get(k) for k in ('role', 'user_id', 'city'))
+def _role_tree_query(role, user_id, user_city):
+    """Query degli alberi visibili a un utente: i propri per `user`, quelli del
+    comune per `city`, tutti tranne la demo per `superuser`."""
     query = Tree.query
     if role == 'user':   query = query.filter(Tree.owner_id == user_id)
     elif role == 'city': query = city_tree_filter(query, user_id, user_city)
     elif role == 'superuser':
         did = _demo_user_id()
         if did and did != user_id: query = query.filter(Tree.owner_id != did)
+    return query
+
+def _scoped_tree_query():
+    """Query alberi filtrata per ruolo del chiamante e per il parametro `ids`.
+    Stessa logica di visibilità/selezione usata dagli export (excel/gpkg)."""
+    query = _role_tree_query(*(request.user.get(k) for k in ('role', 'user_id', 'city')))
     ids_param = request.args.get('ids')
     if ids_param:
         id_list = [int(x) for x in ids_param.split(',') if x.strip().isdigit()]
@@ -2273,6 +2509,7 @@ def _reverse_geocode_comune(lat, lon):
 
 _GPKG_FIELD_CANDIDATES = {
     'custom_id':          ['custom_id', 'name', '_numero', '_name', 'id_albero', 'numero'],
+    'uuid':               ['uuid', 'silvae_uuid'],
     'species':            ['species', '_tassonomi', 'specie', 'nome_scientifico', 'taxon', 'cmt'],
     'species_ita':        ['_nome ital', '_nome_ital', 'nome_italiano', 'nome_comune'],
     'condition':          ['condition', 'condizione', '_classe vt', '_classe_vt'],
@@ -2421,6 +2658,82 @@ def _gpkg_read_table(f_or_path):
             try: os.unlink(import_path)
             except Exception: pass
 
+def _import_row_record(row, C):
+    """Converte una riga del file (GPKG/GPX) nel dizionario di campi canonici
+    di `Tree` atteso da `_upsert_tree`, secondo la mappatura colonne `C`.
+    Coordinate: colonne x/y se presenti, altrimenti il blob geometria."""
+    def gs(key):
+        col = C.get(key)
+        if not col: return None
+        v = row.get(col)
+        return str(v).strip() or None if v is not None else None
+
+    def gf(key):
+        col = C.get(key)
+        return _gpkg_parse_float(row.get(col)) if col else None
+
+    def gi(key):
+        col = C.get(key)
+        if not col: return None
+        try: return int(str(row.get(col)).strip())
+        except: return None
+
+    def gcsvjson(key):
+        col = C.get(key)
+        return _gpkg_csv_to_json(row.get(col)) if col else None
+
+    rec = {}
+    lon, lat = gf('longitude'), gf('latitude')
+    if (lon is None or lat is None) and C.get('geom'):
+        blob = row.get(C['geom'])
+        if blob:
+            lon, lat = _gpkg_point(blob)
+    if lon is not None and lat is not None:
+        rec['latitude'], rec['longitude'] = lat, lon
+
+    rec['custom_id'] = gs('custom_id')
+    rec['uuid']      = gs('uuid')
+    rec['species']   = gs('species') or gs('species_ita')
+    rec['condition'] = gs('condition')
+
+    for key in ('address','height','age','cpc','location',
+                'dimora','stadio_sviluppo','posizione_sociale',
+                'localizzazione','vincoli',
+                'pericolo_rami','pericolo_tronco',
+                'pericolo_colletto','pericolo_zolla',
+                'bersaglio_chioma_tipo','bersaglio_chioma_value',
+                'bersaglio_ramo_tipo','bersaglio_ramo_value',
+                'monitoraggio','urgenza','comments','actions'):
+        rec[key] = gs(key)
+    if rec['cpc'] and rec['cpc'].upper() == 'ABBATTUO':
+        rec['cpc'] = 'ABBATTUTO'
+
+    staz = gs('stazione_raw')
+    if staz and not rec['localizzazione'] and not rec['location']:
+        localiz_vals = [v.lower() for v in dd.localizzazione]
+        if staz.lower() in localiz_vals:
+            rec['localizzazione'] = staz
+        else:
+            rec['location'] = staz
+
+    for key in ('tree_height_m','circonferenza_cm','trunk_diameter_cm',
+                'crown_diameter_m','branch_diam_cm','branch_length_m',
+                'branch_height_m','target_height_m',
+                'post_tree_height_m','post_circonferenza_cm',
+                'post_branch_diam_cm','post_branch_length_m',
+                'post_branch_height_m','post_target_height_m',
+                'bersaglio_chioma_flow','bersaglio_ramo_flow'):
+        rec[key] = gf(key)
+
+    rec['moltiplicatore'] = gi('moltiplicatore')
+
+    for key in ('conflitti_list','agenti_carie','altri_patogeni',
+                'prescrizioni_val','prescrizioni_mit','prescrizioni_col'):
+        rec[key] = gcsvjson(key)
+
+    rec['next_check'] = _gpkg_parse_date(gs('next_check')) or _gpkg_parse_date(gs('next_check_fb'))
+    return rec
+
 @app.route('/import/gpkg/inspect', methods=['POST'])
 @app.route('/import/gpx/inspect', methods=['POST'])
 @auth_required
@@ -2486,88 +2799,6 @@ def import_gpkg_route():
     else:
         C = _gpkg_detect_C(cols)
 
-    # --- Row helpers -------------------------------------------------------
-    def gs(key):
-        col = C.get(key)
-        if not col: return None
-        v = row.get(col)
-        return str(v).strip() or None if v is not None else None
-
-    def gf(key):
-        col = C.get(key)
-        return _gpkg_parse_float(row.get(col)) if col else None
-
-    def gi(key):
-        col = C.get(key)
-        if not col: return None
-        try: return int(str(row.get(col)).strip())
-        except: return None
-
-    def gcsvjson(key):
-        col = C.get(key)
-        return _gpkg_csv_to_json(row.get(col)) if col else None
-
-    # --- Apply all detected fields to a Tree instance ----------------------
-    def apply_fields(tree):
-        if gf('latitude') is not None:
-            tree.latitude  = gf('latitude')
-            tree.longitude = gf('longitude')
-
-        sp = gs('species') or gs('species_ita') or 'Sconosciuta'
-        tree.species = sp
-
-        tree.condition = gs('condition') or '—'
-
-        for key in ('address','height','age','cpc','location',
-                    'dimora','stadio_sviluppo','posizione_sociale',
-                    'localizzazione','vincoli',
-                    'pericolo_rami','pericolo_tronco',
-                    'pericolo_colletto','pericolo_zolla',
-                    'bersaglio_chioma_tipo','bersaglio_chioma_value',
-                    'bersaglio_ramo_tipo','bersaglio_ramo_value',
-                    'monitoraggio','urgenza','comments','actions'):
-            v = gs(key)
-            if v is not None:
-                setattr(tree, key, v)
-        if tree.cpc and tree.cpc.upper() == 'ABBATTUO':
-            tree.cpc = 'ABBATTUTO'
-        if tree.cpc and (not tree.condition or tree.condition == '—'):
-            tree.condition = tree.cpc
-
-        staz = gs('stazione_raw')
-        if staz and not gs('localizzazione') and not gs('location'):
-            localiz_vals = [v.lower() for v in dd.localizzazione]
-            if staz.lower() in localiz_vals:
-                tree.localizzazione = staz
-            else:
-                tree.location = staz
-
-        for key in ('tree_height_m','circonferenza_cm','trunk_diameter_cm',
-                    'crown_diameter_m','branch_diam_cm','branch_length_m',
-                    'branch_height_m','target_height_m',
-                    'post_tree_height_m','post_circonferenza_cm',
-                    'post_branch_diam_cm','post_branch_length_m',
-                    'post_branch_height_m','post_target_height_m',
-                    'bersaglio_chioma_flow','bersaglio_ramo_flow'):
-            v = gf(key)
-            if v is not None:
-                setattr(tree, key, v)
-
-        for key in ('bersaglio_chioma','bersaglio_ramo','moltiplicatore'):
-            v = gi(key)
-            if v is not None:
-                setattr(tree, key, v)
-
-        for key in ('conflitti_list','agenti_carie','altri_patogeni',
-                    'prescrizioni_val','prescrizioni_mit','prescrizioni_col'):
-            v = gcsvjson(key)
-            if v is not None:
-                setattr(tree, key, v)
-
-        nd = _gpkg_parse_date(gs('next_check')) or _gpkg_parse_date(gs('next_check_fb'))
-        if nd is not None:
-            tree.next_check = nd
-
     # --- Auto-detect comune from first valid coordinate if city not provided ---
     city_autodetected = False
     if not city:
@@ -2588,68 +2819,31 @@ def import_gpkg_route():
             return jsonify({'message': 'Comune non rilevabile dalle coordinate. Inseriscilo manualmente.'}), 400
 
     # --- Main loop ---------------------------------------------------------
-    inserted = skipped = errors = 0
+    scope = _role_tree_query(role, user_id, user_city)
+    counts = {'created': 0, 'updated': 0, 'unchanged': 0, 'skipped': 0}
+    errors = 0
     error_details = []
 
     for row in rows:
-        # Coordinates: prefer explicit x/y columns, fall back to geometry blob
-        lon = lat = None
-        if C['longitude'] and C['latitude']:
-            lon = _gpkg_parse_float(row.get(C['longitude']))
-            lat = _gpkg_parse_float(row.get(C['latitude']))
-        if (lon is None or lat is None) and C['geom']:
-            blob = row.get(C['geom'])
-            if blob:
-                lon, lat = _gpkg_point(blob)
-
-        # Override row coords so apply_fields() picks them up
-        if lon is not None and C['longitude']:
-            row[C['longitude']] = lon
-        if lat is not None and C['latitude']:
-            row[C['latitude']] = lat
-
-        custom_id = str(row.get(C['custom_id']) or '').strip() if C['custom_id'] else ''
-        if not custom_id:
-            skipped += 1
+        record = _import_row_record(row, C)
+        if not record.get('custom_id'):
+            counts['skipped'] += 1
             continue
-
         try:
-            # Deduplicate by coordinates (trees don't move); fall back to
-            # custom_id+city only when coordinates are unavailable.
-            existing = None
-            if lat is not None and lon is not None:
-                tol = 1e-6
-                existing = Tree.query.filter(
-                    Tree.city == city,
-                    Tree.latitude.between(lat - tol,lat + tol),
-                    Tree.longitude.between(lon - tol, lon + tol)
-                ).first()
-            else:
-                existing = Tree.query.filter_by(custom_id=custom_id, city=city).first()
-
-            if existing:
-                if on_conflict == 'update':
-                    existing.custom_id = custom_id
-                    existing.owner_id  = user_id
-                    apply_fields(existing)
-                    db.session.commit()
-                    inserted += 1
-                else:
-                    skipped += 1
-                continue
-
-            tree = Tree(custom_id=custom_id, city=city, owner_id=user_id,
-                        species='Sconosciuta', condition='—')
-            apply_fields(tree)
-            db.session.add(tree)
+            outcome, _, _ = _upsert_tree(record, city=city, on_conflict=on_conflict,
+                                         user_id=user_id, scope=scope, strict_uuid=False)
             db.session.commit()
-            inserted += 1
+            counts[outcome] += 1
         except Exception as e:
             db.session.rollback()
             errors += 1
-            error_details.append(f"fid={row.get('fid','?')} id={custom_id}: {e}")
+            error_details.append(f"fid={row.get('fid','?')} id={record.get('custom_id')}: {e}")
 
+    # `inserted` conta, come prima, le righe scritte o già allineate.
+    inserted = counts['created'] + counts['updated'] + counts['unchanged']
+    skipped  = counts['skipped']
     return jsonify({'inserted': inserted, 'skipped': skipped, 'errors': errors,
+                    **counts,
                     'total': len(rows), 'city': city, 'city_autodetected': city_autodetected,
                     'error_details': error_details})
 

@@ -67,7 +67,7 @@ Il **triage TRG-P** (screening rapido per popolamenti arborei, foglio 2 del modu
 - **Backend**: Python 3.12 (vedi `.python-version`), Flask 3.1, SQLAlchemy 2.0, psycopg2-binary
 - **Database**: PostgreSQL (le coordinate sono memorizzate come `latitude`/`longitude` numeriche; **PostGIS non è richiesto**)
 - **Frontend**: HTML5, CSS3, JavaScript vanilla, Leaflet.js, Font Awesome
-- **Autenticazione**: JWT (PyJWT), password hash con `werkzeug.security`
+- **Autenticazione**: JWT (PyJWT) per la webapp, **token API** longevi e revocabili (`slv_…`) per i client esterni come il plugin QGIS; password hash con `werkzeug.security`
 - **Export/Schede**: openpyxl (Excel e scheda ARETE), Pillow (loghi nella scheda), LibreOffice *(opzionale, per la conversione in PDF)*
 - **Geocodifica**: geopy + Nominatim (OpenStreetMap)
 - **Input vocale**: Web Speech API (browser) + Groq (`llama-3.1-8b-instant`) per il riconoscimento dell'intento
@@ -231,6 +231,10 @@ L'utente `city` **non può modificare gli alberi**: l'interfaccia è la stessa d
 
 Gli utenti vengono creati da un `superuser` (qualsiasi ruolo) o da un `city` (solo agronomi del proprio comune). La **registrazione pubblica** (`/register` + link "Crea account") è **disabilitata di default**: si riattiva impostando `REGISTRATION_ENABLED=true` e ripristinando il link nel frontend (vedi commenti in `frontend/index.html` e `frontend/app.js`).
 
+### Token API (client esterni)
+
+Oltre al JWT di `/login` (che scade e congela ruolo e comune), un utente può creare da `POST /me/tokens` dei **token API** nel formato `slv_…`, pensati per client che restano collegati a lungo — in primo luogo il plugin QGIS (vedi [`qgis.md`](qgis.md)). Si usano nello stesso header `Authorization: Bearer slv_…`; in DB è salvato solo l'hash SHA-256, ruolo e comune vengono riletti dall'utente a ogni richiesta e la revoca (`DELETE /me/tokens/<id>`) è immediata. Un token API non può creare altri token; gli account demo non ne hanno. Il ruolo `city` può usarli in sola lettura come nella webapp.
+
 ---
 
 ## Account demo
@@ -330,7 +334,18 @@ Il formato GPX (waypoint) è il ponte con i GPS da campo, gli smartphone e QGIS 
 
 **Import** (`POST /import/gpx`): ogni `<wpt>` diventa un albero. La mappatura automatica riconosce `lat`/`lon` (coordinate), `name` → ID albero, `cmt` → specie, `desc` → note; gli eventuali figli di `<extensions>` (attributi scritti da QGIS o da Silvae Pro) sono proposti come colonne aggiuntive nella finestra di mappatura, come per il GPKG. `ele` e `sym` vengono ignorati (non esiste un campo quota). Comune, conflitti (`skip`/`update`) e dedup per coordinate funzionano come per il GPKG.
 
-**Export** (`GET /export/gpx`): GPX 1.1 in WGS84, un `<wpt>` per albero con `name` = ID, `cmt` = specie, `desc` = riassunto leggibile (specie, condizione, CPC, classe di rischio, indirizzo, comune), `sym` = `Flag, Blue`, e in `<extensions>` i campi Silvae (`custom_id`, `city`, `species`, `condition`, `cpc`, `address`, `rischio`, `next_check`, `comments`) che QGIS mostra come attributi del layer. Nei file generati da Silvae (`creator="Silvae Pro"`) `cmt` e `desc` vengono ignorati alla reimportazione, perché derivati dai campi in `<extensions>`. Disponibile dal tab **Esporta**, dalla barra di selezione della tabella e dalla selezione per area sulla mappa.
+**Export** (`GET /export/gpx`): GPX 1.1 in WGS84, un `<wpt>` per albero con `name` = ID, `cmt` = specie, `desc` = riassunto leggibile (specie, condizione, CPC, classe di rischio, indirizzo, comune), `sym` = `Flag, Blue`, e in `<extensions>` i campi Silvae (`custom_id`, `uuid`, `city`, `species`, `condition`, `cpc`, `address`, `rischio`, `next_check`, `comments`) che QGIS mostra come attributi del layer. Nei file generati da Silvae (`creator="Silvae Pro"`) `cmt` e `desc` vengono ignorati alla reimportazione, perché derivati dai campi in `<extensions>`. Disponibile dal tab **Esporta**, dalla barra di selezione della tabella e dalla selezione per area sulla mappa.
+
+---
+
+## Importazione: abbinamento e regole di scrittura
+
+Ogni albero ha un **`uuid`** stabile (generato alla creazione, presente nei GPKG e GPX esportati) e i campi **`updated_at` / `updated_by`** con data e utente dell'ultima modifica, restituiti da `/trees` e `/tree/<id>`. L'importazione da file (`/import/gpkg`, `/import/gpx`) passa per un'unica funzione, `_upsert_tree` in [`app.py`](app.py), che sarà usata anche dal plugin QGIS ([`qgis.md`](qgis.md)):
+
+- **Abbinamento** con un albero esistente, cercato **solo tra gli alberi visibili** a chi importa (i propri per l'agronomo): prima per `uuid`, poi per **coordinate** (entro ~10 cm), infine per `custom_id` + comune ma solo se la riga non ha coordinate. Con le coordinate non si abbina mai per `custom_id`, perché nei censimenti la numerazione riparte per località e alberi diversi condividono lo stesso numero. Un `uuid` sconosciuto (albero cancellato, o file esportato da un altro account) non è un errore: si prosegue con gli altri criteri e, se l'albero è nuovo, l'uuid viene riusato quando è libero.
+- **Un valore vuoto nel file non tocca il campo**: in modalità `update` si sovrascrivono solo i valori presenti, quindi un file con poche colonne non cancella ciò che il database ha già. L'owner dell'albero non cambia mai.
+- **I campi derivati vengono ignorati** anche se presenti nel file (`rischio`, classi `bersaglio_chioma`/`bersaglio_ramo`, valori ecologici, `city`, `owner_id`, `uuid`): il server li ricalcola — quindi anche gli alberi importati hanno il **rischio ORD** calcolato, se i campi ARETE sono completi.
+- La risposta riporta `created`, `updated`, `unchanged`, `skipped`, `errors` (oltre a `inserted` = creati + aggiornati + già allineati, per compatibilità): reimportare lo stesso file dà tutti `unchanged`.
 
 ---
 
@@ -427,6 +442,9 @@ Il calcolo è interamente lato client in [`frontend/app.js`](frontend/app.js) (`
 | `POST` | `/login` | Autenticazione, restituisce JWT |
 | `GET`  | `/me` | Dati dell'utente autenticato (inclusi `email` e, per gli agronomi, `agronomer_code`) |
 | `PATCH` | `/me` | Aggiorna l'email del proprio account (`{"email": "..."}`, stringa vuota per rimuoverla) |
+| `GET`  | `/me/tokens` | Token API attivi dell'utente (nome, prefisso, ultimo uso) |
+| `POST` | `/me/tokens` | Crea un token API (`{"name": "..."}`); il token in chiaro `slv_…` è nella risposta **una sola volta**. Solo con JWT, non da account demo |
+| `DELETE` | `/me/tokens/<id>` | Revoca un token API |
 | `POST` | `/register` | Auto-registrazione (ruolo `user`) — **disabilitato** salvo `REGISTRATION_ENABLED=true` |
 | `POST` | `/forgot-password` | Invia il link di reset password via email |
 | `POST` | `/reset-password` | Imposta una nuova password tramite token |
