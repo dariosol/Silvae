@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import sys, os, io, json, re, secrets, struct, tempfile, sqlite3, urllib.request
+import sys, os, io, json, re, secrets, struct, tempfile, sqlite3, time, urllib.request
 import uuid as uuid_lib, hashlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -19,6 +19,7 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from functools import wraps
+from contextlib import contextmanager
 import openpyxl
 from openpyxl.styles import PatternFill, Font, Alignment
 from openpyxl.utils import get_column_letter
@@ -361,7 +362,59 @@ def _stamp_updated_by(session, flush_context, instances):
 # -----------------------
 # DB init + migrate new columns
 # -----------------------
-with app.app_context():
+# Chiave dell'advisory lock che serializza la migrazione: un bigint qualsiasi,
+# purché identico in tutti i processi.
+_MIGRATION_LOCK_KEY = 8114201
+_MIGRATION_LOCK_WAIT_S = 90
+
+@contextmanager
+def _migration_lock():
+    """Fa in modo che un solo processo per volta esegua la migrazione.
+
+    Senza questo, due processi che partono insieme (due istanze, o un
+    container che riparte mentre il precedente e' ancora nel backfill) si
+    incastrano: il backfill tiene aperta una transazione su `tree`, l'ALTER
+    TABLE dell'altro processo si accoda chiedendo l'accesso esclusivo e da
+    quel momento anche le semplici letture si accodano dietro di lui. Per
+    PostgreSQL non e' un deadlock — la prima sessione aspetta il suo client,
+    non un lock — quindi non si sblocca da se'.
+
+    Il lock sta su una connessione dedicata tenuta aperta per tutta la durata
+    (gli advisory lock sono di sessione e sopravvivono ai commit); il resto
+    della migrazione continua a usare le proprie connessioni. Chi non lo
+    ottiene entro _MIGRATION_LOCK_WAIT_S avvia senza migrare: la migrazione e'
+    idempotente e condizionata ai dati, quindi la sta completando l'altro
+    processo e al prossimo riavvio si ripara comunque. Su SQLite
+    (test_locale.py --sqlite) gli advisory lock non esistono e non servono.
+    """
+    if db.engine.dialect.name != 'postgresql':
+        yield True
+        return
+    conn = db.engine.connect()
+    preso = False
+    try:
+        scadenza = time.monotonic() + _MIGRATION_LOCK_WAIT_S
+        while True:
+            preso = bool(conn.execute(text('SELECT pg_try_advisory_lock(:k)'),
+                                      {'k': _MIGRATION_LOCK_KEY}).scalar())
+            conn.commit()        # niente «idle in transaction» su questa connessione
+            if preso or time.monotonic() >= scadenza:
+                break
+            time.sleep(1)
+        if not preso:
+            print(f'Migrazione: lock occupato da oltre {_MIGRATION_LOCK_WAIT_S}s, '
+                  'la sta eseguendo un altro processo: avvio senza migrare')
+        yield preso
+    finally:
+        if preso:
+            conn.execute(text('SELECT pg_advisory_unlock(:k)'), {'k': _MIGRATION_LOCK_KEY})
+            conn.commit()
+        conn.close()
+
+def _migrate_schema():
+    """Crea le tabelle mancanti e aggiunge le colonne nuove sui DB esistenti.
+    Da chiamare solo dentro _migration_lock(). Idempotente."""
+
     db.create_all()
     # Add any new columns that don't exist yet (safe for existing DBs)
     insp = inspect(db.engine)
@@ -459,6 +512,11 @@ with app.app_context():
             if col_name not in existing_comune_cols:
                 conn.execute(text(f'ALTER TABLE comune ADD COLUMN {col_name} {col_type}'))
         conn.commit()
+
+with app.app_context():
+    with _migration_lock() as consentito:
+        if consentito:
+            _migrate_schema()
 
 # -----------------------
 # Helpers
