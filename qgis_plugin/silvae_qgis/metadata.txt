@@ -1,0 +1,16 @@
+[general]
+name=Silvae Pro
+qgisMinimumVersion=3.28
+description=Collega QGIS a Silvae Pro: carica gli alberi di un comune con lo stile per classe di rischio ARETE / condizione VTA in un GeoPackage locale aggiornabile, e ritira gli invii fatti dalla webapp e rimanda a Silvae le modifiche fatte in QGIS.
+about=Plugin del sistema di gestione alberi Silvae Pro (protocollo ARETE). Fase 1: collegamento con token API, "Carica da Silvae" in un GPKG locale, stile generato dalla palette di Silvae, aggiornamento incrementale.
+version=0.4.0
+author=Silvae Pro
+email=info@example.org
+homepage=https://github.com/dariosol/tree_project
+tracker=https://github.com/dariosol/tree_project/issues
+repository=https://github.com/dariosol/tree_project
+tags=alberi,arete,vta,rischio,silvae
+category=Vector
+icon=icon.png
+experimental=True
+hasProcessingProvider=no
