@@ -881,6 +881,19 @@ class TestQgisFeatures:
         assert added_tree_id in [f['id'] for f in res.get_json()['features']]
         assert client.get('/qgis/features?city=X&since=ieri', headers=auth_headers).status_code == 400
 
+    def test_since_accepts_offset_with_mangled_plus(self):
+        # In una query string un `+` non codificato arriva come spazio: l'ora
+        # che restituiamo noi («…+00:00») deve essere rileggibile comunque.
+        from app import _parse_iso_dt
+        atteso = _parse_iso_dt('2026-10-24T09:12:33+00:00')
+        assert atteso is not None
+        assert _parse_iso_dt('2026-10-24T09:12:33 00:00') == atteso
+        assert _parse_iso_dt('2026-10-24T09:12:33Z') == atteso
+        assert _parse_iso_dt('2026-10-24 09:12:33') == atteso        # separatore a spazio
+        assert _parse_iso_dt('2026-10-24T09:12:33 02:00').utcoffset().total_seconds() == 7200
+        assert _parse_iso_dt('2026-10-24T09:12:33-02:00').utcoffset().total_seconds() == -7200
+        assert _parse_iso_dt('ieri') is None and _parse_iso_dt('') is None
+
     def test_bbox(self, client, auth_headers, added_tree_id):
         lat, lon = TEST_TREE['latitude'], TEST_TREE['longitude']
         inside = f'{lon-0.01},{lat-0.01},{lon+0.01},{lat+0.01}'

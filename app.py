@@ -3264,13 +3264,28 @@ def _as_utc(dt):
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 def _parse_iso_dt(value):
-    """Stringa ISO 8601 → datetime UTC, o None se vuota/non valida."""
+    """Stringa ISO 8601 → datetime UTC, o None se vuota/non valida.
+
+    Tollera il `+` del fuso diventato uno spazio: in una query string un `+`
+    non codificato si decodifica come spazio, quindi l'`updated_at` che
+    abbiamo restituito noi («…T09:12:33+00:00») torna come «…T09:12:33 00:00»
+    e `fromisoformat` lo rifiuterebbe. Si ritenta solo dopo il primo
+    fallimento, sostituendo l'ultimo spazio: le stringhe già valide — compreso
+    il separatore data/ora scritto a spazio — non vengono toccate.
+    """
     if not value:
         return None
-    try:
-        return _as_utc(datetime.fromisoformat(str(value).replace('Z', '+00:00')))
-    except ValueError:
-        return None
+    s = str(value).strip().replace('Z', '+00:00')
+    tentativi = [s]
+    if ' ' in s:
+        testa, _, coda = s.rpartition(' ')
+        tentativi.append(f'{testa}+{coda}')
+    for t in tentativi:
+        try:
+            return _as_utc(datetime.fromisoformat(t))
+        except ValueError:
+            continue
+    return None
 
 def _purge_expired_deliveries():
     """Cancella gli invii scaduti (nessuno scheduler: si fa alla prima
