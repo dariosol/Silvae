@@ -67,7 +67,7 @@ Il **triage TRG-P** (screening rapido per popolamenti arborei, foglio 2 del modu
 - **Backend**: Python 3.12 (vedi `.python-version`), Flask 3.1, SQLAlchemy 2.0, psycopg2-binary
 - **Database**: PostgreSQL (le coordinate sono memorizzate come `latitude`/`longitude` numeriche; **PostGIS non è richiesto**)
 - **Frontend**: HTML5, CSS3, JavaScript vanilla, Leaflet.js, Font Awesome
-- **Autenticazione**: JWT (PyJWT), password hash con `werkzeug.security`
+- **Autenticazione**: JWT (PyJWT) per la webapp, **token API** longevi e revocabili (`slv_…`) per i client esterni come il plugin QGIS; password hash con `werkzeug.security`
 - **Export/Schede**: openpyxl (Excel e scheda ARETE), Pillow (loghi nella scheda), LibreOffice *(opzionale, per la conversione in PDF)*
 - **Geocodifica**: geopy + Nominatim (OpenStreetMap)
 - **Input vocale**: Web Speech API (browser) + Groq (`llama-3.1-8b-instant`) per il riconoscimento dell'intento
@@ -89,6 +89,7 @@ tree_project/
 │   ├── dropdowns_ord.py        # Valori dei menu a tendina ORD
 │   ├── dropdowns_trg_p.py      # Valori dei menu a tendina TRG-P
 │   ├── palette.py              # Colori di rischio e condizione: UNICA fonte (webapp, mappa, QGIS)
+│   ├── qgis_style.py           # Stile QGIS (.qml) generato dalla palette
 │   ├── map_render.py           # Tavola cartografica PNG/PDF (tessere basemap + Pillow)
 │   ├── fonts/                  # DejaVu Sans, usato dalla tavola cartografica
 │   └── report_templates.py     # Registro dei template di scheda (ARETE .xlsx, base HTML)
@@ -100,6 +101,8 @@ tree_project/
 │   ├── voice.js                # Input vocale (Web Speech API + intent Groq)
 │   ├── style.css               # Stili dell'applicazione
 │   └── images/                 # Loghi (usati anche nella scheda ARETE)
+├── qgis_plugin/
+│   └── silvae_qgis/            # Plugin QGIS «Silvae Pro» (vedi qgis_plugin/README.md e qgis.md)
 ├── test_locale.py              # Avvio rapido in locale (anche con SQLite, senza PostgreSQL)
 ├── test_flask_api.py           # Test dell'API
 ├── Procfile                    # Configurazione Gunicorn per Railway
@@ -231,6 +234,10 @@ L'utente `city` **non può modificare gli alberi**: l'interfaccia è la stessa d
 
 Gli utenti vengono creati da un `superuser` (qualsiasi ruolo) o da un `city` (solo agronomi del proprio comune). La **registrazione pubblica** (`/register` + link "Crea account") è **disabilitata di default**: si riattiva impostando `REGISTRATION_ENABLED=true` e ripristinando il link nel frontend (vedi commenti in `frontend/index.html` e `frontend/app.js`).
 
+### Token API (client esterni)
+
+Oltre al JWT di `/login` (che scade e congela ruolo e comune), un utente può creare da `POST /me/tokens` dei **token API** nel formato `slv_…`, pensati per client che restano collegati a lungo — in primo luogo il plugin QGIS (vedi [`qgis.md`](qgis.md)). Si usano nello stesso header `Authorization: Bearer slv_…`; in DB è salvato solo l'hash SHA-256, ruolo e comune vengono riletti dall'utente a ogni richiesta e la revoca (`DELETE /me/tokens/<id>`) è immediata. Un token API non può creare altri token; gli account demo non ne hanno. Il ruolo `city` può usarli in sola lettura come nella webapp.
+
 ---
 
 ## Account demo
@@ -297,7 +304,7 @@ web: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120 --preload
 | **Alberi** | Tabella degli alberi con ricerca, ordinamento, aggiunta/modifica/cancellazione, e **barra statistiche** con i conteggi per categoria (vedi [Statistiche della vista](#statistiche-della-vista)). Gli alberi si caricano **solo dopo aver scelto un comune** nel selettore in alto (per `city` è automatico); la voce *Carica tutti gli alberi* in fondo al menu richiede esplicitamente tutti quelli visibili all'account |
 | **Mappa** | Mappa Leaflet con marker e clustering, filtri per città e indirizzo, **barra statistiche** con filtro per categoria (condiviso con il tab Alberi), ID albero nel popup e **selezione per area**: si disegna un poligono sulla mappa e si esportano gli alberi contenuti, se ne generano le schede o la **mappa per la relazione** (PNG/PDF) |
 | **Gestione** | Pannello amministratore: gestione utenti, città, agronomi, reset password |
-| **Esporta** | Esportazione in Excel (.xlsx), GeoPackage (.gpkg) o GPX (.gpx), **mappa per la relazione** (PNG/PDF) e **schede ARETE** — intera raccolta o selezione manuale, con **scelta dei campi da esportare** (esclusione singoli campi) |
+| **Esporta** | Esportazione in Excel (.xlsx), GeoPackage (.gpkg) o GPX (.gpx), **mappa per la relazione** (PNG/PDF), **schede ARETE** e **Invia a QGIS** — intera raccolta o selezione manuale, con **scelta dei campi da esportare** (esclusione singoli campi) |
 | **Importa** | Importazione da file .gpkg o .gpx (censimenti esterni, rilievi GPS o file esportati dall'app) con anteprima, mappatura colonne e gestione conflitti (skip/update) |
 | **Algoritmo** | Documentazione tecnica del calcolo ARETE integrata nella webapp |
 
@@ -330,7 +337,18 @@ Il formato GPX (waypoint) è il ponte con i GPS da campo, gli smartphone e QGIS 
 
 **Import** (`POST /import/gpx`): ogni `<wpt>` diventa un albero. La mappatura automatica riconosce `lat`/`lon` (coordinate), `name` → ID albero, `cmt` → specie, `desc` → note; gli eventuali figli di `<extensions>` (attributi scritti da QGIS o da Silvae Pro) sono proposti come colonne aggiuntive nella finestra di mappatura, come per il GPKG. `ele` e `sym` vengono ignorati (non esiste un campo quota). Comune, conflitti (`skip`/`update`) e dedup per coordinate funzionano come per il GPKG.
 
-**Export** (`GET /export/gpx`): GPX 1.1 in WGS84, un `<wpt>` per albero con `name` = ID, `cmt` = specie, `desc` = riassunto leggibile (specie, condizione, CPC, classe di rischio, indirizzo, comune), `sym` = `Flag, Blue`, e in `<extensions>` i campi Silvae (`custom_id`, `city`, `species`, `condition`, `cpc`, `address`, `rischio`, `next_check`, `comments`) che QGIS mostra come attributi del layer. Nei file generati da Silvae (`creator="Silvae Pro"`) `cmt` e `desc` vengono ignorati alla reimportazione, perché derivati dai campi in `<extensions>`. Disponibile dal tab **Esporta**, dalla barra di selezione della tabella e dalla selezione per area sulla mappa.
+**Export** (`GET /export/gpx`): GPX 1.1 in WGS84, un `<wpt>` per albero con `name` = ID, `cmt` = specie, `desc` = riassunto leggibile (specie, condizione, CPC, classe di rischio, indirizzo, comune), `sym` = `Flag, Blue`, e in `<extensions>` i campi Silvae (`custom_id`, `uuid`, `city`, `species`, `condition`, `cpc`, `address`, `rischio`, `next_check`, `comments`) che QGIS mostra come attributi del layer. Nei file generati da Silvae (`creator="Silvae Pro"`) `cmt` e `desc` vengono ignorati alla reimportazione, perché derivati dai campi in `<extensions>`. Disponibile dal tab **Esporta**, dalla barra di selezione della tabella e dalla selezione per area sulla mappa.
+
+---
+
+## Importazione: abbinamento e regole di scrittura
+
+Ogni albero ha un **`uuid`** stabile (generato alla creazione, presente nei GPKG e GPX esportati) e i campi **`updated_at` / `updated_by`** con data e utente dell'ultima modifica, restituiti da `/trees` e `/tree/<id>`. L'importazione da file (`/import/gpkg`, `/import/gpx`) passa per un'unica funzione, `_upsert_tree` in [`app.py`](app.py), che sarà usata anche dal plugin QGIS ([`qgis.md`](qgis.md)):
+
+- **Abbinamento** con un albero esistente, cercato **solo tra gli alberi visibili** a chi importa (i propri per l'agronomo): prima per `uuid`, poi per **coordinate** (entro ~10 cm), infine per `custom_id` + comune ma solo se la riga non ha coordinate. Con le coordinate non si abbina mai per `custom_id`, perché nei censimenti la numerazione riparte per località e alberi diversi condividono lo stesso numero. Un `uuid` sconosciuto (albero cancellato, o file esportato da un altro account) non è un errore: si prosegue con gli altri criteri e, se l'albero è nuovo, l'uuid viene riusato quando è libero.
+- **Un valore vuoto nel file non tocca il campo**: in modalità `update` si sovrascrivono solo i valori presenti, quindi un file con poche colonne non cancella ciò che il database ha già. L'owner dell'albero non cambia mai.
+- **I campi derivati vengono ignorati** anche se presenti nel file (`rischio`, classi `bersaglio_chioma`/`bersaglio_ramo`, valori ecologici, `city`, `owner_id`, `uuid`): il server li ricalcola — quindi anche gli alberi importati hanno il **rischio ORD** calcolato, se i campi ARETE sono completi.
+- La risposta riporta `created`, `updated`, `unchanged`, `skipped`, `errors` (oltre a `inserted` = creati + aggiornati + già allineati, per compatibilità): reimportare lo stesso file dà tutti `unchanged`.
 
 ---
 
@@ -387,7 +405,30 @@ Il flusso è:
 3. [`app.js`](frontend/app.js) le legge con `paletteVar()` / `condColor()` / `riskColors()` per i marker Leaflet e i colori inline.
 4. `GET /palette` restituisce la stessa tavolozza in JSON, per strumenti esterni.
 
-Le chiavi delle categorie (`accettabile`, `alarp`, `accordo`, `inaccettabile`, `na`; `good`, `buono`, `fair`, `poor`, `other`) sono le stesse usate da `riskStatCategory()`/`condCategory()` nel frontend e da `_risk_category()` in `app.py`. **Per cambiare un colore si modifica solo `palette.py`**: webapp e mappa lo ricevono al ricaricamento, e lo stile QGIS (quando disponibile) sarà generato dagli stessi valori.
+Le chiavi delle categorie (`accettabile`, `alarp`, `accordo`, `inaccettabile`, `na`; `good`, `buono`, `fair`, `poor`, `other`) sono le stesse usate da `riskStatCategory()`/`condCategory()` nel frontend e da `_risk_category()` in `app.py`. **Per cambiare un colore si modifica solo `palette.py`**: webapp e mappa lo ricevono al ricaricamento, e lo stile QGIS (`GET /qgis/style.qml`, generato da [`tools/qgis_style.py`](tools/qgis_style.py)) dagli stessi valori.
+
+### Stile QGIS
+
+[`tools/qgis_style.py`](tools/qgis_style.py) genera un `.qml` con renderer categorizzato ed etichetta sull'ID albero, in tre varianti: `stat` (colonna `stat_bucket`: rischio ORD se calcolato, altrimenti condizione VTA/CPC, altrimenti NA — la stessa casella della barra statistiche), `rischio` (`rischio_classe`) e `condizione` (`cond_classe`). Le tre colonne sono nel GPKG esportato e nel GeoJSON di `/qgis/features`; nel GPKG lo stile `stat` è anche **incorporato** nella tabella `layer_styles` come predefinito, quindi QGIS colora il layer da solo all'apertura (se la colonna viene rinominata lo stile la segue; se viene esclusa non c'è stile). Lo stile è scaricabile a parte da `/qgis/style.qml` per layer già presenti nei progetti (*Proprietà layer → Simbologia → Stile → Carica stile*).
+
+---
+
+## Plugin QGIS
+
+In [`qgis_plugin/silvae_qgis/`](qgis_plugin/) c'è il plugin «Silvae Pro» per QGIS (≥ 3.28): si collega con un **token API** (creato da «Il mio account»), scarica gli alberi di un comune in un GeoPackage locale già colorato e li aggiorna in modo incrementale. Installazione e uso in [`qgis_plugin/README.md`](qgis_plugin/README.md); piano e stato in [`qgis.md`](qgis.md).
+
+### Da QGIS a Silvae
+
+Il plugin manda le feature di un qualsiasi layer a `POST /qgis/features`: la corrispondenza colonna → campo si decide una volta (la propone `POST /qgis/mapping`, stessa auto-mappatura dell'import da file) e resta salvata nel progetto QGIS. Ogni scrittura passa per la stessa funzione della webapp, quindi valgono le regole dell'[importazione](#importazione-abbinamento-e-regole-di-scrittura): campi derivati ignorati e ricalcolati, valori vuoti che non cancellano, owner invariato, abbinamento solo tra gli alberi visibili. In più:
+
+- **anteprima**: con `dry_run` il server esegue tutto senza scrivere e risponde con il diff (`created`, `updated` con l'elenco dei campi cambiati, `unchanged`, `skipped`, `conflicts`, `errors`, `ignored_fields`);
+- **conflitti**: la feature dice fin dove QGIS era allineato — il più recente fra l'`updated_at` ricevuto al pull e il `silvae_synced_at` scritto dal plugin all'ultimo invio riuscito; se qualcuno ha modificato quell'albero dopo, la feature finisce in `conflicts` e **non** viene scritta, a meno di `force`. Il plugin apre allora una finestra di confronto campo per campo dove si sceglie, albero per albero, se far vincere QGIS o Silvae;
+- **storico**: ogni albero modificato da QGIS conserva in una `Inspection` lo **snapshot precedente** alla modifica, con l'elenco dei campi cambiati — un annulla per albero;
+- **collegamento**: dopo un invio riuscito il plugin scrive `silvae_uuid` (più `silvae_id` e `silvae_synced_at`) nel layer di partenza, così gli invii successivi aggiornano invece di duplicare.
+
+### Invia a QGIS (cassetta postale)
+
+Un browser non può parlare con QGIS sul computer dell'utente, quindi il server fa da tramite. Il pulsante **Invia a QGIS** — nel tab Esporta, nella barra di selezione della tabella e nella selezione per area sulla mappa (dove parte anche il perimetro disegnato) — deposita un *invio* con gli **id** degli alberi; il plugin lo trova nel dock *Invii in attesa* e lo ritira. Poiché l'invio conserva gli id e non i dati, al ritiro arrivano sempre i valori correnti. Gli invii sono personali (li ritira chi li ha creati), scadono dopo 7 giorni e si possono eliminare da entrambe le parti.
 
 ---
 
@@ -427,6 +468,9 @@ Il calcolo è interamente lato client in [`frontend/app.js`](frontend/app.js) (`
 | `POST` | `/login` | Autenticazione, restituisce JWT |
 | `GET`  | `/me` | Dati dell'utente autenticato (inclusi `email` e, per gli agronomi, `agronomer_code`) |
 | `PATCH` | `/me` | Aggiorna l'email del proprio account (`{"email": "..."}`, stringa vuota per rimuoverla) |
+| `GET`  | `/me/tokens` | Token API attivi dell'utente (nome, prefisso, ultimo uso) |
+| `POST` | `/me/tokens` | Crea un token API (`{"name": "..."}`); il token in chiaro `slv_…` è nella risposta **una sola volta**. Solo con JWT, non da account demo |
+| `DELETE` | `/me/tokens/<id>` | Revoca un token API |
 | `POST` | `/register` | Auto-registrazione (ruolo `user`) — **disabilitato** salvo `REGISTRATION_ENABLED=true` |
 | `POST` | `/forgot-password` | Invia il link di reset password via email |
 | `POST` | `/reset-password` | Imposta una nuova password tramite token |
@@ -468,7 +512,7 @@ Il calcolo è interamente lato client in [`frontend/app.js`](frontend/app.js) (`
 |--------|----------|-------------|
 | `GET`  | `/export/excel` | Esporta alberi in Excel (`?ids=1,2,3` e `?exclude=` opzionali) |
 | `GET`  | `/export/excel/columns` | Gruppi e intestazioni delle colonne Excel (per la scelta dei campi da esportare) |
-| `GET`  | `/export/gpkg` | Esporta alberi in GeoPackage — attributi ARETE + geometria (`?ids=`, `?rename=`, `?exclude=` opzionali) |
+| `GET`  | `/export/gpkg` | Esporta alberi in GeoPackage — attributi ARETE + geometria (`?ids=`, `?rename=`, `?exclude=` opzionali), con le colonne di categoria `stat_bucket`/`rischio_classe`/`cond_classe` e lo **stile QGIS predefinito** incorporato (`layer_styles`) |
 | `GET`  | `/export/gpkg/columns` | Nomi/tipi di default delle colonne del GPKG (per rinomina/esclusione in export) |
 | `POST` | `/import/gpkg/inspect` | Anteprima colonne e mappatura automatica di un .gpkg |
 | `POST` | `/import/gpkg` | Importa alberi da .gpkg (multipart: `file`, `city`, `on_conflict=skip\|update`) *(non consentito a `city`)* |
@@ -494,12 +538,19 @@ Stesso filtro per ruolo e stessa selezione `ids` degli export (vedi [Schede di r
 | `POST` | `/reverse_geocode` | Coordinate → indirizzo e città |
 | `POST` | `/api/voice_intent` | Riconosce l'intento da un trascritto vocale (Groq) |
 
-### Palette
+### Palette e QGIS
 
 | Metodo | Endpoint | Descrizione |
 |--------|----------|-------------|
 | `GET` | `/palette.css` | Variabili CSS `--risk-*` / `--cond-*` generate da [`tools/palette.py`](tools/palette.py) (senza autenticazione) |
 | `GET` | `/palette` | La stessa tavolozza in JSON |
+| `GET` | `/qgis/style.qml` | Stile QGIS categorizzato generato dalla palette (`?by=stat\|rischio\|condizione`, `?field=` colonna rinominata, `?labels=0`); senza autenticazione |
+| `GET` | `/qgis/features` | FeatureCollection GeoJSON (WGS84) degli alberi visibili, con attributi piatti per QGIS (`?city=` o `?ids=`; `?since=<ISO 8601>` per il pull incrementale su `updated_at`; `?bbox=`; `?delivery=<id>` per ritirare un invio) — usato dal plugin QGIS |
+| `POST` | `/qgis/features` | **Scrittura da QGIS**: FeatureCollection GeoJSON in ingresso (`city` obbligatorio, `mapping` colonne→campi, `on_conflict`, `dry_run` per l'anteprima, `force`) — stessa logica della webapp, con ricalcolo del rischio e snapshot dello stato precedente |
+| `POST` | `/qgis/mapping` | Mappatura proposta per le colonne di un layer (`{columns: [...]}`) e campi scrivibili — per la finestra di mappatura del plugin |
+| `POST` | `/qgis/deliveries` | «Invia a QGIS»: deposita un invio (`{city, ids, polygon?, title?}`) per il proprio plugin |
+| `GET` | `/qgis/deliveries` | Invii in attesa dell'utente (`?all=1` include quelli già ritirati) |
+| `DELETE` | `/qgis/deliveries/<id>` | Elimina un invio |
 
 ---
 

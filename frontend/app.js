@@ -924,6 +924,7 @@ async function openAccount() {
         `<strong>${u.username || ''}</strong> · ${ROLE_LABELS[u.role] || u.role || ''}${u.city ? ' · ' + u.city : ''}` +
         (u.agronomer_code ? ` · codice <span style="font-family:ui-monospace,monospace">${u.agronomer_code}</span>` : '');
     document.getElementById('accountModal').classList.add('open');
+    loadApiTokens();
     try {
         const res = await fetch(`${API_BASE}/me`, {headers: authHeader()});
         if (res.ok) document.getElementById('accountEmail').value = (await res.json()).email || '';
@@ -932,6 +933,62 @@ async function openAccount() {
 
 function closeAccount() {
     document.getElementById('accountModal').classList.remove('open');
+    document.getElementById('apiTokenNew').style.display = 'none';
+    document.getElementById('apiTokenValue').value = '';
+}
+
+// ─── Token API per il plugin QGIS (GET/POST/DELETE /me/tokens) ───────────────
+
+function _escHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function loadApiTokens() {
+    const box = document.getElementById('apiTokenList');
+    try {
+        const res = await fetch(`${API_BASE}/me/tokens`, {headers: authHeader()});
+        if (!res.ok) { box.innerHTML = ''; return; }
+        const toks = await res.json();
+        if (!toks.length) { box.innerHTML = '<span style="color:var(--text-muted);">Nessun token attivo.</span>'; return; }
+        box.innerHTML = toks.map(t => `
+          <div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border);">
+            <span style="flex:1;min-width:0;"><strong>${_escHtml(t.name)}</strong>
+              <span style="font-family:ui-monospace,monospace;color:var(--text-muted);">${_escHtml(t.prefix)}…</span>
+              <span style="color:var(--text-muted);">· creato ${_escHtml(t.created_at)}${t.last_used_at ? ' · ultimo uso ' + _escHtml(t.last_used_at) : ' · mai usato'}</span></span>
+            <button type="button" class="btn btn-outline btn-sm" title="Revoca" onclick="revokeApiToken(${t.id}, '${_escHtml(t.name)}')"><i class="fa-solid fa-ban"></i></button>
+          </div>`).join('');
+    } catch (_) { box.innerHTML = ''; }
+}
+
+async function submitApiToken(e) {
+    e.preventDefault();
+    const name = document.getElementById('apiTokenName').value.trim() || 'QGIS';
+    const res  = await fetch(`${API_BASE}/me/tokens`, {
+        method: 'POST',
+        headers: Object.assign({'Content-Type':'application/json'}, authHeader()),
+        body: JSON.stringify({name})
+    });
+    const data = await res.json();
+    if (!res.ok) return showStatus(data.message || 'Errore nella creazione del token', 'danger');
+    document.getElementById('apiTokenName').value = '';
+    document.getElementById('apiTokenValue').value = data.token;
+    document.getElementById('apiTokenNew').style.display = 'block';
+    showStatus(`Token «${name}» creato: copialo ora`, 'success');
+    loadApiTokens();
+}
+
+async function copyApiToken() {
+    const inp = document.getElementById('apiTokenValue');
+    try { await navigator.clipboard.writeText(inp.value); showStatus('Token copiato', 'success'); }
+    catch (_) { inp.select(); showStatus('Seleziona e copia il token', 'warning'); }
+}
+
+async function revokeApiToken(id, name) {
+    if (!confirm(`Revocare il token «${name}»? QGIS non potrà più collegarsi con questo token.`)) return;
+    const res  = await fetch(`${API_BASE}/me/tokens/${id}`, {method: 'DELETE', headers: authHeader()});
+    const data = await res.json();
+    if (res.ok) { showStatus(data.message || 'Token revocato', 'success'); loadApiTokens(); }
+    else showStatus(data.message || 'Errore nella revoca', 'danger');
 }
 
 async function submitAccountEmail(e) {
@@ -2557,6 +2614,7 @@ function exportSelectedExcel() {
 const SILVAE_FIELDS = [
     { value: '',                  label: '— non importare —' },
     { value: 'custom_id',         label: 'ID Albero' },
+    { value: 'uuid',              label: 'UUID Silvae (chiave di collegamento)' },
     { value: 'species',           label: 'Specie (latino)' },
     { value: 'species_ita',       label: 'Specie (italiano)' },
     { value: 'condition',         label: 'Condizione' },
@@ -3217,6 +3275,8 @@ function updateAreaPanel() {
     const gpx = document.getElementById('areaGpxBtn');
     const sch = document.getElementById('areaSchedaBtn');
     const mp  = document.getElementById('areaMapBtn');
+    const qg  = document.getElementById('areaQgisBtn');
+    if (qg)  qg.disabled  = n === 0;
     if (xls) xls.disabled = n === 0;
     if (gpk) gpk.disabled = n === 0;
     if (gpx) gpx.disabled = n === 0;
@@ -3239,6 +3299,59 @@ function exportAreaMap() {
     const ids = state.areaSelectedIds || [];
     if (ids.length === 0) { showStatus("Nessun albero nell'area selezionata", 'warning'); return; }
     return openMapExportModal(ids, state.areaVertices, 'mappa_area');
+}
+
+// ─── Invia a QGIS (cassetta postale, qgis.md §6.3) ────────
+
+// Deposita un invio sul server: il plugin QGIS lo trova in «Invii in attesa».
+// Un browser non può parlare con QGIS sul PC, quindi il server fa da tramite.
+//   ids:     alberi da mandare
+//   polygon: vertici dell'area (LatLng Leaflet o [lat, lng]), opzionale
+async function sendToQgis(ids, polygon, what) {
+    if (!state.token) { showStatus('Effettua prima il login', 'danger'); return; }
+    if (!ids || ids.length === 0) { showStatus('Nessun albero da inviare', 'warning'); return; }
+    const body = {
+        ids,
+        city: document.getElementById('citySelect').value || undefined,
+        polygon: polygon ? polygon.map(p => (Array.isArray(p) ? [p[0], p[1]] : [p.lat, p.lng])) : undefined
+    };
+    showStatus(`Invio a QGIS di ${ids.length} alber${ids.length === 1 ? 'o' : 'i'}…`, 'info');
+    try {
+        const res  = await fetch(`${API_BASE}/qgis/deliveries`, {
+            method: 'POST',
+            headers: Object.assign({'Content-Type': 'application/json'}, authHeader()),
+            body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (!res.ok) return showStatus(data.message || 'Invio non riuscito', 'danger');
+        const skipped = (data.requested || 0) - data.count;
+        showStatus(`Inviati a QGIS: ${data.count} alber${data.count === 1 ? 'o' : 'i'}`
+                   + (skipped > 0 ? ` (${skipped} non visibili, saltati)` : '')
+                   + '. In QGIS: Silvae Pro → Invii in attesa.', 'success');
+    } catch (e) {
+        showStatus('Invio non riuscito: server non raggiungibile', 'danger');
+    }
+}
+
+// Card «Esporta»: alberi selezionati in tabella, altrimenti tutti quelli caricati.
+function sendQgis() {
+    if (state.exportSelected.size) return sendToQgis([...state.exportSelected], null);
+    const ids = (state.allTrees || []).map(t => t.id);
+    if (ids.length === 0) { showStatus('Nessun albero caricato: seleziona prima un comune', 'warning'); return; }
+    return sendToQgis(ids, null);
+}
+
+// Barra di selezione della tabella.
+function sendSelectedToQgis() {
+    if (state.exportSelected.size === 0) { showStatus('Nessun albero selezionato', 'warning'); return; }
+    return sendToQgis([...state.exportSelected], null);
+}
+
+// Selezione per area sulla mappa: va anche il perimetro disegnato.
+function sendAreaToQgis() {
+    const ids = state.areaSelectedIds || [];
+    if (ids.length === 0) { showStatus("Nessun albero nell'area selezionata", 'warning'); return; }
+    return sendToQgis(ids, state.areaVertices);
 }
 
 // ─── Mappa per la relazione (PNG/PDF) ─────────────────────
@@ -3364,6 +3477,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('exportGPXBtn').addEventListener('click', exportGPX);
     document.getElementById('exportSchedaBtn').addEventListener('click', exportScheda);
     document.getElementById('exportMapBtn').addEventListener('click', exportMap);
+    document.getElementById('sendQgisBtn').addEventListener('click', sendQgis);
     document.querySelectorAll('input[name="mapExportFormat"]').forEach(r => r.addEventListener('change', _syncMapExportExt));
     loadReportTemplates();
     init();

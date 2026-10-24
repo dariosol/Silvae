@@ -15,3 +15,7 @@ calculus.md
 
 # DB locale creato da test_locale.py --sqlite
 test_locale.db
+qgis_plugin/*.zip
+
+# Lock file di LibreOffice
+.~lock.*#

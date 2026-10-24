@@ -746,6 +746,465 @@ class TestExport:
         assert client.get('/export/geojson').status_code == 401
 
 
+# ---------------------------------------------------------------------------
+# Fase 0 QGIS (qgis.md): token API, uuid/updated_*, _upsert_tree
+# ---------------------------------------------------------------------------
+
+import io, sqlite3, tempfile, os
+from app import ApiToken, _upsert_tree, _role_tree_query
+
+
+def _edit_gpkg(data, sql):
+    """Applica una UPDATE al layer `alberi` di un GPKG in memoria."""
+    path = tempfile.mktemp(suffix='.gpkg'); open(path, 'wb').write(data)
+    con = sqlite3.connect(path); con.execute(sql); con.commit(); con.close()
+    out = open(path, 'rb').read(); os.remove(path)
+    return out
+
+
+class TestApiToken:
+    def test_token_lifecycle(self, client, auth_headers):
+        res = client.post('/me/tokens', json={'name': 'pytest'}, headers=auth_headers)
+        assert res.status_code == 201
+        body = res.get_json()
+        assert body['token'].startswith('slv_') and body['prefix'] == body['token'][:12]
+        tok_headers = {'Authorization': f"Bearer {body['token']}"}
+        try:
+            me = client.get('/me', headers=tok_headers)
+            assert me.status_code == 200 and me.get_json()['username'] == 'admin'
+            # un token API non crea altri token
+            assert client.post('/me/tokens', json={}, headers=tok_headers).status_code == 403
+            assert any(t['id'] == body['id'] for t in client.get('/me/tokens', headers=auth_headers).get_json())
+        finally:
+            assert client.delete(f"/me/tokens/{body['id']}", headers=auth_headers).status_code == 200
+        assert client.get('/me', headers=tok_headers).status_code == 401
+        with flask_app.app_context():
+            t = db.session.get(ApiToken, body['id'])
+            if t: db.session.delete(t); db.session.commit()
+
+    def test_demo_cannot_create_token(self, client):
+        res = client.post('/login', json={'username': 'demo_user', 'password': 'demo_password'})
+        if res.status_code != 200:
+            pytest.skip('account demo non disponibile')
+        h = {'Authorization': f"Bearer {res.get_json()['token']}"}
+        assert client.post('/me/tokens', json={}, headers=h).status_code == 403
+
+
+class TestTreeTracking:
+    def test_uuid_and_updated_fields(self, client, auth_headers, added_tree_id):
+        d = client.get(f'/tree/{added_tree_id}', headers=auth_headers).get_json()
+        assert d['uuid'] and len(d['uuid']) == 36
+        assert d['updated_at'] and d['updated_by'] == 'admin'
+        before = d['updated_at']
+        assert client.patch(f'/tree/{added_tree_id}', json={'comments': 'x'}, headers=auth_headers).status_code == 200
+        after = client.get(f'/tree/{added_tree_id}', headers=auth_headers).get_json()
+        assert after['updated_at'] > before and after['uuid'] == d['uuid']
+
+
+class TestUpsertImport:
+    def _import(self, client, headers, data, on_conflict='update'):
+        res = client.post('/import/gpkg',
+                          data={'file': (io.BytesIO(data), 'x.gpkg'), 'city': TEST_TREE['city'],
+                                'on_conflict': on_conflict},
+                          headers=headers, content_type='multipart/form-data')
+        assert res.status_code == 200, res.get_json()
+        return res.get_json()
+
+    def test_reimport_is_idempotent(self, client, auth_headers, added_tree_id):
+        g = client.get(f'/export/gpkg?ids={added_tree_id}', headers=auth_headers).data
+        r = self._import(client, auth_headers, g)
+        assert (r['created'], r['updated'], r['unchanged'], r['errors']) == (0, 0, 1, 0)
+        assert r['inserted'] == 1  # compatibilità con il frontend
+
+    def test_moved_point_updates_by_uuid(self, client, auth_headers, added_tree_id):
+        g = client.get(f'/export/gpkg?ids={added_tree_id}', headers=auth_headers).data
+        g = _edit_gpkg(g, "UPDATE alberi SET latitude = latitude + 0.001")
+        r = self._import(client, auth_headers, g)
+        assert (r['created'], r['updated']) == (0, 1)
+        d = client.get(f'/tree/{added_tree_id}', headers=auth_headers).get_json()
+        assert abs(d['latitude'] - (TEST_TREE['latitude'] + 0.001)) < 1e-6
+
+    def test_empty_values_and_derived_fields_are_ignored(self, client, auth_headers, added_tree_id):
+        g = client.get(f'/export/gpkg?ids={added_tree_id}', headers=auth_headers).data
+        g = _edit_gpkg(g, "UPDATE alberi SET species = NULL, bersaglio_chioma = 7")
+        r = self._import(client, auth_headers, g)
+        assert r['unchanged'] == 1
+        d = client.get(f'/tree/{added_tree_id}', headers=auth_headers).get_json()
+        assert d['species'] == TEST_TREE['species'] and d['bersaglio_chioma'] is None
+
+    def test_strict_uuid_rejects_unknown(self, client, auth_headers, added_tree_id):
+        with flask_app.app_context():
+            admin = User.query.filter_by(username='admin').first()
+            scope = _role_tree_query('superuser', admin.id, None)
+            with pytest.raises(ValueError):
+                _upsert_tree({'uuid': '00000000-0000-0000-0000-000000000000', 'custom_id': 'X',
+                              'latitude': 1.0, 'longitude': 1.0},
+                             city=TEST_TREE['city'], on_conflict='update',
+                             user_id=admin.id, scope=scope, strict_uuid=True)
+            db.session.rollback()
+
+
+class TestQgisFeatures:
+    def test_requires_city_or_ids(self, client, auth_headers):
+        assert client.get('/qgis/features', headers=auth_headers).status_code == 400
+        assert client.get('/qgis/features?city=X').status_code == 401
+
+    def test_geojson_shape_and_flat_properties(self, client, auth_headers, added_arete_tree_id):
+        res = client.get(f'/qgis/features?ids={added_arete_tree_id}', headers=auth_headers)
+        assert res.status_code == 200 and res.headers['X-Silvae-Schema'] == '1'
+        body = res.get_json()
+        assert body['type'] == 'FeatureCollection' and body['silvae']['count'] == 1
+        f = body['features'][0]
+        assert f['id'] == added_arete_tree_id and f['geometry']['type'] == 'Point'
+        lon, lat = f['geometry']['coordinates']
+        assert abs(lat - ARETE_TREE['latitude']) < 1e-9 and abs(lon - ARETE_TREE['longitude']) < 1e-9
+        p = f['properties']
+        assert p['uuid'] and p['owner'] == 'admin' and p['updated_at']
+        assert 'rischio' not in p and 'owner_id' not in p
+        for k in ('stat_bucket', 'stat_label', 'rischio_classe', 'rischio_rami', 'rischio_residuo_classe', 'rischio_json'):
+            assert k in p
+        # liste e diagnosi appiattite a stringa, mai list/dict
+        assert all(not isinstance(v, (list, dict)) for v in p.values())
+        if p['rischio_classe']:
+            assert p['stat_bucket'] == f"risk:{p['rischio_classe']}"
+
+    def test_city_filter_and_since(self, client, auth_headers, added_tree_id):
+        res = client.get(f"/qgis/features?city={TEST_TREE['city']}", headers=auth_headers)
+        ids = [f['id'] for f in res.get_json()['features']]
+        assert added_tree_id in ids
+        assert client.get('/qgis/features?city=__nessuno__', headers=auth_headers).get_json()['silvae']['count'] == 0
+        upd = client.get(f'/tree/{added_tree_id}', headers=auth_headers).get_json()['updated_at']
+        # since = updated_at dell'albero → escluso; since molto vecchio → incluso
+        res = client.get(f"/qgis/features?city={TEST_TREE['city']}&since={upd}", headers=auth_headers)
+        assert added_tree_id not in [f['id'] for f in res.get_json()['features']]
+        res = client.get(f"/qgis/features?city={TEST_TREE['city']}&since=2000-01-01T00:00:00Z", headers=auth_headers)
+        assert added_tree_id in [f['id'] for f in res.get_json()['features']]
+        assert client.get('/qgis/features?city=X&since=ieri', headers=auth_headers).status_code == 400
+
+    def test_since_accepts_offset_with_mangled_plus(self):
+        # In una query string un `+` non codificato arriva come spazio: l'ora
+        # che restituiamo noi («…+00:00») deve essere rileggibile comunque.
+        from app import _parse_iso_dt
+        atteso = _parse_iso_dt('2026-10-24T09:12:33+00:00')
+        assert atteso is not None
+        assert _parse_iso_dt('2026-10-24T09:12:33 00:00') == atteso
+        assert _parse_iso_dt('2026-10-24T09:12:33Z') == atteso
+        assert _parse_iso_dt('2026-10-24 09:12:33') == atteso        # separatore a spazio
+        assert _parse_iso_dt('2026-10-24T09:12:33 02:00').utcoffset().total_seconds() == 7200
+        assert _parse_iso_dt('2026-10-24T09:12:33-02:00').utcoffset().total_seconds() == -7200
+        assert _parse_iso_dt('ieri') is None and _parse_iso_dt('') is None
+
+    def test_bbox(self, client, auth_headers, added_tree_id):
+        lat, lon = TEST_TREE['latitude'], TEST_TREE['longitude']
+        inside = f'{lon-0.01},{lat-0.01},{lon+0.01},{lat+0.01}'
+        outside = f'{lon+1},{lat+1},{lon+2},{lat+2}'
+        c = TEST_TREE['city']
+        assert added_tree_id in [f['id'] for f in client.get(f'/qgis/features?city={c}&bbox={inside}', headers=auth_headers).get_json()['features']]
+        assert added_tree_id not in [f['id'] for f in client.get(f'/qgis/features?city={c}&bbox={outside}', headers=auth_headers).get_json()['features']]
+        assert client.get(f'/qgis/features?city={c}&bbox=1,2', headers=auth_headers).status_code == 400
+
+
+class TestQgisStyle:
+    def test_style_endpoint(self, client):
+        from tools import qgis_style
+        for by in qgis_style.STYLES:
+            res = client.get(f'/qgis/style.qml?by={by}')
+            assert res.status_code == 200 and 'xml' in res.content_type
+            assert f'attr="{qgis_style.STYLES[by]["field"]}"' in res.get_data(as_text=True)
+        assert client.get('/qgis/style.qml?by=x').status_code == 400
+        txt = client.get('/qgis/style.qml?field=categoria&labels=0').get_data(as_text=True)
+        assert 'attr="categoria"' in txt and '<labeling' not in txt
+
+    def test_categories_follow_palette(self):
+        from tools import qgis_style, palette
+        cats = dict((v, c) for v, _l, c in qgis_style.categories('stat'))
+        for e in palette.RISK:
+            if e['key'] != 'na': assert cats[f"risk:{e['key']}"] == e['main']
+        for e in palette.CONDITION:
+            assert cats[f"cond:{e['key']}"] == e['main']
+        assert cats['na'] == palette.by_key('risk', 'na')['main']
+
+    def test_gpkg_has_category_columns_and_default_style(self, client, auth_headers, added_tree_id):
+        res = client.get(f'/export/gpkg?ids={added_tree_id}', headers=auth_headers)
+        assert res.status_code == 200
+        path = tempfile.mktemp(suffix='.gpkg'); open(path, 'wb').write(res.data)
+        con = sqlite3.connect(path)
+        cols = [r[1] for r in con.execute('pragma table_info(alberi)')]
+        assert {'stat_bucket', 'rischio_classe', 'cond_classe'} <= set(cols)
+        row = con.execute("SELECT f_table_name, useAsDefault, styleQML FROM layer_styles").fetchone()
+        assert row[0] == 'alberi' and row[1] == 1 and 'attr="stat_bucket"' in row[2]
+        val = con.execute('SELECT stat_bucket FROM alberi').fetchone()[0]
+        assert val.startswith(('risk:', 'cond:')) or val == 'na'
+        con.close(); os.remove(path)
+        # colonna esclusa → nessuno stile
+        res = client.get(f'/export/gpkg?ids={added_tree_id}&exclude=' + json.dumps(['stat_bucket']), headers=auth_headers)
+        path = tempfile.mktemp(suffix='.gpkg'); open(path, 'wb').write(res.data)
+        con = sqlite3.connect(path)
+        assert not con.execute("SELECT name FROM sqlite_master WHERE name='layer_styles'").fetchone()
+        con.close(); os.remove(path)
+
+
+class TestQgisDeliveries:
+    def _create(self, client, headers, **body):
+        return client.post('/qgis/deliveries', json=body, headers=headers)
+
+    def _cleanup(self, ids):
+        from app import QgisDelivery
+        with flask_app.app_context():
+            for i in ids:
+                d = db.session.get(QgisDelivery, i)
+                if d: db.session.delete(d)
+            db.session.commit()
+
+    def test_create_list_fetch_delete(self, client, auth_headers, added_tree_id):
+        res = self._create(client, auth_headers, city=TEST_TREE['city'], ids=[added_tree_id],
+                           polygon=[[45.0, 9.0], [45.1, 9.0], [45.1, 9.1]])
+        assert res.status_code == 201
+        d = res.get_json()
+        assert d['count'] == 1 and d['city'] == TEST_TREE['city'] and d['fetched_at'] is None
+        assert d['title'] and d['polygon'] and d['expires_at']
+        try:
+            lst = client.get('/qgis/deliveries', headers=auth_headers).get_json()
+            assert d['id'] in [x['id'] for x in lst]
+            # ritiro: alberi correnti dell'invio + marcatura
+            fc = client.get(f"/qgis/features?delivery={d['id']}", headers=auth_headers).get_json()
+            assert [f['id'] for f in fc['features']] == [added_tree_id]
+            assert fc['silvae']['delivery']['id'] == d['id'] and fc['silvae']['delivery']['fetched_at']
+            assert fc['silvae']['city'] == TEST_TREE['city']
+            # ritirato → fuori dalla lista in attesa, dentro con ?all=1
+            assert d['id'] not in [x['id'] for x in client.get('/qgis/deliveries', headers=auth_headers).get_json()]
+            assert d['id'] in [x['id'] for x in client.get('/qgis/deliveries?all=1', headers=auth_headers).get_json()]
+        finally:
+            assert client.delete(f"/qgis/deliveries/{d['id']}", headers=auth_headers).status_code == 200
+        assert client.delete(f"/qgis/deliveries/{d['id']}", headers=auth_headers).status_code == 404
+
+    def test_rejects_invalid(self, client, auth_headers):
+        assert self._create(client, auth_headers, ids=[]).status_code == 400
+        assert self._create(client, auth_headers, ids=['x']).status_code == 400
+        assert self._create(client, auth_headers, ids=[999999999]).status_code == 404
+        assert client.post('/qgis/deliveries', json={'ids': [1]}).status_code == 401
+
+    def test_only_visible_trees_and_owner(self, client, auth_headers, added_tree_id):
+        """Gli id non visibili sono scartati; l'invio è personale."""
+        res = self._create(client, auth_headers, ids=[added_tree_id, 999999999])
+        d = res.get_json()
+        assert res.status_code == 201 and d['count'] == 1 and d['requested'] == 2
+        try:
+            other = client.post('/login', json={'username': 'demo_user', 'password': 'demo_password'})
+            if other.status_code == 200:
+                h2 = {'Authorization': f"Bearer {other.get_json()['token']}"}
+                assert d['id'] not in [x['id'] for x in client.get('/qgis/deliveries', headers=h2).get_json()]
+                assert client.get(f"/qgis/features?delivery={d['id']}", headers=h2).status_code == 404
+                assert client.delete(f"/qgis/deliveries/{d['id']}", headers=h2).status_code == 404
+        finally:
+            self._cleanup([d['id']])
+
+    def test_api_token_cannot_create(self, client, auth_headers, added_tree_id):
+        from app import ApiToken
+        tok = client.post('/me/tokens', json={'name': 'pytest-deliv'}, headers=auth_headers).get_json()
+        h = {'Authorization': f"Bearer {tok['token']}"}
+        try:
+            assert self._create(client, h, ids=[added_tree_id]).status_code == 403
+            assert client.get('/qgis/deliveries', headers=h).status_code == 200   # leggere sì
+        finally:
+            client.delete(f"/me/tokens/{tok['id']}", headers=auth_headers)
+
+    def test_expired_are_purged(self, client, auth_headers, added_tree_id):
+        from app import QgisDelivery
+        from datetime import datetime, timezone, timedelta
+        d = self._create(client, auth_headers, ids=[added_tree_id]).get_json()
+        with flask_app.app_context():
+            row = db.session.get(QgisDelivery, d['id'])
+            row.expires_at = datetime.now(timezone.utc) - timedelta(days=1)
+            db.session.commit()
+        assert d['id'] not in [x['id'] for x in client.get('/qgis/deliveries?all=1', headers=auth_headers).get_json()]
+        with flask_app.app_context():
+            assert db.session.get(QgisDelivery, d['id']) is None
+
+
+class TestQgisPush:
+    """POST /qgis/features: scrittura da QGIS (qgis.md §6.2)."""
+
+    def _pull(self, client, headers, tree_id):
+        fc = client.get(f'/qgis/features?ids={tree_id}', headers=headers).get_json()
+        return fc['features'][0]
+
+    def _push(self, client, headers, features, **kw):
+        body = {'type': 'FeatureCollection', 'features': features,
+                'city': kw.pop('city', TEST_TREE['city']), **kw}
+        return client.post('/qgis/features', json=body, headers=headers)
+
+    def test_roundtrip_unchanged(self, client, auth_headers, added_tree_id):
+        f = self._pull(client, auth_headers, added_tree_id)
+        res = self._push(client, auth_headers, [f])
+        assert res.status_code == 200
+        out = res.get_json()
+        assert out['counts'] == {'created': 0, 'updated': 0, 'unchanged': 1,
+                                 'skipped': 0, 'conflicts': 0, 'errors': 0}
+        assert out['unchanged'][0]['id'] == added_tree_id
+
+    def test_moved_point_and_attribute(self, client, auth_headers, added_tree_id):
+        f = self._pull(client, auth_headers, added_tree_id)
+        lon, lat = f['geometry']['coordinates']
+        f['geometry']['coordinates'] = [lon + 0.001, lat + 0.001]
+        f['properties']['comments'] = 'nota da QGIS'
+        out = self._push(client, auth_headers, [f]).get_json()
+        assert out['counts']['updated'] == 1
+        changed = set(out['updated'][0]['changed'])
+        assert {'latitude', 'longitude', 'comments'} <= changed
+        d = client.get(f'/tree/{added_tree_id}', headers=auth_headers).get_json()
+        assert abs(d['latitude'] - (lat + 0.001)) < 1e-9 and d['comments'] == 'nota da QGIS'
+        assert d['updated_by'] == 'admin'
+
+    def test_geometry_wins_over_stale_lat_lon(self, client, auth_headers, added_tree_id):
+        """Spostando il punto in QGIS le colonne latitude/longitude restano
+        quelle del pull: deve valere la geometria."""
+        f = self._pull(client, auth_headers, added_tree_id)
+        lon, lat = f['geometry']['coordinates']
+        f['geometry']['coordinates'] = [lon + 0.002, lat + 0.002]
+        out = self._push(client, auth_headers, [f]).get_json()
+        assert out['counts']['updated'] == 1
+        d = client.get(f'/tree/{added_tree_id}', headers=auth_headers).get_json()
+        assert abs(d['latitude'] - (lat + 0.002)) < 1e-9
+
+    def test_derived_fields_ignored(self, client, auth_headers, added_arete_tree_id):
+        f = self._pull(client, auth_headers, added_arete_tree_id)
+        before = client.get(f'/tree/{added_arete_tree_id}', headers=auth_headers).get_json()
+        f['properties']['bersaglio_chioma'] = 7
+        f['properties']['valore_ecologico'] = 999999
+        f['properties']['city'] = 'ComuneInventato'
+        out = self._push(client, auth_headers, [f]).get_json()
+        assert 'bersaglio_chioma' in out['ignored_fields']
+        after = client.get(f'/tree/{added_arete_tree_id}', headers=auth_headers).get_json()
+        assert after['bersaglio_chioma'] == before['bersaglio_chioma']
+        assert after['valore_ecologico'] == before['valore_ecologico']
+        assert after['city'] == before['city']
+
+    def test_risk_recomputed_from_inputs(self, client, auth_headers, added_arete_tree_id):
+        f = self._pull(client, auth_headers, added_arete_tree_id)
+        before = client.get(f'/tree/{added_arete_tree_id}', headers=auth_headers).get_json()
+        assert before['rischio'], 'il fixture ARETE deve avere il rischio calcolato'
+        f['properties']['pericolo_rami'] = '1'
+        out = self._push(client, auth_headers, [f]).get_json()
+        assert out['counts']['updated'] == 1 and 'rischio' in out['updated'][0]['changed']
+        after = client.get(f'/tree/{added_arete_tree_id}', headers=auth_headers).get_json()
+        assert after['rischio'] != before['rischio']
+
+    def test_new_tree_created(self, client, auth_headers):
+        feat = {'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': [9.2, 45.5]},
+                'properties': {'custom_id': 'QGIS-NEW-1', 'species': 'Acer campestre'}}
+        out = self._push(client, auth_headers, [feat]).get_json()
+        assert out['counts']['created'] == 1
+        new = out['created'][0]
+        assert new['id'] and new['uuid'] and new['custom_id'] == 'QGIS-NEW-1'
+        try:
+            d = client.get(f"/tree/{new['id']}", headers=auth_headers).get_json()
+            assert d['species'] == 'Acer campestre' and d['city'] == TEST_TREE['city']
+            insp = client.get(f"/tree/{new['id']}/inspections", headers=auth_headers).get_json()
+            assert len(insp) == 1 and insp[0]['snapshot']['species'] == 'Acer campestre'
+        finally:
+            client.delete(f"/tree/{new['id']}", headers=auth_headers)
+
+    def test_snapshot_inspection_keeps_previous_state(self, client, auth_headers, added_tree_id):
+        before = client.get(f'/tree/{added_tree_id}', headers=auth_headers).get_json()
+        n0 = len(client.get(f'/tree/{added_tree_id}/inspections', headers=auth_headers).get_json())
+        f = self._pull(client, auth_headers, added_tree_id)
+        f['properties']['species'] = 'Specie cambiata da QGIS'
+        assert self._push(client, auth_headers, [f]).get_json()['counts']['updated'] == 1
+        insp = client.get(f'/tree/{added_tree_id}/inspections', headers=auth_headers).get_json()
+        assert len(insp) == n0 + 1
+        last = insp[0]
+        assert 'QGIS' in (last['comments'] or '') and 'species' in (last['comments'] or '')
+        snap = last['snapshot']
+        if isinstance(snap, str): snap = json.loads(snap)
+        assert snap['species'] == before['species']   # lo snapshot è PRIMA della modifica
+
+    def test_no_inspection_when_nothing_changes(self, client, auth_headers, added_tree_id):
+        n0 = len(client.get(f'/tree/{added_tree_id}/inspections', headers=auth_headers).get_json())
+        f = self._pull(client, auth_headers, added_tree_id)
+        assert self._push(client, auth_headers, [f]).get_json()['counts']['unchanged'] == 1
+        assert len(client.get(f'/tree/{added_tree_id}/inspections', headers=auth_headers).get_json()) == n0
+
+    def test_dry_run_writes_nothing(self, client, auth_headers, added_tree_id):
+        before = client.get(f'/tree/{added_tree_id}', headers=auth_headers).get_json()
+        f = self._pull(client, auth_headers, added_tree_id)
+        f['properties']['comments'] = 'anteprima'
+        new = {'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': [9.3, 45.6]},
+               'properties': {'custom_id': 'QGIS-DRY-1', 'species': 'Tilia'}}
+        out = self._push(client, auth_headers, [f, new], dry_run=True).get_json()
+        assert out['dry_run'] and out['counts']['updated'] == 1 and out['counts']['created'] == 1
+        assert 'comments' in out['updated'][0]['changed']
+        after = client.get(f'/tree/{added_tree_id}', headers=auth_headers).get_json()
+        assert after['comments'] == before['comments'] and after['updated_at'] == before['updated_at']
+        assert client.get('/tree/custom/QGIS-DRY-1', headers=auth_headers).status_code == 404
+
+    def test_conflict_detected_and_forced(self, client, auth_headers, added_tree_id):
+        f = self._pull(client, auth_headers, added_tree_id)          # updated_at "visto"
+        client.patch(f'/tree/{added_tree_id}', json={'actions': 'modifica dalla webapp'},
+                     headers=auth_headers)                          # qualcuno scrive dopo
+        f['properties']['comments'] = 'modifica da QGIS'
+        out = self._push(client, auth_headers, [f]).get_json()
+        assert out['counts']['conflicts'] == 1 and out['counts']['updated'] == 0
+        c = out['conflicts'][0]
+        assert c['id'] == added_tree_id and c['server_updated_at'] > c['seen_updated_at']
+        assert client.get(f'/tree/{added_tree_id}', headers=auth_headers).get_json()['comments'] != 'modifica da QGIS'
+        # force: la modifica di QGIS vince
+        out = self._push(client, auth_headers, [f], force=True).get_json()
+        assert out['counts']['updated'] == 1
+        assert client.get(f'/tree/{added_tree_id}', headers=auth_headers).get_json()['comments'] == 'modifica da QGIS'
+
+    def test_unknown_uuid_is_an_error_not_a_new_tree(self, client, auth_headers, added_tree_id):
+        f = self._pull(client, auth_headers, added_tree_id)
+        f['properties']['uuid'] = '00000000-0000-0000-0000-000000000000'
+        out = self._push(client, auth_headers, [f]).get_json()
+        assert out['counts']['errors'] == 1 and out['counts']['created'] == 0
+        assert 'uuid' in out['errors'][0]['message']
+
+    def test_on_conflict_skip(self, client, auth_headers, added_tree_id):
+        f = self._pull(client, auth_headers, added_tree_id)
+        f['properties']['comments'] = 'non deve entrare'
+        out = self._push(client, auth_headers, [f], on_conflict='skip').get_json()
+        assert out['counts']['skipped'] == 1
+        assert client.get(f'/tree/{added_tree_id}', headers=auth_headers).get_json()['comments'] != 'non deve entrare'
+
+    def test_custom_column_mapping(self, client, auth_headers, added_tree_id):
+        f = self._pull(client, auth_headers, added_tree_id)
+        feat = {'type': 'Feature', 'geometry': f['geometry'],
+                'properties': {'silvae_uuid': f['properties']['uuid'],
+                               'Specie': 'Quercus da mappatura', 'NOTE': 'commento mappato'}}
+        out = self._push(client, auth_headers, [feat],
+                         mapping={'silvae_uuid': 'uuid', 'Specie': 'species', 'NOTE': 'comments'}).get_json()
+        assert out['counts']['updated'] == 1
+        d = client.get(f'/tree/{added_tree_id}', headers=auth_headers).get_json()
+        assert d['species'] == 'Quercus da mappatura' and d['comments'] == 'commento mappato'
+
+    def test_validation(self, client, auth_headers, added_tree_id):
+        f = self._pull(client, auth_headers, added_tree_id)
+        assert self._push(client, auth_headers, []).status_code == 400
+        assert self._push(client, auth_headers, [f], city='').status_code == 400
+        assert client.post('/qgis/features', json={'features': [f], 'city': 'X'}).status_code == 401
+        big = [f] * 2001
+        assert self._push(client, auth_headers, big).status_code == 413
+
+    def test_mapping_endpoint(self, client, auth_headers):
+        res = client.post('/qgis/mapping', json={'columns': ['_NUMERO', '_TASSONOMI', 'pippo', 'uuid']},
+                          headers=auth_headers)
+        assert res.status_code == 200
+        body = res.get_json()
+        assert body['mapping']['_NUMERO'] == 'custom_id' and body['mapping']['_TASSONOMI'] == 'species'
+        assert 'pippo' not in body['mapping']
+        assert 'species' in body['fields'] and 'rischio' in body['derived']
+
+    def test_city_readonly_cannot_push(self, client, added_tree_id):
+        res = client.post('/login', json={'username': 'demo_city', 'password': 'demo_city_password'})
+        if res.status_code != 200:
+            pytest.skip('account demo non disponibile')
+        h = {'Authorization': f"Bearer {res.get_json()['token']}"}
+        feat = {'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': [9, 45]},
+                'properties': {'custom_id': 'X'}}
+        assert self._push(client, h, [feat]).status_code == 403
+
+
 if __name__ == '__main__':
     import sys
     sys.exit(pytest.main([__file__, '-v']))

@@ -577,6 +577,8 @@ body {
 .btn-gpx:hover { background: #155e75; }
 .btn-map  { background: #1a5276; color: #fff; border-color: #1a5276; }
 .btn-map:hover { background: #154360; }
+.btn-qgis { background: #589632; color: #fff; border-color: #589632; }   /* verde QGIS */
+.btn-qgis:hover { background: #46792a; }
 .map-export-choice { display: flex; gap: 8px; flex-wrap: wrap; }
 .map-export-choice label {
   display: flex; align-items: center; gap: 6px; padding: 6px 10px; font-size: 13px;
