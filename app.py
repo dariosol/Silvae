@@ -40,12 +40,21 @@ from tools.ord_calculator import (
 from tools import report_templates as report_tpl
 from tools import palette
 from tools import map_render
+from tools import qgis_style
 
 # -----------------------
 # Configuration
 # -----------------------
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
+
+@app.after_request
+def _no_cache_api(resp):
+    """Le risposte JSON dipendono dal token: nessuna cache intermedia (la cache
+    di rete di QGIS riusava /me di un altro token, stesso URL)."""
+    if resp.mimetype in ('application/json', 'application/geo+json'):
+        resp.headers.setdefault('Cache-Control', 'no-store')
+    return resp
 
 DB_URL = os.environ.get('DATABASE_URL', 'postgresql://postgres:c0st4m4gn4@localhost/trees_db')
 # Railway provides postgres:// — SQLAlchemy requires postgresql://
@@ -240,6 +249,11 @@ class Tree(db.Model):
     # `uuid` è la chiave stabile con cui un layer esterno resta collegato
     # all'albero (custom_id è rinominabile e unico solo per comune).
     uuid       = db.Column(db.String(36), unique=True, default=lambda: str(uuid_lib.uuid4()))
+    # Lo storico segue l'albero anche dove il vincolo ON DELETE CASCADE non è
+    # applicato (SQLite non lo fa senza PRAGMA): senza questa cascata un
+    # albero nuovo che riusa l'id di uno cancellato ne eredita le ispezioni.
+    inspections = db.relationship('Inspection', backref='tree', lazy='dynamic',
+                                  cascade='all, delete-orphan')
     updated_at = db.Column(db.DateTime(timezone=True),
                            default=lambda: datetime.now(timezone.utc),
                            onupdate=lambda: datetime.now(timezone.utc))
@@ -281,6 +295,34 @@ class ApiToken(db.Model):
         return {'id': self.id, 'name': self.name, 'prefix': self.prefix,
                 'created_at': fmt(self.created_at), 'last_used_at': fmt(self.last_used_at),
                 'revoked': self.revoked_at is not None}
+
+class QgisDelivery(db.Model):
+    """Cassetta postale webapp → QGIS (qgis.md §6.3). Un browser non può
+    parlare con QGIS sul PC dell'utente: «Invia a QGIS» deposita qui *gli id*
+    degli alberi (non i dati, così il ritiro è sempre aggiornato) e il plugin
+    li trova al primo controllo. L'invio è personale: lo ritira chi l'ha
+    creato."""
+    __tablename__ = 'qgis_delivery'
+    id         = db.Column(db.Integer, primary_key=True)
+    user_id    = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'), nullable=False)
+    city       = db.Column(db.String(100))
+    title      = db.Column(db.String(160), nullable=False)
+    tree_ids   = db.Column(db.Text, nullable=False)     # JSON array di id
+    polygon    = db.Column(db.Text)                     # JSON [[lat, lon], …] dell'area, se c'è
+    count      = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    fetched_at = db.Column(db.DateTime(timezone=True))
+    expires_at = db.Column(db.DateTime(timezone=True))
+
+    def to_dict(self):
+        fmt = lambda d: d.isoformat() if d else None
+        return {'id': self.id, 'city': self.city, 'title': self.title, 'count': self.count,
+                'created_at': fmt(self.created_at), 'fetched_at': fmt(self.fetched_at),
+                'expires_at': fmt(self.expires_at),
+                'polygon': json.loads(self.polygon) if self.polygon else None}
+
+DELIVERY_TTL_DAYS = 7
+DELIVERY_MAX_TREES = 20000
 
 API_TOKEN_PREFIX = 'slv_'
 
@@ -358,17 +400,25 @@ with app.app_context():
             if col_name not in existing_cols:
                 conn.execute(text(f'ALTER TABLE tree ADD COLUMN {col_name} {col_type}'))
         conn.commit()
-    # Backfill una tantum (alberi creati prima delle colonne): uuid per riga,
-    # updated_at = adesso. L'indice univoco su uuid va creato DOPO il backfill.
-    if 'uuid' not in existing_cols or 'updated_at' not in existing_cols:
-        for t in Tree.query.filter(Tree.uuid.is_(None)).all():
+    # Backfill degli alberi creati prima delle colonne: uuid per riga,
+    # updated_at = adesso. Non è condizionato allo schema ma allo stato dei
+    # dati, così un avvio interrotto a metà (colonne aggiunte, righe non
+    # riempite) si ripara da sé al riavvio successivo; a regime è una query
+    # su colonna indicizzata che non trova nulla. L'indice univoco su uuid va
+    # creato DOPO il backfill.
+    senza_uuid = Tree.query.filter(Tree.uuid.is_(None)).all()
+    if senza_uuid:
+        for t in senza_uuid:
             t.uuid = str(uuid_lib.uuid4())
         db.session.commit()
-        with db.engine.connect() as conn:
-            conn.execute(text('UPDATE tree SET updated_at = :now WHERE updated_at IS NULL'),
-                         {'now': datetime.now(timezone.utc)})
-            conn.commit()
+        print(f'Backfill uuid: {len(senza_uuid)} alberi aggiornati')
     with db.engine.connect() as conn:
+        res = conn.execute(Tree.__table__.update()
+                           .where(Tree.updated_at.is_(None))
+                           .values(updated_at=datetime.now(timezone.utc)))
+        conn.commit()
+        if res.rowcount:
+            print(f'Backfill updated_at: {res.rowcount} alberi aggiornati')
         conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS uq_tree_uuid ON tree (uuid)'))
         conn.commit()
     existing_insp_cols = {c['name'] for c in insp.get_columns('inspection')}
@@ -652,17 +702,22 @@ def _match_tree(record, city, scope, strict_uuid=True):
         return q.filter(Tree.custom_id == cid).first()
     return None
 
-def _upsert_tree(record, *, city, on_conflict, user_id, scope, strict_uuid=True):
+_UNSET = object()
+
+def _upsert_tree(record, *, city, on_conflict, user_id, scope, strict_uuid=True, existing=_UNSET):
     """Crea o aggiorna un albero da `record`: dict con i nomi dei campi di
     `Tree` e valori già convertiti (float per i numeri, stringhe JSON per le
     liste, `date` per next_check). Regole (qgis.md §13):
       - un valore None non tocca il campo; i derivati vengono ignorati;
       - si abbina solo tra gli alberi di `scope` e non si cambia mai l'owner;
       - il server ricalcola bersaglio, valore ecologico e rischio.
+    `existing` evita di ripetere l'abbinamento a chi l'ha già fatto (il push
+    da QGIS, che prima controlla i conflitti e salva lo snapshot).
     Ritorna (esito, albero, campi_cambiati) con esito in
     'created' | 'updated' | 'unchanged' | 'skipped'. Non committa."""
     record = {k: v for k, v in record.items() if v is not None}
-    existing = _match_tree(record, city, scope, strict_uuid)   # uuid/custom_id/coordinate
+    if existing is _UNSET:
+        existing = _match_tree(record, city, scope, strict_uuid)   # uuid/custom_id/coordinate
     if existing is not None and on_conflict != 'update':
         return 'skipped', existing, []
     file_uuid = record.get('uuid')
@@ -1950,6 +2005,11 @@ _GPKG_COLS = [
     ('prescrizioni_val',      'TEXT',    None,                                    'CSV:prescrizioni_val'),
     ('prescrizioni_mit',      'TEXT',    None,                                    'CSV:prescrizioni_mit'),
     ('prescrizioni_col',      'TEXT',    None,                                    'CSV:prescrizioni_col'),
+    # Categorie calcolate (le stesse della barra statistiche): servono allo
+    # stile QGIS; in import vengono ignorate.
+    ('stat_bucket',           'TEXT',    lambda t: _stat_bucket_value(t),         None),
+    ('rischio_classe',        'TEXT',    lambda t: _worst_risk(t),                None),
+    ('cond_classe',           'TEXT',    lambda t: _cond_key(t),                  None),
 ]
 
 _GPX_WPT_TAGS = ('name', 'cmt', 'desc', 'ele', 'sym', 'type', 'time', 'src', 'link')
@@ -2167,6 +2227,29 @@ def export_gpkg():
                 [make_point(t.longitude, t.latitude)] +
                 [get_val(n, g, t) for n, _out, _typ, g in cols])
 
+        # Stile QGIS predefinito dentro il file (tabella layer_styles): QGIS lo
+        # applica da solo quando aggiunge il layer. Solo se la colonna di
+        # categoria non è stata esclusa; il nome è quello scelto dall'utente.
+        stat_col = next((out for n, out, _t, _g in cols if n == 'stat_bucket'), None)
+        if stat_col:
+            cur.executescript("""
+                CREATE TABLE layer_styles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    f_table_catalog TEXT(256), f_table_schema TEXT(256),
+                    f_table_name TEXT(256), f_geometry_column TEXT(256),
+                    styleName TEXT(30), styleQML TEXT, styleSLD TEXT,
+                    useAsDefault BOOLEAN, description TEXT, owner TEXT(30),
+                    ui TEXT(30), update_time DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+            cur.execute(
+                "INSERT INTO layer_styles (f_table_catalog, f_table_schema, f_table_name, f_geometry_column, "
+                "styleName, styleQML, styleSLD, useAsDefault, description, owner, update_time) "
+                "VALUES ('', '', 'alberi', 'geom', ?, ?, '', 1, ?, 'Silvae Pro', ?)",
+                ('Silvae — rischio/condizione', qgis_style.qml('stat', field=stat_col),
+                 'Colori per classe di rischio ARETE e condizione VTA, come nella webapp',
+                 datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')))
+
         conn.commit()
         conn.close()
 
@@ -2198,18 +2281,25 @@ def _risk_category(desc):
     if 'tollerabile' in d:               return 'alarp'
     return None
 
+_RISK_PARTS = ('rami', 'tronco', 'colletto', 'zolla')
+
+def _worst_risk_of(section):
+    """Chiave della categoria peggiore tra rami/tronco/colletto/zolla di una
+    sezione del JSON di rischio (`attuale` o `residuo`), o '' se non calcolata."""
+    worst = None
+    for part in _RISK_PARTS:
+        cat = _risk_category(((section or {}).get(part) or {}).get('risk_description'))
+        if cat and (worst is None or _RISK_SEVERITY[cat] > _RISK_SEVERITY[worst]):
+            worst = cat
+    return worst or ''
+
 def _worst_risk(t):
     """Chiave della categoria di rischio peggiore della fase attuale
     (rami/tronco/colletto/zolla), o '' se non calcolato."""
     if not t.rischio: return ''
     try: att = json.loads(t.rischio).get('attuale') or {}
     except Exception: return ''
-    worst = None
-    for part in ('rami', 'tronco', 'colletto', 'zolla'):
-        cat = _risk_category((att.get(part) or {}).get('risk_description'))
-        if cat and (worst is None or _RISK_SEVERITY[cat] > _RISK_SEVERITY[worst]):
-            worst = cat
-    return worst or ''
+    return _worst_risk_of(att)
 
 def _risk_label(key):
     """Etichetta leggibile di una chiave di palette.RISK ('' se vuota)."""
@@ -2239,6 +2329,17 @@ def _tree_bucket(t):
     src = (t.cpc or '').strip() or (t.condition or '').strip()
     if src: return 'cond', _cond_category(src)
     return 'na', 'na'
+
+def _cond_key(t):
+    """Chiave di palette.CONDITION da CPC o condizione, '' se nessuna delle due."""
+    src = (t.cpc or '').strip() or (t.condition or '').strip()
+    return _cond_category(src) if src else ''
+
+def _stat_bucket_value(t):
+    """Valore della colonna `stat_bucket` ('risk:<k>' | 'cond:<k>' | 'na'),
+    su cui è categorizzato lo stile QGIS predefinito."""
+    group, key = _tree_bucket(t)
+    return 'na' if group == 'na' else f'{group}:{key}'
 
 # Attributi scritti in <extensions> di ogni waypoint (nome tag, getter).
 # QGIS li legge come campi del layer; l'import li riconosce per nome.
@@ -2846,6 +2947,413 @@ def import_gpkg_route():
                     **counts,
                     'total': len(rows), 'city': city, 'city_autodetected': city_autodetected,
                     'error_details': error_details})
+
+# -----------------------
+# QGIS — layer GeoJSON per il plugin (qgis.md §6.1)
+# -----------------------
+QGIS_SCHEMA_VERSION = 1
+
+def _qgis_stat_label(group, key):
+    if group == 'na': return 'Non valutato'
+    e = palette.by_key(group, key)
+    return e['label'] if e else ''
+
+def _qgis_properties(t, owners):
+    """Attributi piatti di un albero per QGIS: i campi di tree_to_dict con le
+    liste come stringhe separate da virgola, le diagnosi come testo, il JSON
+    del rischio esploso in colonne di sola lettura e la casella della barra
+    statistiche (`stat_bucket`) su cui è categorizzato lo stile."""
+    d = tree_to_dict(t)
+    props = {}
+    for k, v in d.items():
+        if k in ('rischio', 'owner_id'):
+            continue
+        if k.startswith('diag_'):
+            props[k] = '; '.join(f"{x.get('caratt', '')}: {x.get('giudizio', '')}"
+                                 for x in (v or []) if isinstance(x, dict))
+        elif isinstance(v, list):
+            props[k] = ', '.join(str(x) for x in v)
+        else:
+            props[k] = v
+    props['owner'] = owners.get(t.owner_id, '')
+
+    group, key = _tree_bucket(t)
+    props['stat_bucket'] = 'na' if group == 'na' else f'{group}:{key}'
+    props['stat_label']  = _qgis_stat_label(group, key)
+    props['cond_classe'] = _cond_key(t)
+    props['cond_label']  = _qgis_stat_label('cond', props['cond_classe']) if props['cond_classe'] else ''
+
+    r = d.get('rischio') or {}
+    att, res = r.get('attuale') or {}, r.get('residuo') or {}
+    props['rischio_classe'] = _worst_risk_of(att)
+    props['rischio_label']  = _risk_label(props['rischio_classe'])
+    for part in _RISK_PARTS:
+        props[f'rischio_{part}'] = _risk_category((att.get(part) or {}).get('risk_description')) or ''
+    props['rischio_residuo_classe'] = _worst_risk_of(res)
+    props['rischio_json'] = json.dumps(r, ensure_ascii=False) if r else ''
+    return props
+
+@app.route('/qgis/style.qml', methods=['GET'])
+def qgis_style_qml():
+    """Stile QGIS categorizzato generato da tools/palette.py.
+    `?by=stat|rischio|condizione` (default stat), `?field=` per una colonna
+    rinominata, `?labels=0` senza etichette. Pubblico come /palette.css."""
+    by = request.args.get('by', qgis_style.DEFAULT_STYLE)
+    if by not in qgis_style.STYLES:
+        return jsonify({'message': f'by deve essere uno di: {", ".join(qgis_style.STYLES)}'}), 400
+    field = _san_gpkg_ident(request.args.get('field') or '') or None
+    labels = request.args.get('labels', '1') not in ('0', 'false', 'no')
+    body = qgis_style.qml(by, field=field, labels=labels)
+    resp = app.response_class(body, mimetype='application/xml')
+    resp.headers['Content-Disposition'] = f'attachment; filename="silvae_{by}.qml"'
+    return resp
+
+@app.route('/qgis/features', methods=['GET'])
+@auth_required
+def qgis_features():
+    """FeatureCollection GeoJSON (WGS84) degli alberi visibili al chiamante.
+    Parametri: `city` (obbligatorio salvo `ids`), `ids=1,2,3`,
+    `since=<ISO 8601>` (solo alberi con updated_at successivo: pull
+    incrementale), `bbox=minlon,minlat,maxlon,maxlat`."""
+    city  = (request.args.get('city') or '').strip()
+    since = (request.args.get('since') or '').strip()
+    bbox  = (request.args.get('bbox') or '').strip()
+
+    # Ritiro di un invio dalla cassetta postale: gli id sono quelli depositati,
+    # i dati sono sempre quelli correnti.
+    delivery = None
+    delivery_param = request.args.get('delivery')
+    if delivery_param:
+        try:
+            delivery = db.session.get(QgisDelivery, int(delivery_param))
+        except (TypeError, ValueError):
+            delivery = None
+        if not delivery or delivery.user_id != request.user['user_id']:
+            return jsonify({'message': 'Invio non trovato'}), 404
+        city = city or (delivery.city or '')
+    elif not city and not request.args.get('ids'):
+        return jsonify({'message': 'Indicare il comune (city) oppure gli id (ids)'}), 400
+
+    # Timestamp PRIMA della query: il prossimo pull con since=generated_at
+    # non deve perdere un albero modificato mentre questa risposta si forma.
+    generated_at = datetime.now(timezone.utc).isoformat()
+    q = _scoped_tree_query()
+    if delivery:
+        q = q.filter(Tree.id.in_(json.loads(delivery.tree_ids)))
+    elif city:
+        q = q.filter(Tree.city == city)
+    if since:
+        dt = _parse_iso_dt(since)
+        if dt is None:
+            return jsonify({'message': 'since non valido: usare ISO 8601'}), 400
+        q = q.filter(Tree.updated_at > dt)
+    if bbox:
+        try:
+            minlon, minlat, maxlon, maxlat = (float(x) for x in bbox.split(','))
+        except ValueError:
+            return jsonify({'message': 'bbox non valido: minlon,minlat,maxlon,maxlat'}), 400
+        q = q.filter(Tree.longitude.between(minlon, maxlon), Tree.latitude.between(minlat, maxlat))
+
+    trees = q.order_by(Tree.id).all()
+    owner_ids = {t.owner_id for t in trees if t.owner_id}
+    owners = {u.id: u.username for u in User.query.filter(User.id.in_(owner_ids)).all()} if owner_ids else {}
+    features = []
+    for t in trees:
+        geom = ({'type': 'Point', 'coordinates': [t.longitude, t.latitude]}
+                if t.latitude is not None and t.longitude is not None else None)
+        features.append({'type': 'Feature', 'id': t.id, 'geometry': geom,
+                         'properties': _qgis_properties(t, owners)})
+    info = {'schema': QGIS_SCHEMA_VERSION, 'city': city or None,
+            'count': len(features), 'generated_at': generated_at}
+    if delivery:
+        delivery.fetched_at = datetime.now(timezone.utc)
+        db.session.commit()
+        info['delivery'] = delivery.to_dict()
+    body = {'type': 'FeatureCollection', 'features': features, 'silvae': info}
+    # json.dumps e non jsonify: l'ordine dei campi (id, uuid, custom_id, …)
+    # è quello che QGIS mostra nella tabella attributi.
+    resp = app.response_class(json.dumps(body, ensure_ascii=False), mimetype='application/geo+json')
+    resp.headers['X-Silvae-Schema'] = str(QGIS_SCHEMA_VERSION)
+    return resp
+
+QGIS_PUSH_MAX_FEATURES = 2000
+# Campi derivati che il push può *leggere* (servono all'abbinamento o al
+# controllo dei conflitti) e che quindi non vanno segnalati come ignorati.
+_PUSH_READ_ONLY_USED = {'uuid', 'updated_at'}
+
+def _qgis_push_record(props, mapping, geometry):
+    """Proprietà di una feature → record canonico per `_upsert_tree`.
+
+    Riusa la conversione dell'import da file (`_import_row_record`), così i
+    numeri, le date e le liste separate da virgola si comportano allo stesso
+    modo da qualunque parte arrivino. La **geometria vince** sulle colonne
+    latitude/longitude, che in un layer QGIS restano quelle dell'ultimo
+    scaricamento se si sposta il punto."""
+    cols = list(props.keys())
+    C = _gpkg_user_C(cols, mapping)
+    record = _import_row_record(props, C)
+    if geometry and geometry.get('type') == 'Point':
+        coords = geometry.get('coordinates') or []
+        if len(coords) >= 2:
+            record['longitude'], record['latitude'] = float(coords[0]), float(coords[1])
+    return record
+
+def _qgis_push_mapping(props, user_mapping):
+    """Mappatura colonna→campo per una feature: quella indicata dall'utente,
+    completata dall'auto-mappatura per le colonne rimaste fuori."""
+    auto = _gpkg_inspect_mapping(list(props.keys()))
+    if not user_mapping:
+        return auto
+    mapping = dict(auto)
+    mapping.update({k: v for k, v in user_mapping.items() if v})
+    for col, field in user_mapping.items():        # '' = «non importare»
+        if not field:
+            mapping.pop(col, None)
+    return mapping
+
+@app.route('/qgis/mapping', methods=['POST'])
+@auth_required
+def qgis_mapping():
+    """Mappatura proposta per le colonne di un layer QGIS (stessa
+    auto-mappatura dell'import da file) più l'elenco dei campi scrivibili,
+    per la finestra di mappatura del plugin."""
+    cols = (request.json or {}).get('columns') or []
+    if not isinstance(cols, list):
+        return jsonify({'message': 'columns deve essere una lista di nomi di colonna'}), 400
+    cols = [str(c) for c in cols]
+    fields = [f for f in _GPKG_FIELD_CANDIDATES
+              if f not in ('geom', 'stazione_raw', 'next_check_fb')
+              and f not in _DERIVED_TREE_FIELDS or f == 'uuid']
+    return jsonify({'mapping': _gpkg_inspect_mapping(cols),
+                    'fields': sorted(set(fields)),
+                    'derived': sorted(_DERIVED_TREE_FIELDS)})
+
+@app.route('/qgis/features', methods=['POST'])
+@auth_required
+def qgis_push_features():
+    """Scrittura da QGIS: FeatureCollection GeoJSON in ingresso.
+
+    Body: {type: FeatureCollection, features: [...], city, on_conflict:
+    'update'|'skip', mapping: {colonna: campo}, dry_run: bool, force: bool}.
+
+    Ogni feature passa per la stessa logica della webapp (`_upsert_tree`):
+    ricalcolo di bersaglio, valore ecologico e rischio, campi derivati
+    ignorati, owner mai cambiato, abbinamento solo tra gli alberi visibili.
+    Ogni albero modificato conserva lo **snapshot precedente** in una
+    `Inspection` (qgis.md §6.2 punto 5). Con `dry_run` non scrive nulla ed è
+    l'anteprima del diff."""
+    if (denied := _city_readonly()): return denied
+    data = request.json or {}
+    feats = data.get('features')
+    if not isinstance(feats, list) or not feats:
+        return jsonify({'message': 'Nessuna feature da inviare'}), 400
+    if len(feats) > QGIS_PUSH_MAX_FEATURES:
+        return jsonify({'message': f'Troppe feature in una sola chiamata '
+                                   f'(massimo {QGIS_PUSH_MAX_FEATURES}); invia a blocchi'}), 413
+    city = (data.get('city') or '').strip()
+    if not city:
+        return jsonify({'message': 'Indicare il comune (city)'}), 400
+    on_conflict = data.get('on_conflict', 'update')
+    dry_run = bool(data.get('dry_run'))
+    force   = bool(data.get('force'))
+    user_mapping = data.get('mapping') or {}
+    if not isinstance(user_mapping, dict):
+        return jsonify({'message': 'mapping deve essere un oggetto {colonna: campo}'}), 400
+
+    role, user_id, user_city = (request.user.get(k) for k in ('role', 'user_id', 'city'))
+    username = request.user.get('username')
+    scope = _role_tree_query(role, user_id, user_city)
+
+    out = {'created': [], 'updated': [], 'unchanged': [], 'skipped': [],
+           'conflicts': [], 'errors': []}
+    ignored = set()
+    inspections = []
+    pending = []          # (entry della risposta, albero) da completare dopo il flush
+
+    for i, feat in enumerate(feats):
+        props = (feat or {}).get('properties') or {}
+        try:
+            mapping = _qgis_push_mapping(props, user_mapping)
+            for col, field in mapping.items():
+                if field in _DERIVED_TREE_FIELDS and field not in _PUSH_READ_ONLY_USED:
+                    ignored.add(field)
+            record = _qgis_push_record(props, mapping, (feat or {}).get('geometry'))
+            existing = _match_tree(record, city, scope, strict_uuid=True)
+
+            # Conflitto: la feature dice fin dove QGIS era allineato —
+            # `updated_at` (la versione ricevuta al pull) e `silvae_synced_at`
+            # (l'ultimo invio riuscito, scritto dal plugin). Vale il più
+            # recente dei due: dopo un invio il layer è allineato anche se il
+            # suo `updated_at` è rimasto indietro. Se il server è ancora più
+            # avanti, qualcun altro ha modificato nel frattempo.
+            if existing is not None and not force:
+                seen = max(filter(None, (_parse_iso_dt(props.get('updated_at')),
+                                         _parse_iso_dt(props.get('silvae_synced_at')))),
+                           default=None)
+                server = _as_utc(existing.updated_at)
+                if seen and server and server > seen:
+                    out['conflicts'].append({
+                        'src': i, 'id': existing.id, 'uuid': existing.uuid,
+                        'custom_id': existing.custom_id,
+                        'server_updated_at': server.isoformat(),
+                        'server_updated_by': existing.updated_by,
+                        'seen_updated_at': seen.isoformat()})
+                    continue
+
+            before = tree_to_dict(existing) if existing is not None else None
+            outcome, tree, changed = _upsert_tree(
+                record, city=city, on_conflict=on_conflict, user_id=user_id,
+                scope=scope, existing=existing)
+
+            # `uuid` e `id` di un albero nuovo esistono solo dopo il flush:
+            # l'entry viene completata più sotto.
+            entry = {'src': i, 'uuid': tree.uuid, 'custom_id': tree.custom_id}
+            pending.append((entry, tree))
+            if outcome == 'skipped':
+                entry['id'] = tree.id
+                entry['reason'] = 'albero già presente (on_conflict=skip)'
+            elif outcome == 'created':
+                inspections.append((tree, None, []))
+            elif outcome == 'updated':
+                entry['id'] = tree.id
+                entry['changed'] = changed
+                inspections.append((tree, before, changed))
+            else:                                   # unchanged
+                entry['id'] = tree.id
+            out[outcome].append(entry)
+        except ValueError as e:
+            out['errors'].append({'src': i, 'message': str(e)})
+        except Exception as e:                      # riga malformata: non blocca le altre
+            out['errors'].append({'src': i, 'message': f'{type(e).__name__}: {e}'})
+
+    if dry_run:
+        db.session.rollback()
+    else:
+        db.session.flush()                          # assegna id e uuid ai nuovi alberi
+        for tree, before, changed in inspections:
+            db.session.add(_qgis_inspection(tree, before, changed, user_id, username))
+        db.session.commit()
+        for entry, tree in pending:                 # id/uuid definitivi
+            entry['id'], entry['uuid'] = tree.id, tree.uuid
+
+    out['ignored_fields'] = sorted(ignored)
+    out['dry_run'] = dry_run
+    out['counts'] = {k: len(out[k]) for k in
+                     ('created', 'updated', 'unchanged', 'skipped', 'conflicts', 'errors')}
+    return jsonify(out), 200
+
+def _qgis_inspection(tree, before, changed, user_id, username):
+    """Ispezione che documenta una scrittura da QGIS. Per un albero esistente
+    conserva lo `snapshot` **precedente** alla modifica (è l'annulla per
+    albero, qgis.md §13); per un albero nuovo è l'ispezione iniziale, come in
+    `add_tree`."""
+    if before is None:
+        return _make_inspection(tree, user_id, username)
+    insp = _make_inspection(tree, user_id, username)
+    insp.snapshot = json.dumps(before)
+    insp.condition = before.get('condition')
+    insp.comments = ('Sincronizzazione da QGIS — campi modificati: '
+                     + (', '.join(changed) if changed else 'nessuno'))[:2000]
+    insp.actions = ''
+    return insp
+
+def _as_utc(dt):
+    """datetime con fuso (SQLite lo perde) o None."""
+    if dt is None:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+def _parse_iso_dt(value):
+    """Stringa ISO 8601 → datetime UTC, o None se vuota/non valida."""
+    if not value:
+        return None
+    try:
+        return _as_utc(datetime.fromisoformat(str(value).replace('Z', '+00:00')))
+    except ValueError:
+        return None
+
+def _purge_expired_deliveries():
+    """Cancella gli invii scaduti (nessuno scheduler: si fa alla prima
+    chiamata utile). Ritorna il numero di righe rimosse."""
+    n = (QgisDelivery.query
+         .filter(QgisDelivery.expires_at.isnot(None),
+                 QgisDelivery.expires_at < datetime.now(timezone.utc))
+         .delete(synchronize_session=False))
+    if n:
+        db.session.commit()
+    return n
+
+@app.route('/qgis/deliveries', methods=['POST'])
+@auth_required
+def qgis_delivery_create():
+    """«Invia a QGIS» dalla webapp: deposita un invio per l'utente corrente.
+    Body: {city, ids: [...], polygon: [[lat, lon], …] opzionale, title opzionale}.
+    Gli id vengono filtrati con la visibilità del chiamante."""
+    if request.user.get('auth') == 'api_token':
+        return jsonify({'message': 'Gli invii si creano dalla webapp, non dal plugin.'}), 403
+    data = request.json or {}
+    ids = data.get('ids') or []
+    if not isinstance(ids, list) or not ids:
+        return jsonify({'message': 'Nessun albero da inviare'}), 400
+    if len(ids) > DELIVERY_MAX_TREES:
+        return jsonify({'message': f'Troppi alberi in un solo invio (massimo {DELIVERY_MAX_TREES})'}), 400
+    try:
+        ids = [int(i) for i in ids]
+    except (TypeError, ValueError):
+        return jsonify({'message': 'Lista di id non valida'}), 400
+
+    role, user_id, user_city = (request.user.get(k) for k in ('role', 'user_id', 'city'))
+    visible = [t.id for t in _role_tree_query(role, user_id, user_city)
+               .filter(Tree.id.in_(ids)).all()]
+    if not visible:
+        return jsonify({'message': 'Nessuno degli alberi indicati è visibile al tuo account'}), 404
+
+    polygon = data.get('polygon') or None
+    if polygon is not None:
+        try:
+            polygon = [[float(p[0]), float(p[1])] for p in polygon]
+        except (TypeError, ValueError, IndexError):
+            return jsonify({'message': 'Poligono non valido'}), 400
+
+    city = (data.get('city') or '').strip() or None
+    if not city:
+        cities = {t.city for t in Tree.query.filter(Tree.id.in_(visible)).all()}
+        city = cities.pop() if len(cities) == 1 else None
+    title = (data.get('title') or '').strip() or (
+        f"{city or 'Alberi'} — {len(visible)} alber{'o' if len(visible) == 1 else 'i'}"
+        f" del {datetime.now(timezone.utc).strftime('%d/%m')}")
+
+    now = datetime.now(timezone.utc)
+    d = QgisDelivery(user_id=user_id, city=city, title=title[:160],
+                     tree_ids=json.dumps(visible), count=len(visible),
+                     polygon=json.dumps(polygon) if polygon else None,
+                     created_at=now, expires_at=now + timedelta(days=DELIVERY_TTL_DAYS))
+    db.session.add(d)
+    db.session.commit()
+    _purge_expired_deliveries()
+    return jsonify({**d.to_dict(), 'requested': len(ids)}), 201
+
+@app.route('/qgis/deliveries', methods=['GET'])
+@auth_required
+def qgis_delivery_list():
+    """Invii in attesa dell'utente (i non ritirati per primi). `?all=1` include
+    anche quelli già ritirati."""
+    _purge_expired_deliveries()
+    q = QgisDelivery.query.filter_by(user_id=request.user['user_id'])
+    if request.args.get('all') not in ('1', 'true', 'yes'):
+        q = q.filter(QgisDelivery.fetched_at.is_(None))
+    rows = q.order_by(QgisDelivery.fetched_at.isnot(None), QgisDelivery.created_at.desc()).all()
+    return jsonify([d.to_dict() for d in rows])
+
+@app.route('/qgis/deliveries/<int:delivery_id>', methods=['DELETE'])
+@auth_required
+def qgis_delivery_delete(delivery_id):
+    d = db.session.get(QgisDelivery, delivery_id)
+    if not d or d.user_id != request.user['user_id']:
+        return jsonify({'message': 'Invio non trovato'}), 404
+    db.session.delete(d)
+    db.session.commit()
+    return jsonify({'message': 'Invio eliminato'})
 
 # -----------------------
 # Voice intent (Groq NLU fallback)

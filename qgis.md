@@ -213,7 +213,7 @@ eventuale: **nessuna** geocodifica automatica del comune in questo endpoint
 
 | Metodo | Endpoint | Chi | Cosa |
 |---|---|---|---|
-| `POST` | `/qgis/deliveries` | webapp (JWT) | `{city, ids:[…], polygon?, title?}` → crea l'invio per l'utente corrente. `ids` filtrati con `_scoped_tree_query`. Risponde `{id, count}`. |
+| `POST` | `/qgis/deliveries` | webapp (JWT) | `{city, ids:[…], polygon?, title?}` → crea l'invio per l'utente corrente. `ids` filtrati per visibilità (`_role_tree_query`); la risposta riporta `count` e `requested`, così la webapp dice quanti sono stati saltati. Rifiutato ai token API (un invio si crea dalla webapp). Massimo 20 000 alberi. |
 | `GET` | `/qgis/deliveries` | plugin | Invii dell'utente non scaduti, i non ritirati prima; `?all=1` include i ritirati. |
 | `GET` | `/qgis/features?delivery=<id>` | plugin | Ritiro: alberi correnti dell'invio + `polygon`; marca `fetched_at`. |
 | `DELETE` | `/qgis/deliveries/<id>` | entrambi | Elimina. |
@@ -349,11 +349,15 @@ dall'ultimo invio». Passi:
    GPKG accanto). Da qui in poi il suo layer è *collegato*: gli invii
    successivi aggiornano per `uuid`.
 
-**Conflitti.** Una feature è in conflitto se il server ha `updated_at` >
-`silvae_synced_at` locale **e** la feature locale è stata modificata dopo
-`silvae_synced_at` (per i layer che non hanno tracciamento delle modifiche
-si assume «modificata»). Finestra con confronto campo per campo, scelte
-«tieni il mio» (`force`), «prendi il server» (aggiorna il locale), «salta».
+**Conflitti.** Una feature è in conflitto se il server è stato modificato
+dopo il punto fino a cui QGIS era allineato — il più recente fra
+l'`updated_at` ricevuto al pull e il `silvae_synced_at` scritto dall'ultimo
+invio riuscito. Il push non la scrive e la elenca in `conflicts`; il plugin
+apre la finestra di confronto campo per campo (i campi calcolati dal server
+non compaiono) con tre scelte per albero: «tieni la versione di QGIS»
+(reinvio con `force`), «prendi la versione di Silvae» (valori e posizione
+del server scritti nel layer locale), «decidi più tardi» (predefinito: non
+scrive da nessuna parte e l'albero resta in conflitto).
 
 **Correzione posizioni.** Nessuna funzione dedicata: si spostano i punti nel
 GPKG locale (o nel layer suo) e si usa «Invia a Silvae» → `latitude`/
@@ -392,10 +396,10 @@ GPKG locale (o nel layer suo) e si usa «Invia a Silvae» → `latitude`/
 | Fase | Contenuto | Sforzo | Rilascio |
 |---|---|---|---|
 | **0. Modello** — ✅ fatto (settembre 2026, branch `qgis`) | `uuid`, `updated_at`, `updated_by` + backfill; `ApiToken` con `GET/POST/DELETE /me/tokens` e token `slv_…` accettati da `auth_required`; `_upsert_tree`/`_match_tree`/`_import_row_record` estratti dall'import, che ora ricalcola il rischio, ignora i derivati, non tocca i campi vuoti né l'owner e abbina solo tra gli alberi visibili; `uuid` nei GPKG/GPX esportati | 1–2 giorni | Nessun cambiamento visibile nell'interfaccia (il pannello token è in fase 1) |
-| **1. Lettura** | `GET /qgis/features`, `GET /qgis/style.qml` (A1), pannello token in «Il mio account»; plugin: login, *Carica da Silvae*, GPKG locale, stile | 3–4 giorni | Già utile da solo: layer Silvae in QGIS sempre aggiornato (= A2) |
-| **2. Cassetta postale** | `QgisDelivery` + 3 endpoint; «Invia a QGIS» nei tre punti della webapp; dock *Invii in attesa* | 2 giorni | «Invia a QGIS» funziona |
-| **3. Scrittura** | `POST /qgis/features` con `dry_run`, mappatura, ispezioni, `ignored_fields`; plugin: *Invia a Silvae*, mappatura salvata, anteprima, scrittura di `silvae_uuid` nel layer | 4–5 giorni | Flusso completo QGIS → Silvae (= A4 senza file) |
-| **4. Conflitti e sync** | `updated_at` nel push, `force`, finestra conflitti, pull incrementale `since=` | 2–3 giorni | Uso su dati veri con più persone |
+| **1. Lettura** — ✅ fatto (settembre 2026) | `GET /qgis/features` (city/ids/since/bbox, proprietà piatte, `cond_classe`, `generated_at` calcolato prima della query), `GET /qgis/style.qml` + [`tools/qgis_style.py`](tools/qgis_style.py) e stile incorporato in `layer_styles` del GPKG esportato (A1 completa, con le colonne `stat_bucket`/`rischio_classe`/`cond_classe`); pannello token in «Il mio account»; plugin in [`qgis_plugin/silvae_qgis/`](qgis_plugin/) con login, *Carica da Silvae*, GPKG locale, stile, pull incrementale per uuid. Verificato headless con PyQGIS 3.34 (caricamento GeoJSON, stile, upsert, finestre offscreen). Scostamenti: plugin in una sottocartella di questo repository e non in un repository separato; token in `QgsSettings` e non nel gestore autenticazioni (solo `settings.py` da cambiare); `Cache-Control: no-store` sulle risposte JSON perché la cache di rete di QGIS riusava `/me` di un altro token | 3–4 giorni | Layer Silvae in QGIS sempre aggiornato (= A2) |
+| **2. Cassetta postale** — ✅ fatto (settembre 2026) | `QgisDelivery` + `POST/GET /qgis/deliveries`, `DELETE /qgis/deliveries/<id>` e ritiro con `GET /qgis/features?delivery=<id>` (marca `fetched_at`, porta i dati **correnti**); scadenza a 7 giorni ripulita alla prima chiamata utile; «Invia a QGIS» nei tre punti della webapp (tab Esporta, barra di selezione, selezione per area col perimetro); dock *Invii in attesa* nel plugin con aggiornamento ogni 30 s, ritiro (doppio clic) ed eliminazione. Verificato headless: deposito → elenco → ritiro → GPKG+stile+perimetro → secondo ritiro che aggiorna lo stesso file → dati correnti dopo una modifica → eliminazione | 2 giorni | «Invia a QGIS» funziona |
+| **3. Scrittura** — ✅ fatto (settembre 2026) | `POST /qgis/features` (mappatura colonne, `dry_run` come anteprima del diff, `ignored_fields`, conflitti su `updated_at`, `force`, snapshot pre-modifica in `Inspection`, massimo 2000 feature per chiamata) e `POST /qgis/mapping` (auto-mappatura e campi scrivibili, unica fonte); plugin: *Invia a Silvae* con finestra di mappatura salvata nel progetto, anteprima, invio a blocchi di 500 e scrittura di `silvae_uuid`/`silvae_id`/`silvae_synced_at` nel layer dell'agronomo. Aggiunta rispetto al piano: su un layer senza la colonna `updated_at` il conflitto si basa su `silvae_synced_at` scritto dal plugin. Verificato headless con un layer in EPSG:32632 e colonne proprie: riproiezione, anteprima che non scrive, creazione, collegamento, aggiornamento senza doppioni, spostamento del punto, conflitto e `force`, round-trip del layer scaricato | 4–5 giorni | Flusso completo QGIS → Silvae (= A4 senza file) |
+| **4. Conflitti e sync** — ✅ fatto (settembre 2026) | finestra di risoluzione: elenco degli alberi in conflitto, confronto campo per campo QGIS↔Silvae, scelta per ciascuno (tieni QGIS → reinvio con `force`; prendi Silvae → i valori del server scritti nel layer, geometria compresa; decidi più tardi = predefinito) e pulsanti «tutti». `updated_at`, `force` e il pull incrementale `since=` erano già nelle fasi 1-3. Corretti due difetti emersi nel ciclo completo: un albero disegnato dentro il layer di Silvae tornava dal pull come riga nuova (ora il push riempie la colonna `uuid` del layer invece di aggiungere `silvae_uuid`), e due invii senza pull in mezzo davano un conflitto falso (ora «visto fin qui» è il più recente fra `updated_at` e `silvae_synced_at`) | 2–3 giorni | Uso su dati veri con più persone |
 | **5. Packaging** | `plugins.xml` privato, `qgis_enabled`, i18n, guida utente con schermate, pagina nel README | 2 giorni | Vendibile |
 
 Totale indicativo: **3–4 settimane** di lavoro effettivo, con un rilascio

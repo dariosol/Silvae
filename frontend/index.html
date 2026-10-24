@@ -318,6 +318,7 @@
           <button class="btn btn-gpkg btn-sm" onclick="exportSelectedGPKG()"><i class="fa-solid fa-database"></i> Esporta GPKG</button>
           <button class="btn btn-gpx btn-sm" onclick="exportSelectedGPX()"><i class="fa-solid fa-location-crosshairs"></i> Esporta GPX</button>
           <button class="btn btn-map btn-sm" onclick="exportSelectedMap()"><i class="fa-solid fa-map"></i> Mappa</button>
+          <button class="btn btn-qgis btn-sm" onclick="sendSelectedToQgis()" title="Invia gli alberi selezionati al plugin QGIS"><i class="fa-solid fa-paper-plane"></i> Invia a QGIS</button>
           <button class="btn btn-sm" style="background:#dc2626;color:#fff;border:none;" onclick="deleteSelectedTrees()"><i class="fa-solid fa-trash"></i> Elimina selezionati</button>
           <button class="btn btn-outline btn-sm" onclick="toggleExportMode()" style="margin-left:auto;"><i class="fa-solid fa-xmark"></i> Annulla</button>
         </div>
@@ -931,6 +932,7 @@
             <button class="btn btn-gpx btn-sm" onclick="exportAreaGPX()" id="areaGpxBtn" disabled><i class="fa-solid fa-location-crosshairs"></i> GPX</button>
             <button class="btn btn-outline btn-sm" onclick="exportAreaScheda()" id="areaSchedaBtn" disabled><i class="fa-solid fa-file-lines"></i> Schede</button>
             <button class="btn btn-map btn-sm" onclick="exportAreaMap()" id="areaMapBtn" disabled title="Tavola cartografica PNG/PDF dell'area"><i class="fa-solid fa-map"></i> Mappa</button>
+            <button class="btn btn-qgis btn-sm" onclick="sendAreaToQgis()" id="areaQgisBtn" disabled title="Invia gli alberi dell'area (e il perimetro) al plugin QGIS"><i class="fa-solid fa-paper-plane"></i> QGIS</button>
             <button class="btn btn-outline btn-sm" onclick="clearAreaSelect()" title="Cancella selezione"><i class="fa-solid fa-eraser"></i></button>
             <button class="btn btn-outline btn-sm" onclick="toggleAreaSelect()" title="Esci dalla modalità selezione"><i class="fa-solid fa-xmark"></i></button>
           </div>
@@ -1042,6 +1044,14 @@
               <h3>Mappa per la relazione</h3>
               <p>Tavola A4 in <code>.png</code> o <code>.pdf</code> con basemap OpenStreetMap o ortofoto, alberi colorati per classe di rischio/condizione, ID, legenda, scala e nord. Degli alberi caricati (o di quelli selezionati in tabella).</p>
               <button id="exportMapBtn" class="btn btn-map"><i class="fa-solid fa-file-arrow-down"></i> Genera mappa</button>
+            </div>
+          </div>
+          <div class="export-card">
+            <div class="export-card-icon" style="background:#589632;"><i class="fa-solid fa-paper-plane"></i></div>
+            <div class="export-card-body">
+              <h3>Invia a QGIS</h3>
+              <p>Manda gli alberi al <strong>plugin Silvae per QGIS</strong> senza passare da un file: l'invio resta in attesa 7 giorni e si ritira da QGIS con <em>Invii in attesa</em>. Degli alberi caricati (o di quelli selezionati in tabella).</p>
+              <button id="sendQgisBtn" class="btn btn-qgis"><i class="fa-solid fa-paper-plane"></i> Invia a QGIS</button>
             </div>
           </div>
           <!-- PLACEHOLDER: schede albero (report) — struttura definitiva in arrivo -->
@@ -1574,6 +1584,27 @@ rischio_finale   = lookup_inverso(probabilità_n)    ← foglio A, colonne AR:AS
         <button type="submit" class="btn btn-primary btn-sm" style="flex:0 0 auto;"><i class="fa-solid fa-floppy-disk"></i> Salva email</button>
       </div>
     </form>
+
+    <hr style="border:none;border-top:1px solid var(--border);margin:14px 0;">
+
+    <!-- Token API per il plugin QGIS (vedi qgis.md §5): creati qui, mostrati
+         in chiaro una sola volta, revocabili. -->
+    <div style="font-weight:600;font-size:13px;margin-bottom:4px;">Token API per QGIS</div>
+    <p style="font-size:12px;color:var(--text-muted);margin:0 0 8px;">Il plugin Silvae per QGIS si collega con un token al posto della password. Crea un token per ogni computer e revocalo se non serve più.</p>
+    <div id="apiTokenList" style="font-size:12px;margin:0 0 8px;"></div>
+    <form id="apiTokenForm" onsubmit="submitApiToken(event)" autocomplete="off">
+      <div class="form-row mb-sm">
+        <input id="apiTokenName" class="inp" type="text" placeholder="Nome (es. QGIS portatile)" maxlength="80">
+        <button type="submit" class="btn btn-primary btn-sm" style="flex:0 0 auto;"><i class="fa-solid fa-key"></i> Crea token</button>
+      </div>
+    </form>
+    <div id="apiTokenNew" style="display:none;margin:0 0 8px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-light);">
+      <div style="font-size:12px;margin-bottom:6px;"><i class="fa-solid fa-triangle-exclamation" style="color:#d9a400;"></i> Copia ora il token: <strong>non sarà più visibile</strong> dopo aver chiuso questa finestra.</div>
+      <div class="form-row">
+        <input id="apiTokenValue" class="inp" type="text" readonly style="font-family:ui-monospace,monospace;font-size:12px;">
+        <button type="button" class="btn btn-outline btn-sm" style="flex:0 0 auto;" onclick="copyApiToken()"><i class="fa-solid fa-copy"></i> Copia</button>
+      </div>
+    </div>
 
     <hr style="border:none;border-top:1px solid var(--border);margin:14px 0;">
 
