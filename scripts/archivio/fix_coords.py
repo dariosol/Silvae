@@ -1,3 +1,16 @@
+# ============================================================================
+# NON ESEGUIRE SU UN DATABASE CON DATI VERI.
+#
+# Fa `Tree.query.all()` e sovrascrive latitude/longitude di OGNI albero con la
+# geocodifica dell'indirizzo piu' un offset casuale di +-50 m. Era utile quando
+# gli alberi avevano solo l'indirizzo; oggi in produzione ce ne sono migliaia
+# con coordinate GPS rilevate sul campo, e questo script le cancellerebbe tutte
+# in modo irreversibile.
+#
+# Tenuto come riferimento per la cache di geocodifica e il rispetto del limite
+# di 1 richiesta/secondo di Nominatim.
+# ============================================================================
+
 """
 fix_coords.py
 Geocode each tree's address and update lat/lon + geom in the database.
@@ -13,6 +26,9 @@ import time
 
 import requests
 
+import os, sys
+# La radice del progetto, dove sta app.py: questo script vive in scripts/archivio/.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from app import app, db, Tree
 
 NOMINATIM = 'https://nominatim.openstreetmap.org/search'

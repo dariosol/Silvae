@@ -1,9 +1,21 @@
+# ============================================================================
+# NON ESEGUIRE SU UN DATABASE CON DATI VERI.
+#
+# Crea 10 alberi finti a Roma e 50 a Torino intestandoli all'utente `Dario`,
+# che in produzione e' un account reale (id 2). Serviva a popolare un database
+# vuoto durante lo sviluppo; oggi la demo in-app (DEMO_TREES in app.py) copre
+# lo stesso bisogno senza toccare i dati dei clienti.
+# ============================================================================
+
 """
 Seed the database with 10 trees in Roma and 50 trees in Torino, owner = Dario.
 Run once:  python seed_data.py
 """
 import random
 from datetime import date, timedelta
+import os, sys
+# La radice del progetto, dove sta app.py: questo script vive in scripts/archivio/.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from app import app, db, Tree, Inspection, User
 from sqlalchemy.exc import IntegrityError
 

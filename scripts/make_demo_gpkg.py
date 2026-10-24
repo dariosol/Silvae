@@ -118,7 +118,9 @@ for i in range(1, 101):
         'prescrizioni_col':      '',
     })
 
-OUT = os.path.join(os.path.dirname(__file__), 'demo.gpkg')
+# Radice del progetto: lo .gpkg nasce lì, come prima dello spostamento in scripts/.
+RADICE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUT = os.path.join(RADICE, 'demo.gpkg')
 if os.path.exists(OUT):
     os.unlink(OUT)
 

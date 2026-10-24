@@ -1,7 +1,16 @@
 import openpyxl
 
+import os
+# Percorsi calcolati dalla posizione dello script, così funziona su qualunque
+# macchina e da qualunque cartella (prima erano cablati su /home/dario).
+RADICE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+TEMPLATE = os.path.join(RADICE, 'Schede_Rilevamento_ARETE',
+                        'Schede_Rilevamento_ARETE_DEMO_ver.2.0.xlsm')
+USCITA = os.path.join(RADICE, 'Schede_Rilevamento_ARETE', 'lookup_tables.py')
+
+
 # Load the workbook
-wb = openpyxl.load_workbook('/home/dario/tree_project/Schede_Rilevamento_ARETE/Schede_Rilevamento_ARETE_DEMO_ver.2.0.xlsm')
+wb = openpyxl.load_workbook(TEMPLATE)
 
 # Get sheet A
 sheet = wb['A']
@@ -17,7 +26,7 @@ for row in sheet.iter_rows(values_only=True):
         lookup_dict[code] = name
 
 # Write to file
-with open('/home/dario/tree_project/Schede_Rilevamento_ARETE/lookup_tables.py', 'w') as f:
+with open(USCITA, 'w') as f:
     f.write('# Lookup tables from sheet A\n')
     f.write('species_lookup = {\n')
     for code, name in lookup_dict.items():

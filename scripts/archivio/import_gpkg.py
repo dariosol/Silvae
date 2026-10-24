@@ -1,4 +1,18 @@
 #!/usr/bin/env python3
+
+# ============================================================================
+# NON ESEGUIRE. Superato dal tab «Importa» della webapp (POST /import/gpkg),
+# che ha anteprima, mappatura delle colonne e gestione dei conflitti.
+#
+# OWNER_ID = 4 era «Guido» quando lo script e' stato scritto, ma oggi in
+# produzione l'id 4 e' `demo_user`, e _seed_demo_trees() cancella TUTTI gli
+# alberi di quell'utente a ogni accesso alla demo: gli alberi importati
+# sparirebbero al primo login. Il vero Guido Soldi e' l'id 3.
+#
+# Tenuto come riferimento per la mappatura delle colonne del censimento di Bra
+# (_LOCALITA', _TASSONOMI, _CLASSE VT, ...), che e' documentata nel docstring.
+# ============================================================================
+
 """
 Import trees from file_da_importare/CENSIMENTO COMPLETO CON COORD.gpkg
 into trees_db. Assigns city='Bra', owner=Guido (id=4).

@@ -1,7 +1,16 @@
 import pandas as pd
 
+import os
+# Percorsi calcolati dalla posizione dello script, così funziona su qualunque
+# macchina e da qualunque cartella (prima erano cablati su /home/dario).
+RADICE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+TEMPLATE = os.path.join(RADICE, 'Schede_Rilevamento_ARETE',
+                        'Schede_Rilevamento_ARETE_DEMO_ver.2.0.xlsm')
+USCITA = os.path.join(RADICE, 'Schede_Rilevamento_ARETE', 'lookup_tables.py')
+
+
 # Read the Excel sheet
-df = pd.read_excel('/home/dario/tree_project/Schede_Rilevamento_ARETE/Schede_Rilevamento_ARETE_DEMO_ver.2.0.xlsm', sheet_name='A', header=None)
+df = pd.read_excel(TEMPLATE, sheet_name='A', header=None)
 
 # Define the columns for the categories
 categories = {
@@ -25,7 +34,7 @@ for name, lst in lists.items():
     print(f"{name}: {lst}")
 
 # Now, write to the lookup_tables.py file
-with open('/home/dario/tree_project/Schede_Rilevamento_ARETE/lookup_tables.py', 'a') as f:
+with open(USCITA, 'a') as f:
     f.write('\n# Additional lookup lists\n')
     for name, lst in lists.items():
         f.write(f'{name} = {lst}\n')

@@ -100,9 +100,16 @@ tree_project/
 │   ├── app.js                  # Logica frontend (fetch, mappa, form, esportazione)
 │   ├── voice.js                # Input vocale (Web Speech API + intent Groq)
 │   ├── style.css               # Stili dell'applicazione
-│   └── images/                 # Loghi (usati anche nella scheda ARETE)
+│   ├── images/                 # Loghi (usati anche nella scheda ARETE)
+│   └── tests/                  # Verifiche del frontend su jsdom (run.sh, serve Docker)
 ├── qgis_plugin/
 │   └── silvae_qgis/            # Plugin QGIS «Silvae Pro» (vedi qgis_plugin/README.md e qgis.md)
+├── scripts/                    # Utilità da riga di comando (vedi scripts/README.md)
+│   ├── seed_comuni.py          # Riempie la tabella dei comuni italiani
+│   ├── create_admin.py         # Reimposta la password di admin
+│   ├── dump_gpkg.py            # Ispeziona un .gpkg senza QGIS
+│   ├── make_demo_gpkg.py       # Genera demo.gpkg per provare l'importazione
+│   └── archivio/               # Script che hanno fatto il loro lavoro: NON eseguire
 ├── test_locale.py              # Avvio rapido in locale (anche con SQLite, senza PostgreSQL)
 ├── test_flask_api.py           # Test dell'API
 ├── Procfile                    # Configurazione Gunicorn per Railway

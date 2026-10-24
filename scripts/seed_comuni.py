@@ -8,7 +8,8 @@ import urllib.request
 import sys
 import os
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# La radice del progetto, dove sta app.py: questo script vive in scripts/.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app import app, db, Comune
 
