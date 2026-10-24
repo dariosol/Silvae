@@ -1960,7 +1960,7 @@ def export_excel_columns():
 @app.route('/export/excel', methods=['GET'])
 @auth_required
 def export_excel():
-    trees   = _scoped_tree_query().all()
+    trees   = _export_tree_query().all()
     exclude = _export_exclude_set()
 
     # Flatten columns and track group spans for merged header row,
@@ -2199,7 +2199,7 @@ def _resolve_gpkg_names(overrides):
 @app.route('/export/gpkg', methods=['GET'])
 @auth_required
 def export_gpkg():
-    trees = [t for t in _scoped_tree_query().all()
+    trees = [t for t in _export_tree_query().all()
              if t.latitude is not None and t.longitude is not None]
 
     def make_point(lon, lat):
@@ -2441,7 +2441,7 @@ def export_gpx():
     riassunto leggibile, più i campi Silvae in <extensions>. Stesso filtro per
     ruolo e stessa selezione `ids` degli altri export."""
     import xml.etree.ElementTree as ET
-    trees = [t for t in _scoped_tree_query().order_by(Tree.custom_id).all()
+    trees = [t for t in _export_tree_query().order_by(Tree.custom_id).all()
              if t.latitude is not None and t.longitude is not None]
 
     NS = 'http://www.topografix.com/GPX/1/1'
@@ -2512,6 +2512,22 @@ def _scoped_tree_query():
         query = query.filter(Tree.id.in_(id_list))
     return query
 
+def _export_tree_query():
+    """Query di export e report: visibilità per ruolo, selezione per `ids` e,
+    in più, `city` per prendere **tutti** gli alberi di un comune.
+
+    Serve perché elencare gli id nella URL ha un tetto: la riga di richiesta
+    che Gunicorn accetta e' 4094 byte (`--limit-request-line`), cioè circa 660
+    id, oltre i quali la richiesta viene rifiutata con 400 prima di arrivare a
+    Flask. Con `?city=Bra` la URL resta corta qualunque sia la dimensione del
+    comune. Confronto esatto sul nome, come in `/qgis/features`.
+    """
+    query = _scoped_tree_query()
+    city = (request.args.get('city') or '').strip()
+    if city:
+        query = query.filter(Tree.city == city)
+    return query
+
 
 @app.route('/report/templates', methods=['GET'])
 @auth_required
@@ -2538,7 +2554,7 @@ def report_scheda():
     if template is None:
         return jsonify({'error': f'Template non trovato: {template_id}'}), 404
 
-    trees = _scoped_tree_query().all()
+    trees = _export_tree_query().all()
     if not trees:
         return jsonify({'error': 'Nessun albero da includere nelle schede'}), 404
 
@@ -2578,7 +2594,7 @@ def report_map():
             try: polygon.append((float(parts[0]), float(parts[1])))
             except ValueError: pass
 
-    trees = [t for t in _scoped_tree_query().order_by(Tree.custom_id).all()
+    trees = [t for t in _export_tree_query().order_by(Tree.custom_id).all()
              if t.latitude is not None and t.longitude is not None]
     if not trees:
         return jsonify({'error': 'Nessun albero con coordinate da mappare'}), 404

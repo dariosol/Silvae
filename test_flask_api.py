@@ -869,6 +869,52 @@ class TestUpsertImport:
             db.session.rollback()
 
 
+class TestExportCity:
+    """`?city=` sugli export: tutti gli alberi di un comune senza elencare gli
+    id nella URL (oltre ~660 id Gunicorn rifiuta la riga di richiesta)."""
+
+    def _names(self, res):
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(res.get_data())
+        ns = root.tag.split('}')[0].strip('{')
+        return sorted(w.find(f'{{{ns}}}name').text for w in root.findall(f'{{{ns}}}wpt'))
+
+    def test_city_filters_export(self, client, auth_headers, added_tree_id):
+        altrove = client.post('/add_tree',
+                              json={**TEST_TREE, 'custom_id': 'PYTEST-ALTROVE',
+                                    'city': 'AltroComune'},
+                              headers=auth_headers)
+        assert altrove.status_code == 201
+        other_id = altrove.get_json()['tree_id']
+        try:
+            res = client.get(f"/export/gpx?city={TEST_TREE['city']}", headers=auth_headers)
+            assert res.status_code == 200
+            nomi = self._names(res)
+            assert TEST_TREE['custom_id'] in nomi
+            assert 'PYTEST-ALTROVE' not in nomi          # comune diverso, escluso
+
+            res = client.get('/export/gpx?city=AltroComune', headers=auth_headers)
+            assert self._names(res) == ['PYTEST-ALTROVE']
+
+            # confronto esatto: un nome parziale non deve pescare nulla
+            parziale = TEST_TREE['city'][:-1]
+            assert self._names(client.get(f'/export/gpx?city={parziale}',
+                                          headers=auth_headers)) == []
+
+            # ids e city si combinano: l'intersezione, non l'unione
+            assert self._names(client.get(
+                f"/export/gpx?city=AltroComune&ids={added_tree_id}",
+                headers=auth_headers)) == []
+        finally:
+            client.delete(f'/tree/{other_id}', headers=auth_headers)
+
+    def test_city_on_excel_and_gpkg(self, client, auth_headers, added_tree_id):
+        for fmt in ('excel', 'gpkg'):
+            res = client.get(f"/export/{fmt}?city={TEST_TREE['city']}", headers=auth_headers)
+            assert res.status_code == 200, f'{fmt}: {res.status_code}'
+            assert len(res.get_data()) > 0
+
+
 class TestQgisFeatures:
     def test_requires_city_or_ids(self, client, auth_headers):
         assert client.get('/qgis/features', headers=auth_headers).status_code == 400

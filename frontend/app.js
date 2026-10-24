@@ -2877,11 +2877,21 @@ function _safeFilename(name, defaultName, ext) {
 }
 
 // Esegue il download vero e proprio (con eventuale mappa di rinomina per il GPKG).
+// Comune selezionato in alto, da passare agli export al posto di elencare gli
+// id: oltre ~660 id la URL supera la riga di richiesta che Gunicorn accetta
+// (4094 byte) e la richiesta viene rifiutata. Con ?city= la URL resta corta
+// per qualunque dimensione del comune. Vuoto con «Carica tutti gli alberi».
+function currentExportCity() {
+    const c = document.getElementById('citySelect').value;
+    return (c && c !== ALL_CITIES) ? c : '';
+}
+
 async function _performExport(format, ids, filename, renameObj, excludeArr) {
     const ext = { excel: 'xlsx', gpkg: 'gpkg', gpx: 'gpx' }[format];
     showStatus(`Preparazione ${ext.toUpperCase()}…`, 'info');
     const params = new URLSearchParams();
     if (ids && ids.length) params.set('ids', ids.join(','));
+    else if (currentExportCity()) params.set('city', currentExportCity());
     if (renameObj && Object.keys(renameObj).length) params.set('rename', JSON.stringify(renameObj));
     if (excludeArr && excludeArr.length) params.set('exclude', JSON.stringify(excludeArr));
     const qs = params.toString();
@@ -3074,6 +3084,7 @@ async function generateScheda(ids) {
     const params = new URLSearchParams();
     if (template) params.set('template', template);
     if (ids && ids.length) params.set('ids', ids.join(','));
+    else if (currentExportCity()) params.set('city', currentExportCity());
     const qs = params.toString();
     showStatus('Preparazione schede…', 'info');
     const res = await fetch(`${API_BASE}/report/scheda${qs ? '?' + qs : ''}`, { headers: authHeader() });
@@ -3357,12 +3368,15 @@ function sendAreaToQgis() {
 // ─── Mappa per la relazione (PNG/PDF) ─────────────────────
 
 // ids: alberi da mappare; polygon: vertici dell'area (LatLng Leaflet o [lat,lng]), opzionale.
-function openMapExportModal(ids, polygon, defaultName) {
+function openMapExportModal(ids, polygon, defaultName, conteggio) {
     if (!state.token) { showStatus('Effettua prima il login', 'danger'); return; }
     state.mapExportIds = ids || [];
+    // Senza id si manda il comune: vale per tutti gli alberi, non solo i primi 660.
+    state.mapExportCity = (ids && ids.length) ? '' : currentExportCity();
     state.mapExportPolygon = polygon || null;
     document.getElementById('mapExportFilename').value = defaultName || 'mappa';
-    document.getElementById('mapExportCount').textContent = `${state.mapExportIds.length} alberi.`;
+    const n = (conteggio !== undefined) ? conteggio : state.mapExportIds.length;
+    document.getElementById('mapExportCount').textContent = `${n} alberi.`;
     _syncMapExportExt();
     document.getElementById('mapExportModal').classList.add('open');
 }
@@ -3387,6 +3401,7 @@ async function confirmMapExport() {
     closeMapExport();
     const params = new URLSearchParams({ basemap, format: fmt });
     if (state.mapExportIds.length) params.set('ids', state.mapExportIds.join(','));
+    else if (state.mapExportCity) params.set('city', state.mapExportCity);
     if (state.mapExportPolygon && state.mapExportPolygon.length >= 3)
         params.set('polygon', state.mapExportPolygon.map(v => { const p = L.latLng(v); return `${p.lat},${p.lng}`; }).join(';'));
     showStatus('Preparazione mappa… (qualche secondo)', 'info');
@@ -3406,9 +3421,9 @@ async function confirmMapExport() {
 // Card "Esporta": alberi selezionati in tabella, altrimenti tutti quelli caricati (comune corrente).
 function exportMap() {
     if (state.exportSelected.size) return openMapExportModal([...state.exportSelected], null, 'mappa');
-    const ids = (state.allTrees || []).filter(t => t.latitude && t.longitude).map(t => t.id);
-    if (ids.length === 0) { showStatus('Nessun albero caricato: seleziona prima un comune', 'warning'); return; }
-    return openMapExportModal(ids, null, 'mappa');
+    const conCoord = (state.allTrees || []).filter(t => t.latitude && t.longitude).length;
+    if (conCoord === 0) { showStatus('Nessun albero caricato: seleziona prima un comune', 'warning'); return; }
+    return openMapExportModal(null, null, 'mappa', conCoord);
 }
 
 // Barra selezione della tabella.
