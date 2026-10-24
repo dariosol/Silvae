@@ -908,6 +908,29 @@ class TestExportCity:
         finally:
             client.delete(f'/tree/{other_id}', headers=auth_headers)
 
+    def test_list_and_export_agree_on_city(self, client, auth_headers, added_tree_id):
+        """/trees e gli export devono selezionare lo stesso insieme: il filtro
+        comune e' un confronto esatto in entrambi, non una sottostringa."""
+        citta = TEST_TREE['city']
+        simile = citta + 'zzo'          # es. TestCity -> TestCityzzo
+        res = client.post('/add_tree',
+                          json={**TEST_TREE, 'custom_id': 'PYTEST-SIMILE', 'city': simile},
+                          headers=auth_headers)
+        assert res.status_code == 201
+        simile_id = res.get_json()['tree_id']
+        try:
+            lista = client.get(f'/trees?city={citta}', headers=auth_headers).get_json()
+            assert {t['city'] for t in lista} == {citta}, 'la lista pesca un comune simile'
+            nomi_lista = {t['custom_id'] for t in lista}
+            nomi_export = set(self._names(
+                client.get(f'/export/gpx?city={citta}', headers=auth_headers)))
+            assert nomi_lista == nomi_export, 'lista ed export non coincidono'
+            # il comune simile resta raggiungibile col suo nome
+            altri = client.get(f'/trees?city={simile}', headers=auth_headers).get_json()
+            assert {t['custom_id'] for t in altri} == {'PYTEST-SIMILE'}
+        finally:
+            client.delete(f'/tree/{simile_id}', headers=auth_headers)
+
     def test_city_on_excel_and_gpkg(self, client, auth_headers, added_tree_id):
         for fmt in ('excel', 'gpkg'):
             res = client.get(f"/export/{fmt}?city={TEST_TREE['city']}", headers=auth_headers)

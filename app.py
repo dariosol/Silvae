@@ -1573,7 +1573,12 @@ def get_trees():
         if did and did != user_id: query = query.filter(Tree.owner_id != did)
     city_q = request.args.get('city')
     addr_q = request.args.get('address')
-    if city_q:  query = query.filter(Tree.city.ilike(f"%{city_q}%"))
+    # Comune: confronto esatto, come in ogni altro punto (export, /qgis/features,
+    # filtro del ruolo city). Il nome arriva dal selettore, cioe' dai valori che
+    # sono nel database: con ilike('%Bra%') si caricava anche «Brandizzo», e la
+    # lista mostrava alberi che l'export dello stesso comune poi non conteneva.
+    # L'indirizzo resta una ricerca libera, quindi per sottostringa.
+    if city_q:  query = query.filter(Tree.city == city_q)
     if addr_q:  query = query.filter(Tree.address.ilike(f"%{addr_q}%"))
     return jsonify([tree_to_dict(t) for t in query.order_by(Tree.id).all()])
 
