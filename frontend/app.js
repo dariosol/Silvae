@@ -2963,16 +2963,32 @@ function currentExportCity() {
     return (c && c !== ALL_CITIES) ? c : '';
 }
 
+// Corpo di una richiesta di export: gli id di una selezione, altrimenti il
+// comune. Si manda in POST perche' nella URL gli id hanno un tetto (oltre
+// ~660 Gunicorn rifiuta la riga di richiesta); il server accetta gli stessi
+// parametri anche in GET, per chi chiama l'API da fuori.
+function exportBody(ids) {
+    const corpo = {};
+    if (ids && ids.length) corpo.ids = ids;
+    else if (currentExportCity()) corpo.city = currentExportCity();
+    return corpo;
+}
+
+function exportPost(corpo) {
+    return {
+        method: 'POST',
+        headers: Object.assign({'Content-Type': 'application/json'}, authHeader()),
+        body: JSON.stringify(corpo)
+    };
+}
+
 async function _performExport(format, ids, filename, renameObj, excludeArr) {
     const ext = { excel: 'xlsx', gpkg: 'gpkg', gpx: 'gpx' }[format];
     showStatus(`Preparazione ${ext.toUpperCase()}…`, 'info');
-    const params = new URLSearchParams();
-    if (ids && ids.length) params.set('ids', ids.join(','));
-    else if (currentExportCity()) params.set('city', currentExportCity());
-    if (renameObj && Object.keys(renameObj).length) params.set('rename', JSON.stringify(renameObj));
-    if (excludeArr && excludeArr.length) params.set('exclude', JSON.stringify(excludeArr));
-    const qs = params.toString();
-    const res = await fetch(`${API_BASE}/export/${format}${qs ? '?' + qs : ''}`, { headers: authHeader() });
+    const corpo = exportBody(ids);
+    if (renameObj && Object.keys(renameObj).length) corpo.rename = renameObj;
+    if (excludeArr && excludeArr.length) corpo.exclude = excludeArr;
+    const res = await fetch(`${API_BASE}/export/${format}`, exportPost(corpo));
     if (!res.ok) return showStatus('Esportazione fallita', 'danger');
     const a = document.createElement('a');
     a.href = URL.createObjectURL(await res.blob());
@@ -3158,13 +3174,10 @@ async function generateScheda(ids) {
     if (!state.token) { showStatus('Effettua prima il login', 'danger'); return; }
     const sel = document.getElementById('reportTemplateSelect');
     const template = sel ? sel.value : '';
-    const params = new URLSearchParams();
-    if (template) params.set('template', template);
-    if (ids && ids.length) params.set('ids', ids.join(','));
-    else if (currentExportCity()) params.set('city', currentExportCity());
-    const qs = params.toString();
+    const corpo = exportBody(ids);
+    if (template) corpo.template = template;
     showStatus('Preparazione schede…', 'info');
-    const res = await fetch(`${API_BASE}/report/scheda${qs ? '?' + qs : ''}`, { headers: authHeader() });
+    const res = await fetch(`${API_BASE}/report/scheda`, exportPost(corpo));
     if (!res.ok) return showStatus('Generazione schede fallita', 'danger');
     const cd = res.headers.get('Content-Disposition') || '';
     const m = cd.match(/filename="?([^"]+)"?/);
@@ -3476,13 +3489,13 @@ async function confirmMapExport() {
     const basemap = _mapExportChoice('mapExportBasemap') || 'osm';
     const filename = _safeFilename(document.getElementById('mapExportFilename').value, 'mappa', fmt);
     closeMapExport();
-    const params = new URLSearchParams({ basemap, format: fmt });
-    if (state.mapExportIds.length) params.set('ids', state.mapExportIds.join(','));
-    else if (state.mapExportCity) params.set('city', state.mapExportCity);
+    const corpo = { basemap, format: fmt };
+    if (state.mapExportIds.length) corpo.ids = state.mapExportIds;
+    else if (state.mapExportCity) corpo.city = state.mapExportCity;
     if (state.mapExportPolygon && state.mapExportPolygon.length >= 3)
-        params.set('polygon', state.mapExportPolygon.map(v => { const p = L.latLng(v); return `${p.lat},${p.lng}`; }).join(';'));
+        corpo.polygon = state.mapExportPolygon.map(v => { const p = L.latLng(v); return [p.lat, p.lng]; });
     showStatus('Preparazione mappa… (qualche secondo)', 'info');
-    const res = await fetch(`${API_BASE}/report/map?${params}`, { headers: authHeader() });
+    const res = await fetch(`${API_BASE}/report/map`, exportPost(corpo));
     if (!res.ok) {
         let msg = 'Generazione mappa fallita';
         try { msg = (await res.json()).error || msg; } catch {}

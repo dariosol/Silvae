@@ -508,15 +508,33 @@ Il calcolo è interamente lato client in [`frontend/app.js`](frontend/app.js) (`
 
 ### Import / Export
 
+> **Selezione degli alberi negli export e nei report.** Tutti gli endpoint di
+> esportazione e di report (`/export/excel`, `/export/gpkg`, `/export/gpx`,
+> `/report/scheda`, `/report/map`) accettano gli stessi parametri in **`GET`
+> nella query string** e in **`POST` nel corpo JSON**, e rispondono in modo
+> identico. Senza `ids` si esportano tutti gli alberi visibili; con `city` tutti
+> quelli di un comune; con `ids` solo quelli indicati.
+>
+> La forma `POST` esiste perché gli id di una selezione non entrano nella URL:
+> la riga di richiesta che Gunicorn accetta è 4094 byte
+> (`--limit-request-line`), cioè circa **660 id**, oltre i quali la richiesta
+> viene rifiutata con `400` prima di arrivare a Flask. Nel corpo quel tetto non
+> c'è, e la webapp usa sempre `POST`. Nel corpo i valori si mandano nella loro
+> forma naturale (`ids` lista di numeri, `exclude` lista, `rename` oggetto,
+> `polygon` lista di coppie `[lat, lon]`); in query string restano stringhe
+> (`ids=1,2,3`, `exclude` e `rename` come JSON, `polygon=lat,lon;lat,lon`).
+> La visibilità per ruolo è la stessa nei due casi: si esporta solo ciò che
+> l'account può vedere, e un id non visibile viene semplicemente ignorato.
+
 | Metodo | Endpoint | Descrizione |
 |--------|----------|-------------|
-| `GET`  | `/export/excel` | Esporta alberi in Excel (`?ids=1,2,3` e `?exclude=` opzionali) |
+| `GET` `POST` | `/export/excel` | Esporta alberi in Excel (`ids`, `city`, `exclude` opzionali) |
 | `GET`  | `/export/excel/columns` | Gruppi e intestazioni delle colonne Excel (per la scelta dei campi da esportare) |
-| `GET`  | `/export/gpkg` | Esporta alberi in GeoPackage — attributi ARETE + geometria (`?ids=`, `?rename=`, `?exclude=` opzionali), con le colonne di categoria `stat_bucket`/`rischio_classe`/`cond_classe` e lo **stile QGIS predefinito** incorporato (`layer_styles`) |
+| `GET` `POST` | `/export/gpkg` | Esporta alberi in GeoPackage — attributi ARETE + geometria (`ids`, `city`, `rename`, `exclude` opzionali), con le colonne di categoria `stat_bucket`/`rischio_classe`/`cond_classe` e lo **stile QGIS predefinito** incorporato (`layer_styles`) |
 | `GET`  | `/export/gpkg/columns` | Nomi/tipi di default delle colonne del GPKG (per rinomina/esclusione in export) |
 | `POST` | `/import/gpkg/inspect` | Anteprima colonne e mappatura automatica di un .gpkg |
 | `POST` | `/import/gpkg` | Importa alberi da .gpkg (multipart: `file`, `city`, `on_conflict=skip\|update`) *(non consentito a `city`)* |
-| `GET`  | `/export/gpx` | Esporta alberi come waypoint GPX 1.1 (`?ids=` opzionale) — vedi [Import / Export GPX](#import--export-gpx) |
+| `GET` `POST` | `/export/gpx` | Esporta alberi come waypoint GPX 1.1 (`ids`, `city` opzionali) — vedi [Import / Export GPX](#import--export-gpx) |
 | `POST` | `/import/gpx/inspect` | Anteprima colonne e mappatura automatica di un .gpx (stessa risposta di `/import/gpkg/inspect`) |
 | `POST` | `/import/gpx` | Importa alberi dai waypoint di un .gpx (stessi parametri di `/import/gpkg`) *(non consentito a `city`)* |
 
@@ -527,8 +545,8 @@ Stesso filtro per ruolo e stessa selezione `ids` degli export (vedi [Schede di r
 | Metodo | Endpoint | Descrizione |
 |--------|----------|-------------|
 | `GET`  | `/report/templates` | Elenco dei template di scheda disponibili |
-| `GET`  | `/report/scheda` | Genera le schede albero (`?ids=` e `?template=` opzionali; default `scheda_arete` → `schede_albero.zip`) |
-| `GET`  | `/report/map` | Tavola cartografica A4 (`?basemap=osm\|satellite`, `?format=pdf\|png`, `?ids=` e `?polygon=lat,lon;lat,lon;…` opzionali) — vedi [Mappa per la relazione](#mappa-per-la-relazione) |
+| `GET` `POST` | `/report/scheda` | Genera le schede albero (`ids`, `city`, `template` opzionali; default `scheda_arete` → `schede_albero.zip`) |
+| `GET` `POST` | `/report/map` | Tavola cartografica A4 (`basemap=osm\|satellite`, `format=pdf\|png`, `ids`, `city`, `polygon` opzionali) — vedi [Mappa per la relazione](#mappa-per-la-relazione) |
 
 ### Geocodifica e voce
 

@@ -1937,12 +1937,48 @@ def _excel_groups():
     ]
 
 
+def _req_arg(name, default=None):
+    """Parametro di una richiesta di export o report, letto dalla query string
+    oppure dal corpo JSON quando il metodo e' POST.
+
+    Le due forme convivono per una ragione sola: gli id di una selezione non
+    entrano nella URL. La riga di richiesta che Gunicorn accetta e' 4094 byte
+    (`--limit-request-line`), cioe' circa 660 id, oltre i quali la richiesta
+    viene rifiutata con 400 prima di arrivare a Flask. Nel corpo di una POST
+    quel tetto non c'e'.
+
+    In POST i valori si possono mandare nella loro forma naturale (`ids` lista
+    di numeri, `exclude` lista, `rename` oggetto, `polygon` lista di coppie);
+    in GET restano stringhe come prima. Chi legge il valore normalizza le due
+    forme, cosi' i due modi danno esattamente lo stesso risultato.
+    """
+    if request.method == 'POST':
+        corpo = request.get_json(silent=True) or {}
+        if isinstance(corpo, dict) and name in corpo:
+            return corpo[name]
+    return request.args.get(name, default)
+
+def _as_id_list(raw):
+    """`ids` come lista di interi, da «1,2,3» (query string) o [1,2,3] (JSON)."""
+    if raw is None:
+        return []
+    valori = raw if isinstance(raw, (list, tuple)) else str(raw).split(',')
+    out = []
+    for v in valori:
+        try:
+            out.append(int(str(v).strip()))
+        except (TypeError, ValueError):
+            pass
+    return out
+
 def _export_exclude_set():
     """Insieme dei campi da NON esportare, dal parametro `exclude` (array JSON di chiavi).
     La chiave è l'intestazione colonna (Excel) o il nome colonna di default (GPKG)."""
-    raw = request.args.get('exclude')
+    raw = _req_arg('exclude')
     if not raw:
         return set()
+    if isinstance(raw, (list, tuple)):
+        return {str(x) for x in raw}
     try:
         data = json.loads(raw)
         if isinstance(data, list):
@@ -1962,7 +1998,7 @@ def export_excel_columns():
     ])
 
 
-@app.route('/export/excel', methods=['GET'])
+@app.route('/export/excel', methods=['GET', 'POST'])
 @auth_required
 def export_excel():
     trees   = _export_tree_query().all()
@@ -2201,7 +2237,7 @@ def _resolve_gpkg_names(overrides):
     return out_names
 
 
-@app.route('/export/gpkg', methods=['GET'])
+@app.route('/export/gpkg', methods=['GET', 'POST'])
 @auth_required
 def export_gpkg():
     trees = [t for t in _export_tree_query().all()
@@ -2227,8 +2263,10 @@ def export_gpkg():
 
     # Rinomina delle chiavi (colonne) richiesta dall'utente: {nome_default: nome_nuovo}
     overrides = {}
-    rename_param = request.args.get('rename')
-    if rename_param:
+    rename_param = _req_arg('rename')
+    if isinstance(rename_param, dict):
+        overrides = {str(k): v for k, v in rename_param.items()}
+    elif rename_param:
         try:
             raw = json.loads(rename_param)
             if isinstance(raw, dict):
@@ -2439,7 +2477,7 @@ _GPX_EXT_FIELDS = [
     ('comments',    lambda t: t.comments),
 ]
 
-@app.route('/export/gpx', methods=['GET'])
+@app.route('/export/gpx', methods=['GET', 'POST'])
 @auth_required
 def export_gpx():
     """Waypoint GPX 1.1 (WGS84): <name> = ID albero, <cmt> = specie, <desc> =
@@ -2511,9 +2549,8 @@ def _scoped_tree_query():
     """Query alberi filtrata per ruolo del chiamante e per il parametro `ids`.
     Stessa logica di visibilità/selezione usata dagli export (excel/gpkg)."""
     query = _role_tree_query(*(request.user.get(k) for k in ('role', 'user_id', 'city')))
-    ids_param = request.args.get('ids')
-    if ids_param:
-        id_list = [int(x) for x in ids_param.split(',') if x.strip().isdigit()]
+    id_list = _as_id_list(_req_arg('ids'))
+    if id_list:
         query = query.filter(Tree.id.in_(id_list))
     return query
 
@@ -2521,14 +2558,12 @@ def _export_tree_query():
     """Query di export e report: visibilità per ruolo, selezione per `ids` e,
     in più, `city` per prendere **tutti** gli alberi di un comune.
 
-    Serve perché elencare gli id nella URL ha un tetto: la riga di richiesta
-    che Gunicorn accetta e' 4094 byte (`--limit-request-line`), cioè circa 660
-    id, oltre i quali la richiesta viene rifiutata con 400 prima di arrivare a
-    Flask. Con `?city=Bra` la URL resta corta qualunque sia la dimensione del
-    comune. Confronto esatto sul nome, come in `/qgis/features`.
+    Con `city` la URL resta corta qualunque sia la dimensione del comune;
+    per una selezione di molti id c'e' la POST (vedi `_req_arg`). Confronto
+    esatto sul nome, come in `/qgis/features`.
     """
     query = _scoped_tree_query()
-    city = (request.args.get('city') or '').strip()
+    city = str(_req_arg('city') or '').strip()
     if city:
         query = query.filter(Tree.city == city)
     return query
@@ -2541,7 +2576,7 @@ def report_templates_list():
     return jsonify(report_tpl.list_templates())
 
 
-@app.route('/report/scheda', methods=['GET'])
+@app.route('/report/scheda', methods=['GET', 'POST'])
 @auth_required
 def report_scheda():
     """Genera il report "schede albero" per gli alberi visibili/selezionati.
@@ -2554,7 +2589,7 @@ def report_scheda():
     ufficiale ARETE (foglio ORD), compilato coi dati del database — un file per
     albero, oppure uno .zip se gli alberi selezionati sono più d'uno.
     """
-    template_id = request.args.get('template')
+    template_id = _req_arg('template')
     template = report_tpl.get_template(template_id)
     if template is None:
         return jsonify({'error': f'Template non trovato: {template_id}'}), 404
@@ -2571,7 +2606,7 @@ def report_scheda():
                      mimetype=mimetype)
 
 
-@app.route('/report/map', methods=['GET'])
+@app.route('/report/map', methods=['GET', 'POST'])
 @auth_required
 def report_map():
     """Tavola cartografica (PNG o PDF, A4) degli alberi visibili/selezionati:
@@ -2585,19 +2620,22 @@ def report_map():
       - format:  `pdf` (default) | `png`
       - polygon: vertici dell'area selezionata `lat,lon;lat,lon;…` (opzionale)
     """
-    basemap = request.args.get('basemap', 'osm')
-    fmt = request.args.get('format', 'pdf')
+    basemap = _req_arg('basemap', 'osm')
+    fmt = _req_arg('format', 'pdf')
     if basemap not in map_render.BASEMAPS:
         return jsonify({'error': f'Basemap non valida: {basemap}'}), 400
     if fmt not in map_render.FORMATS:
         return jsonify({'error': f'Formato non valido: {fmt}'}), 400
 
     polygon = []
-    for pair in (request.args.get('polygon') or '').split(';'):
-        parts = pair.split(',')
+    poly_param = _req_arg('polygon')
+    # Dal corpo JSON: [[lat, lon], …]; dalla query string: «lat,lon;lat,lon».
+    coppie = (poly_param if isinstance(poly_param, (list, tuple))
+              else [p.split(',') for p in str(poly_param or '').split(';')])
+    for parts in coppie:
         if len(parts) == 2:
             try: polygon.append((float(parts[0]), float(parts[1])))
-            except ValueError: pass
+            except (TypeError, ValueError): pass
 
     trees = [t for t in _export_tree_query().order_by(Tree.custom_id).all()
              if t.latitude is not None and t.longitude is not None]

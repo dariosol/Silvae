@@ -938,6 +938,48 @@ class TestExportCity:
             assert len(res.get_data()) > 0
 
 
+class TestExportPost:
+    """Gli export accettano gli stessi parametri in POST, con gli id nel corpo:
+    nella URL oltre ~660 id la riga di richiesta sfonda il limite di Gunicorn."""
+
+    def _names(self, res):
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(res.get_data())
+        ns = root.tag.split('}')[0].strip('{')
+        return sorted(w.find(f'{{{ns}}}name').text for w in root.findall(f'{{{ns}}}wpt'))
+
+    def test_post_ids_equals_get_ids(self, client, auth_headers, added_tree_id):
+        da_get  = self._names(client.get(f'/export/gpx?ids={added_tree_id}', headers=auth_headers))
+        da_post = self._names(client.post('/export/gpx', json={'ids': [added_tree_id]},
+                                          headers=auth_headers))
+        assert da_get == da_post == [TEST_TREE['custom_id']]
+
+    def test_post_city_and_native_shapes(self, client, auth_headers, added_tree_id):
+        citta = TEST_TREE['city']
+        assert client.post('/export/gpx', json={'city': citta},
+                           headers=auth_headers).status_code == 200
+        # exclude come lista e rename come oggetto, non come stringhe JSON
+        res = client.post('/export/excel', json={'city': citta, 'exclude': ['Comune']},
+                          headers=auth_headers)
+        assert res.status_code == 200
+        res = client.post('/export/gpkg', json={'city': citta, 'rename': {'species': 'SPECIE'}},
+                          headers=auth_headers)
+        assert res.status_code == 200
+
+    def test_post_respects_visibility_and_auth(self, client, auth_headers, added_tree_id):
+        assert client.post('/export/gpx', json={'ids': [added_tree_id]}).status_code == 401
+        # un id inesistente non produce nulla, non un errore
+        res = client.post('/export/gpx', json={'ids': [999999999]}, headers=auth_headers)
+        assert res.status_code in (200, 404)
+        if res.status_code == 200:
+            assert self._names(res) == []
+
+    def test_post_malformed_body_is_not_a_crash(self, client, auth_headers):
+        res = client.post('/export/gpx', data=b'non-json',
+                          content_type='application/json', headers=auth_headers)
+        assert res.status_code != 500
+
+
 class TestQgisFeatures:
     def test_requires_city_or_ids(self, client, auth_headers):
         assert client.get('/qgis/features', headers=auth_headers).status_code == 400
