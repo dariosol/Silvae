@@ -232,7 +232,7 @@
           <span>Codice <span id="userMenuCodeText" class="nav-user-menu-code"></span></span>
           <i class="fa-regular fa-copy" style="font-size:11px;margin-left:auto;opacity:.6;"></i>
         </button>
-        <button class="nav-user-menu-item nav-user-menu-logout" type="button" onclick="closeUserMenu(); logout()">
+        <button class="nav-user-menu-item nav-user-menu-logout" type="button" onclick="closeUserMenu(); leaveEditView(logout)">
           <i class="fa-solid fa-right-from-bracket"></i> Esci
         </button>
       </div>
@@ -377,10 +377,10 @@
       <!-- EDIT / ADD VIEW -->
       <div id="view-edit" class="tab-view">
         <div class="view-bar">
-          <button class="btn btn-outline btn-sm" onclick="showTreeView('list')">
+          <button class="btn btn-outline btn-sm" onclick="leaveEditView(() => showTreeView('list'))">
             <i class="fa-solid fa-arrow-left"></i> Torna agli Alberi
           </button>
-          <button class="btn btn-outline btn-sm" onclick="switchTab('map')">
+          <button class="btn btn-outline btn-sm" onclick="leaveEditView(() => switchTab('map'))">
             <i class="fa-solid fa-map"></i> Torna alla Mappa
           </button>
           <span class="view-title" id="formTitle"><i class="fa-solid fa-seedling"></i> Nuovo Albero</span>
@@ -856,7 +856,7 @@
             <button type="submit" form="addTreeForm" class="btn btn-primary" id="formSubmitButton">
               <i class="fa-solid fa-floppy-disk"></i> Salva albero
             </button>
-            <button type="button" class="btn btn-outline" onclick="resetForm(); showTreeView('list')">
+            <button type="button" class="btn btn-outline" onclick="leaveEditView(() => { resetForm(); showTreeView('list'); })">
               <i class="fa-solid fa-xmark"></i> Annulla
             </button>
           </div>
@@ -1472,6 +1472,28 @@ rischio_finale   = lookup_inverso(probabilità_n)    ← foglio A, colonne AR:AS
 </div>
 
 <!-- Modale: Mappa per la relazione (PNG/PDF) -->
+<!-- Uscita dal form di un albero con modifiche non salvate -->
+<div class="info-modal-overlay" id="unsavedModal" onclick="if(event.target===this)closeUnsavedModal()">
+  <div class="info-modal" style="max-width:430px;padding:22px 22px 18px;">
+    <button class="info-modal-close" onclick="closeUnsavedModal()">&times;</button>
+    <h3 style="margin-bottom:6px;">
+      <i class="fa-solid fa-triangle-exclamation" style="color:#b9770e;margin-right:6px;"></i>Uscire senza salvare?
+    </h3>
+    <p style="margin:0 0 18px;">
+      Le modifiche a questa scheda non sono state salvate: uscendo adesso vanno perse.
+    </p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+      <button class="btn btn-primary" onclick="unsavedSaveAndLeave()">
+        <i class="fa-solid fa-floppy-disk"></i> Salva e esci
+      </button>
+      <button class="btn btn-danger" onclick="unsavedDiscardAndLeave()">
+        <i class="fa-solid fa-xmark"></i> Esci senza salvare
+      </button>
+      <button class="btn btn-outline" onclick="closeUnsavedModal()">Annulla</button>
+    </div>
+  </div>
+</div>
+
 <div class="info-modal-overlay" id="mapExportModal" onclick="if(event.target===this)closeMapExport()">
   <div class="info-modal" style="max-width:440px;padding:20px 20px 16px;">
     <button class="info-modal-close" onclick="closeMapExport()">&times;</button>

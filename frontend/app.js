@@ -859,6 +859,7 @@ function switchTab(name) {
                         showTreeView('edit');
                         document.getElementById('latitude').value  = latlng.lat.toFixed(6);
                         document.getElementById('longitude').value = latlng.lng.toFixed(6);
+                        markFormClean();
                     };
                     if (no) no.onclick = () => state.map.closePopup();
                 }, 30);
@@ -1880,6 +1881,7 @@ async function openEditForm(id) {
     if (!tree) return;
     fillForm(tree);
     switchTab('trees'); showTreeView('edit');
+    markFormClean();
 }
 
 async function deleteTreeById(id) {
@@ -1895,12 +1897,13 @@ async function deleteTreeById(id) {
     } else showStatus(data.message||'Errore durante l\'eliminazione','danger');
 }
 
-async function submitTreeForm(e) {
-    e.preventDefault();
-    const editId  = document.getElementById('editTreeId').value;
+// Legge il form e costruisce il corpo della richiesta. Estratta da
+// submitTreeForm perche' la usa anche il controllo delle modifiche non
+// salvate: confrontando lo stesso payload che verrebbe inviato, il controllo
+// non puo' divergere da cio' che si salva davvero.
+function buildTreePayload() {
     const v = id => document.getElementById(id)?.value || null;
-
-    const payload = {
+    return {
         custom_id: v('custom_id'), city: v('city'), address: v('address'),
         latitude: v('latitude'), longitude: v('longitude'),
         species: v('species'), condition: v('condition') || '—',
@@ -1953,25 +1956,99 @@ async function submitTreeForm(e) {
         monitoraggio: v('monitoraggio'), urgenza: v('urgenza'),
         condizione_salute_ecologica: v('condizione_salute_ecologica') || null,
     };
+}
 
+function submitTreeForm(e) {
+    e.preventDefault();
+    return saveTreeForm();
+}
+
+// Salva il form. Ritorna true se il server ha accettato, false altrimenti:
+// serve a «Salva e esci», che deve uscire solo se il salvataggio e' andato.
+async function saveTreeForm() {
+    const editId = document.getElementById('editTreeId').value;
     const url    = editId ? `${API_BASE}/tree/${editId}` : `${API_BASE}/add_tree`;
     const method = editId ? 'PATCH' : 'POST';
 
     const res  = await fetch(url, {
         method,
         headers: Object.assign({'Content-Type':'application/json'}, authHeader()),
-        body: JSON.stringify(payload)
+        body: JSON.stringify(buildTreePayload())
     });
     const data = await res.json();
-    if (res.ok) {
-        showStatus(editId ? 'Albero aggiornato' : 'Albero aggiunto', 'success');
-        await fetchTrees(); resetForm(); showTreeView('list');
-    } else showStatus(data.message || JSON.stringify(data), 'danger');
+    if (!res.ok) {
+        showStatus(data.message || JSON.stringify(data), 'danger');
+        return false;
+    }
+    showStatus(editId ? 'Albero aggiornato' : 'Albero aggiunto', 'success');
+    await fetchTrees(); resetForm(); showTreeView('list');
+    return true;
+}
+
+// ─── Uscita dal form con modifiche non salvate ────────────
+//
+// Il form e' una vista del tab Alberi, non una pagina a se': si esce da piu'
+// punti (torna agli alberi, torna alla mappa, Annulla, un altro tab, logout,
+// chiusura del browser) e finora ognuno buttava via le modifiche in silenzio.
+// Tutte le uscite passano da leaveEditView().
+
+// Fotografia del form "pulito": si confronta il payload che verrebbe
+// inviato, non i singoli campi, cosi' il controllo non puo' divergere dal
+// salvataggio. Da chiamare ogni volta che si entra nella vista di modifica.
+function markFormClean() {
+    state.formSnapshot = JSON.stringify(buildTreePayload());
+}
+
+function inEditView() {
+    return state.activeTab === 'trees'
+        && !!document.getElementById('view-edit')?.classList.contains('active');
+}
+
+function isFormDirty() {
+    return !!state.formSnapshot
+        && JSON.stringify(buildTreePayload()) !== state.formSnapshot;
+}
+
+// Esegue `azione`, ma se ci sono modifiche non salvate chiede prima cosa fare.
+function leaveEditView(azione) {
+    if (!inEditView() || !isFormDirty()) { azione(); return; }
+    state.pendingLeave = azione;
+    document.getElementById('unsavedModal').classList.add('open');
+}
+
+// «Annulla»: resta nel form, non si perde nulla.
+function closeUnsavedModal() {
+    document.getElementById('unsavedModal').classList.remove('open');
+    state.pendingLeave = null;
+}
+
+function _takePendingLeave() {
+    const azione = state.pendingLeave;
+    document.getElementById('unsavedModal').classList.remove('open');
+    state.pendingLeave = null;
+    return azione;
+}
+
+// «Salva e esci»: si esce solo se il salvataggio e' andato a buon fine.
+async function unsavedSaveAndLeave() {
+    const form = document.getElementById('addTreeForm');
+    // Campi obbligatori mancanti: il browser li evidenzia e si resta nel form.
+    if (form && !form.reportValidity()) { closeUnsavedModal(); return; }
+    const azione = _takePendingLeave();
+    if (await saveTreeForm()) azione?.();
+}
+
+// «Esci senza salvare»: il form viene svuotato, le modifiche sono perse.
+function unsavedDiscardAndLeave() {
+    const azione = _takePendingLeave();
+    resetForm();
+    azione?.();
 }
 
 function resetForm() {
     document.getElementById('addTreeForm').reset();
     document.getElementById('editTreeId').value = '';
+    state.formSnapshot = null;        // niente form aperto: nulla da proteggere
     document.getElementById('formTitle').innerHTML = '<i class="fa-solid fa-seedling"></i> Nuovo Albero';
     document.getElementById('formSubmitButton').innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Salva albero';
     document.getElementById('gpsStatus').textContent = '';
@@ -3464,7 +3541,13 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('forgotBtn').addEventListener('click', forgotPassword);
     document.getElementById('forgotEmail').addEventListener('keydown', e => e.key==='Enter' && forgotPassword());
     document.getElementById('addAgronomistBtn').addEventListener('click', addAgronomist);
-    document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click',
+        () => leaveEditView(() => switchTab(btn.dataset.tab))));
+    // Chiusura o ricarica della pagina: il browser mostra il suo avviso
+    // generico (non possiamo scegliere i pulsanti, e' una regola sua).
+    window.addEventListener('beforeunload', e => {
+        if (inEditView() && isFormDirty()) { e.preventDefault(); e.returnValue = ''; }
+    });
     document.querySelectorAll('th.sortable').forEach(th => th.addEventListener('click', () => applySort(th.dataset.sort)));
     document.getElementById('logoutBtn').addEventListener('click', logout);
     document.getElementById('userMenuBtn').addEventListener('click', e => { e.stopPropagation(); toggleUserMenu(); });
@@ -3480,7 +3563,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') applyListFilter(); }));
     document.getElementById('pageSizeSelect').addEventListener('change', changePageSize);
     document.getElementById('addTreeForm').addEventListener('submit', submitTreeForm);
-    document.getElementById('openFormBtn').addEventListener('click', () => { resetForm(); showTreeView('edit'); });
+    document.getElementById('openFormBtn').addEventListener('click', () => { resetForm(); showTreeView('edit'); markFormClean(); });
     initComuneAutocomplete('city');
     initComuneAutocomplete('newCity');
     initComuneAutocomplete('importCity');
