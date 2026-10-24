@@ -692,6 +692,31 @@ class TestRoleAccess:
         assert res.status_code == 200
         return {'Authorization': 'Bearer ' + res.get_json()['token']}
 
+    def test_cities_selector_scoped_to_own_trees(self, client, auth_headers):
+        """Il selettore dei comuni non elenca i comuni degli altri agronomi:
+        selezionarli mostrerebbe una lista vuota."""
+        agro = {'username': 'pytest_agro_scope', 'password': 'testpass', 'role': 'user'}
+        assert client.post('/add_user', json=agro, headers=auth_headers).status_code == 201
+        tree_id = None
+        try:
+            res = client.post('/add_tree',
+                              json={**TEST_TREE, 'custom_id': 'PYTEST-SCOPE',
+                                    'city': 'ComuneAltrui'},
+                              headers=auth_headers)        # albero dell'admin
+            assert res.status_code == 201
+            tree_id = res.get_json()['tree_id']
+            agro_headers = self._login(client, agro['username'], agro['password'])
+            comuni = client.get('/cities', headers=agro_headers).get_json()
+            assert comuni == [], f'agronomo senza alberi vede {comuni}'
+            # il superuser invece continua a vedere tutto
+            assert 'ComuneAltrui' in client.get('/cities', headers=auth_headers).get_json()
+        finally:
+            if tree_id:
+                client.delete(f'/tree/{tree_id}', headers=auth_headers)
+            with flask_app.app_context():
+                u = User.query.filter_by(username=agro['username']).first()
+                if u: db.session.delete(u); db.session.commit()
+
     def test_city_user_sees_own_city_only(self, client, auth_headers, added_tree_id):
         city_headers = self._login(client, 'pytest_cityuser', 'testpass')
         res = client.post('/add_tree',

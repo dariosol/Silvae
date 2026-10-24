@@ -1371,14 +1371,34 @@ def add_city():
 @app.route('/cities', methods=['GET'])
 @auth_required
 def get_cities():
-    """Comuni per il selettore in alto. L'account `city` vede solo il proprio
-    comune: l'elenco completo dei comuni nel database non lo riguarda."""
-    if request.user.get('role') == 'city':
-        own = request.user.get('city')
+    """Comuni per il selettore in alto, limitati a quelli dove il chiamante
+    vede qualcosa: selezionare un comune altrui mostrerebbe una lista vuota.
+
+      - `city`    : solo il proprio.
+      - `user`    : i comuni dei **propri** alberi, piu' quelli dei comuni a
+                    cui e' collegato, dove magari non ha ancora censito nulla
+                    ed e' proprio dove deve iniziare.
+      - `superuser`: i comuni creati in Gestione piu' quelli degli alberi che
+                    vede (la demo e' esclusa da _role_tree_query).
+
+    I nomi sui comuni visibili escono dalla stessa query di visibilita' degli
+    alberi, cosi' il selettore non puo' divergere da cio' che poi la lista
+    mostra.
+    """
+    role, uid, own = (request.user.get(k) for k in ('role', 'user_id', 'city'))
+    if role == 'city':
         return jsonify([own] if own else [])
-    from_table = {c.name for c in City.query.all()}
-    from_trees = {row[0] for row in db.session.query(Tree.city).distinct() if row[0]}
-    return jsonify(sorted(from_table | from_trees))
+    nomi = {c for (c,) in (_role_tree_query(role, uid, own)
+                           .with_entities(Tree.city).distinct()) if c}
+    if role == 'user':
+        nomi |= {c for (c,) in (db.session.query(User.city)
+                                .join(CityMembership,
+                                      CityMembership.city_user_id == User.id)
+                                .filter(CityMembership.agronomer_id == uid)
+                                .distinct()) if c}
+    else:
+        nomi |= {c.name for c in City.query.all()}
+    return jsonify(sorted(nomi))
 
 @app.route('/comuni/search', methods=['GET'])
 def search_comuni():
