@@ -3,7 +3,7 @@
 Collega QGIS a Silvae Pro: carica gli alberi di un comune in un GeoPackage
 locale, con lo stile per classe di rischio ARETE / condizione VTA generato
 dalla stessa palette della webapp, e li aggiorna in modo incrementale.
-Piano completo e stato di avanzamento in [`../qgis.md`](../qgis.md).
+Piano completo e stato di avanzamento in [`../docs/qgis.md`](../docs/qgis.md).
 
 **Fasi 1-4** (questa versione, 0.4.0): collegamento con token API, *Carica da
 Silvae* (GPKG locale, stile, aggiornamento incrementale), *Invii in attesa*
@@ -99,4 +99,4 @@ DATABASE_URL=sqlite:///prova.db SECRET_KEY=x python -c "import app; app.app.run(
 ```
 
 Le finestre si costruiscono anche offscreen (`QT_QPA_PLATFORM=offscreen`)
-con un `iface` finto: vedi lo storico dei test in `qgis.md` §12.
+con un `iface` finto: vedi lo storico dei test in `docs/qgis.md` §12.

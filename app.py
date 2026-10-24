@@ -246,7 +246,7 @@ class Tree(db.Model):
     ia_kg_anno                  = db.Column(db.Float)  # intercett. acqua (kg/anno)
     valore_ecologico            = db.Column(db.Float)  # valore monetario (€)
 
-    # --- Collegamento esterno e tracciabilità (QGIS, vedi qgis.md §4) ---
+    # --- Collegamento esterno e tracciabilità (QGIS, vedi docs/qgis.md §4) ---
     # `uuid` è la chiave stabile con cui un layer esterno resta collegato
     # all'albero (custom_id è rinominabile e unico solo per comune).
     uuid       = db.Column(db.String(36), unique=True, default=lambda: str(uuid_lib.uuid4()))
@@ -277,7 +277,7 @@ class Inspection(db.Model):
 
 class ApiToken(db.Model):
     """Token d'accesso longevo e revocabile per client esterni (plugin QGIS,
-    vedi qgis.md §5). Il JWT di /login scade e congela ruolo e comune: qui in
+    vedi docs/qgis.md §5). Il JWT di /login scade e congela ruolo e comune: qui in
     DB sta solo l'hash, e ruolo/comune vengono riletti dall'utente a ogni
     richiesta. Il token in chiaro (`slv_…`) si vede una volta sola, alla
     creazione."""
@@ -298,7 +298,7 @@ class ApiToken(db.Model):
                 'revoked': self.revoked_at is not None}
 
 class QgisDelivery(db.Model):
-    """Cassetta postale webapp → QGIS (qgis.md §6.3). Un browser non può
+    """Cassetta postale webapp → QGIS (docs/qgis.md §6.3). Un browser non può
     parlare con QGIS sul PC dell'utente: «Invia a QGIS» deposita qui *gli id*
     degli alberi (non i dati, così il ritiro è sempre aggiornato) e il plugin
     li trova al primo controllo. L'invio è personale: lo ritira chi l'ha
@@ -717,7 +717,7 @@ def _make_inspection(tree_obj, user_id, username):
 
 # --- Scrittura da fonti esterne (import file, plugin QGIS) --------------------
 # Campi che il server calcola da altri o che governano identità e permessi:
-# chi scrive dall'esterno non li può impostare (qgis.md §7).
+# chi scrive dall'esterno non li può impostare (docs/qgis.md §7).
 _DERIVED_TREE_FIELDS = frozenset({
     'id', 'uuid', 'owner_id', 'city', 'updated_at', 'updated_by',
     'rischio', 'bersaglio_chioma', 'bersaglio_ramo',
@@ -765,7 +765,7 @@ _UNSET = object()
 def _upsert_tree(record, *, city, on_conflict, user_id, scope, strict_uuid=True, existing=_UNSET):
     """Crea o aggiorna un albero da `record`: dict con i nomi dei campi di
     `Tree` e valori già convertiti (float per i numeri, stringhe JSON per le
-    liste, `date` per next_check). Regole (qgis.md §13):
+    liste, `date` per next_check). Regole (docs/qgis.md §13):
       - un valore None non tocca il campo; i derivati vengono ignorati;
       - si abbina solo tra gli alberi di `scope` e non si cambia mai l'owner;
       - il server ricalcola bersaglio, valore ecologico e rischio.
@@ -1047,7 +1047,7 @@ def update_me():
                     'email': user.email or ''}), 200
 
 
-# --- Token API (plugin QGIS, qgis.md §5) ---
+# --- Token API (plugin QGIS, docs/qgis.md §5) ---
 @app.route('/me/tokens', methods=['GET'])
 @auth_required
 def list_api_tokens():
@@ -3086,7 +3086,7 @@ def import_gpkg_route():
                     'error_details': error_details})
 
 # -----------------------
-# QGIS — layer GeoJSON per il plugin (qgis.md §6.1)
+# QGIS — layer GeoJSON per il plugin (docs/qgis.md §6.1)
 # -----------------------
 QGIS_SCHEMA_VERSION = 1
 
@@ -3277,7 +3277,7 @@ def qgis_push_features():
     ricalcolo di bersaglio, valore ecologico e rischio, campi derivati
     ignorati, owner mai cambiato, abbinamento solo tra gli alberi visibili.
     Ogni albero modificato conserva lo **snapshot precedente** in una
-    `Inspection` (qgis.md §6.2 punto 5). Con `dry_run` non scrive nulla ed è
+    `Inspection` (docs/qgis.md §6.2 punto 5). Con `dry_run` non scrive nulla ed è
     l'anteprima del diff."""
     if (denied := _city_readonly()): return denied
     data = request.json or {}
@@ -3382,7 +3382,7 @@ def qgis_push_features():
 def _qgis_inspection(tree, before, changed, user_id, username):
     """Ispezione che documenta una scrittura da QGIS. Per un albero esistente
     conserva lo `snapshot` **precedente** alla modifica (è l'annulla per
-    albero, qgis.md §13); per un albero nuovo è l'ispezione iniziale, come in
+    albero, docs/qgis.md §13); per un albero nuovo è l'ispezione iniziale, come in
     `add_tree`."""
     if before is None:
         return _make_inspection(tree, user_id, username)

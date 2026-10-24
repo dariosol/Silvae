@@ -4,7 +4,7 @@ API e ultimo comune scelto.
 Il token è salvato in QgsSettings (file .ini del profilo QGIS), non nel
 gestore autenticazioni cifrato: scelta della fase 1 per non richiedere la
 master password; il passaggio ad `APIHeader` nel gestore autenticazioni tocca
-solo questo modulo (qgis.md §9.2).
+solo questo modulo (docs/qgis.md §9.2).
 """
 from qgis.core import QgsSettings
 

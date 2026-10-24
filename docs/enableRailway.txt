@@ -1,0 +1,26 @@
+1. Push your repo to GitHub
+2. Sign up at railway.app → New Project → Deploy from GitHub
+3. Add a PostgreSQL database plugin inside the project
+4. In your web service, set these environment variables:
+   - SECRET_KEY → generate a long random string (e.g. python3 -c "import secrets; print(secrets.token_hex(32))")
+   - DATABASE_URL → Railway fills this automatically from the PostgreSQL plugin
+5. Enable PostGIS — your app uses it for the map coordinates. Open the Railway PostgreSQL shell and run:
+
+   CREATE EXTENSION IF NOT EXISTS postgis;
+
+6. Deploy — Railway runs gunicorn via the Procfile:
+   web: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+
+7. Generate a public URL — Railway does NOT expose a domain automatically.
+   After deploy, go to your web service → Settings → Networking → Generate Domain.
+   This gives you a free URL like https://yourapp.up.railway.app.
+   If you have a custom domain (e.g. silvae.it), add it under "Custom Domain" in the same panel
+   and point your DNS CNAME to the Railway-provided hostname.
+
+8. Railway auto-deploys on every git push after that.
+
+NOTES:
+- requirements.txt lists all dependencies; Railway installs them automatically.
+- The tools/ folder (ord_calculator, lookup_tables, etc.) must be in the repo root alongside app.py.
+- The frontend/ folder (index.html, style.css, app.js, images/) must also be in the repo root.
+- Do NOT commit .env files — use Railway environment variables instead.

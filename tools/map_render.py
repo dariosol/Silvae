@@ -1,5 +1,5 @@
 """
-Tavola cartografica degli alberi (PNG o PDF) — vedi next_steps.md, C1.
+Tavola cartografica degli alberi (PNG o PDF) — vedi docs/next_steps.md, C1.
 
 Nessuna dipendenza GIS e nessun browser sul server: le tessere della basemap
 (OpenStreetMap o ortofoto Esri) vengono scaricate con urllib, cucite con

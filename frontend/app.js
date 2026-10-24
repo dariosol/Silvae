@@ -3402,7 +3402,7 @@ function exportAreaMap() {
     return openMapExportModal(ids, state.areaVertices, 'mappa_area');
 }
 
-// ─── Invia a QGIS (cassetta postale, qgis.md §6.3) ────────
+// ─── Invia a QGIS (cassetta postale, docs/qgis.md §6.3) ────────
 
 // Deposita un invio sul server: il plugin QGIS lo trova in «Invii in attesa».
 // Un browser non può parlare con QGIS sul PC, quindi il server fa da tramite.

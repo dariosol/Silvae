@@ -1,7 +1,7 @@
 """Risoluzione dei conflitti di un invio a Silvae.
 
 Un conflitto significa che quell'albero è cambiato sul server dopo l'ultimo
-scaricamento: il push non l'ha scritto (qgis.md §6.2). Qui si mette a
+scaricamento: il push non l'ha scritto (docs/qgis.md §6.2). Qui si mette a
 confronto ciò che ha QGIS con ciò che ha Silvae, campo per campo, e si
 sceglie per ognuno:
 

@@ -1,8 +1,10 @@
 # Silvae Pro ⇄ QGIS — Plugin con cassetta postale
 
 Piano di sviluppo per il collegamento bidirezionale tra Silvae Pro e QGIS
-senza passare da file esportati e reimportati a mano. Complementa
-[`next_steps.md`](next_steps.md) (sezione A) e ne assorbe A2 e A4.
+senza passare da file esportati e reimportati a mano. Nasce dalla sezione A di
+[`next_steps.md`](next_steps.md) — stile QML, layer live, round-trip sicuro —
+e la assorbe per intero: quelle voci non sono più elencate là, perché le
+fasi 0-4 qui sotto le hanno chiuse.
 
 ---
 
@@ -52,8 +54,8 @@ Tre pezzi:
 
 | Pezzo | Dove | Cosa fa |
 |---|---|---|
-| **Server** | [`app.py`](app.py) | Token API, endpoint GeoJSON in/out, cassetta postale, `updated_at` + UUID sul modello. Tutte le scritture passano dalla logica esistente (`apply_tree_fields`, `_calc_rischio`, `_make_inspection`, `_city_readonly`). |
-| **Webapp** | [`frontend/app.js`](frontend/app.js), [`frontend/index.html`](frontend/index.html) | Pulsante «Invia a QGIS» nei tre punti di selezione; pannello token in «Il mio account». |
+| **Server** | [`app.py`](../app.py) | Token API, endpoint GeoJSON in/out, cassetta postale, `updated_at` + UUID sul modello. Tutte le scritture passano dalla logica esistente (`apply_tree_fields`, `_calc_rischio`, `_make_inspection`, `_city_readonly`). |
+| **Webapp** | [`frontend/app.js`](../frontend/app.js), [`frontend/index.html`](../frontend/index.html) | Pulsante «Invia a QGIS» nei tre punti di selezione; pannello token in «Il mio account». |
 | **Plugin QGIS** | nuovo repository `silvae-qgis` | Login, *Carica da Silvae*, *Invia a Silvae*, *Invii in attesa*, mappatura colonne, GPKG locale, `silvae_uuid` nel layer dell'agronomo. |
 
 Nessuna nuova dipendenza Python sul server (GeoJSON con `json`, GPKG già
@@ -65,7 +67,7 @@ scritto a mano). Il plugin usa solo PyQGIS e `QgsNetworkAccessManager`
 ## 4. Modello dati (prerequisito di tutto)
 
 Colonne nuove su `Tree`, aggiunte con lo stesso meccanismo `ALTER TABLE …
-ADD COLUMN` già in [`app.py:292`](app.py#L292):
+ADD COLUMN` già in [`app.py:292`](../app.py#L292):
 
 | Colonna | Tipo | Perché |
 |---|---|---|
@@ -97,7 +99,7 @@ stantio.
 
 ## 5. Autenticazione: token API
 
-Il JWT di `/login` scade ([`generate_token`](app.py#L626), 24 h di default) e
+Il JWT di `/login` scade ([`generate_token`](../app.py#L626), 24 h di default) e
 contiene ruolo e comune: non va conservato in un plugin. Serve un token
 **longevo e revocabile**.
 
@@ -119,7 +121,7 @@ contiene ruolo e comune: non va conservato in un plugin. Serve un token
 ## 6. API server
 
 Tutti gli endpoint sotto `/qgis/…`, tutti con `@auth_required`, visibilità
-tramite `_scoped_tree_query()` ([`app.py:2084`](app.py#L2084)), che è già la
+tramite `_scoped_tree_query()` ([`app.py:2084`](../app.py#L2084)), che è già la
 logica degli export.
 
 ### 6.1 `GET /qgis/features` — Silvae → QGIS
@@ -135,7 +137,7 @@ Risposta: `FeatureCollection` GeoJSON, WGS84, un punto per albero.
 - campi semplici così come sono;
 - JSON array (`conflitti_list`, `agenti_carie`, `altri_patogeni`,
   `prescrizioni_*`) come stringa separata da virgola, con
-  `_gpkg_jlist` ([`app.py:1779`](app.py#L1779)) — lo stesso formato del GPKG;
+  `_gpkg_jlist` ([`app.py:1779`](../app.py#L1779)) — lo stesso formato del GPKG;
 - `diag_*` come testo `caratt: giudizio; …` (sola lettura);
 - `rischio` esploso in colonne di sola lettura: `rischio_classe` (categoria
   peggiore, stessa di GPX/`_risk_category`), `rischio_rami`,
@@ -157,7 +159,7 @@ campo_silvae}`) + `dry_run` (bool).
 
 Semantica per ogni feature, nell'ordine:
 
-1. **Abbinamento** (`_match_tree` in [`app.py`](app.py), condiviso con
+1. **Abbinamento** (`_match_tree` in [`app.py`](../app.py), condiviso con
    l'import da file): `uuid` se presente → albero esistente (errore se non
    visibile: lo si segnala, non si crea — `strict_uuid=True`; l'import da
    file è permissivo e prosegue con gli altri criteri, perché il file può
@@ -169,7 +171,7 @@ Semantica per ogni feature, nell'ordine:
    **senza** uuid è un albero nuovo: il plugin scrive `silvae_uuid` nel
    layer al primo push proprio per questo.
 2. **Mappatura colonne**: `mapping` esplicito, poi l'auto-mappatura di
-   `_gpkg_inspect_mapping` ([`app.py:2356`](app.py#L2356)) per le colonne
+   `_gpkg_inspect_mapping` ([`app.py:2356`](../app.py#L2356)) per le colonne
    non mappate, poi nomi canonici di `tree_to_dict`.
 3. **Campi accettati** (vedi §7). I derivati vengono **ignorati con avviso**,
    mai scritti.
@@ -225,8 +227,8 @@ basta un campo `recipient_id` — non ora.
 
 ### 6.4 Stile
 
-`GET /qgis/style.qml?by=rischio|condizione|stat` — il generatore A1 di
-`next_steps.md`, dai valori di [`tools/palette.py`](tools/palette.py),
+`GET /qgis/style.qml?by=rischio|condizione|stat` — il generatore di stile
+chiesto dalla sezione A di `next_steps.md`, dai valori di [`tools/palette.py`](../tools/palette.py),
 categorizzato su `stat_bucket` (default), `rischio_classe` o la classe CPC.
 Il plugin lo scarica e lo applica al layer; non è in-linea nel plugin così
 la palette resta in un posto solo.
@@ -396,7 +398,7 @@ GPKG locale (o nel layer suo) e si usa «Invia a Silvae» → `latitude`/
 | Fase | Contenuto | Sforzo | Rilascio |
 |---|---|---|---|
 | **0. Modello** — ✅ fatto (settembre 2026, branch `qgis`) | `uuid`, `updated_at`, `updated_by` + backfill; `ApiToken` con `GET/POST/DELETE /me/tokens` e token `slv_…` accettati da `auth_required`; `_upsert_tree`/`_match_tree`/`_import_row_record` estratti dall'import, che ora ricalcola il rischio, ignora i derivati, non tocca i campi vuoti né l'owner e abbina solo tra gli alberi visibili; `uuid` nei GPKG/GPX esportati | 1–2 giorni | Nessun cambiamento visibile nell'interfaccia (il pannello token è in fase 1) |
-| **1. Lettura** — ✅ fatto (settembre 2026) | `GET /qgis/features` (city/ids/since/bbox, proprietà piatte, `cond_classe`, `generated_at` calcolato prima della query), `GET /qgis/style.qml` + [`tools/qgis_style.py`](tools/qgis_style.py) e stile incorporato in `layer_styles` del GPKG esportato (A1 completa, con le colonne `stat_bucket`/`rischio_classe`/`cond_classe`); pannello token in «Il mio account»; plugin in [`qgis_plugin/silvae_qgis/`](qgis_plugin/) con login, *Carica da Silvae*, GPKG locale, stile, pull incrementale per uuid. Verificato headless con PyQGIS 3.34 (caricamento GeoJSON, stile, upsert, finestre offscreen). Scostamenti: plugin in una sottocartella di questo repository e non in un repository separato; token in `QgsSettings` e non nel gestore autenticazioni (solo `settings.py` da cambiare); `Cache-Control: no-store` sulle risposte JSON perché la cache di rete di QGIS riusava `/me` di un altro token | 3–4 giorni | Layer Silvae in QGIS sempre aggiornato (= A2) |
+| **1. Lettura** — ✅ fatto (settembre 2026) | `GET /qgis/features` (city/ids/since/bbox, proprietà piatte, `cond_classe`, `generated_at` calcolato prima della query), `GET /qgis/style.qml` + [`tools/qgis_style.py`](../tools/qgis_style.py) e stile incorporato in `layer_styles` del GPKG esportato (A1 completa, con le colonne `stat_bucket`/`rischio_classe`/`cond_classe`); pannello token in «Il mio account»; plugin in [`qgis_plugin/silvae_qgis/`](../qgis_plugin/) con login, *Carica da Silvae*, GPKG locale, stile, pull incrementale per uuid. Verificato headless con PyQGIS 3.34 (caricamento GeoJSON, stile, upsert, finestre offscreen). Scostamenti: plugin in una sottocartella di questo repository e non in un repository separato; token in `QgsSettings` e non nel gestore autenticazioni (solo `settings.py` da cambiare); `Cache-Control: no-store` sulle risposte JSON perché la cache di rete di QGIS riusava `/me` di un altro token | 3–4 giorni | Layer Silvae in QGIS sempre aggiornato (= A2) |
 | **2. Cassetta postale** — ✅ fatto (settembre 2026) | `QgisDelivery` + `POST/GET /qgis/deliveries`, `DELETE /qgis/deliveries/<id>` e ritiro con `GET /qgis/features?delivery=<id>` (marca `fetched_at`, porta i dati **correnti**); scadenza a 7 giorni ripulita alla prima chiamata utile; «Invia a QGIS» nei tre punti della webapp (tab Esporta, barra di selezione, selezione per area col perimetro); dock *Invii in attesa* nel plugin con aggiornamento ogni 30 s, ritiro (doppio clic) ed eliminazione. Verificato headless: deposito → elenco → ritiro → GPKG+stile+perimetro → secondo ritiro che aggiorna lo stesso file → dati correnti dopo una modifica → eliminazione | 2 giorni | «Invia a QGIS» funziona |
 | **3. Scrittura** — ✅ fatto (settembre 2026) | `POST /qgis/features` (mappatura colonne, `dry_run` come anteprima del diff, `ignored_fields`, conflitti su `updated_at`, `force`, snapshot pre-modifica in `Inspection`, massimo 2000 feature per chiamata) e `POST /qgis/mapping` (auto-mappatura e campi scrivibili, unica fonte); plugin: *Invia a Silvae* con finestra di mappatura salvata nel progetto, anteprima, invio a blocchi di 500 e scrittura di `silvae_uuid`/`silvae_id`/`silvae_synced_at` nel layer dell'agronomo. Aggiunta rispetto al piano: su un layer senza la colonna `updated_at` il conflitto si basa su `silvae_synced_at` scritto dal plugin. Verificato headless con un layer in EPSG:32632 e colonne proprie: riproiezione, anteprima che non scrive, creazione, collegamento, aggiornamento senza doppioni, spostamento del punto, conflitto e `force`, round-trip del layer scaricato | 4–5 giorni | Flusso completo QGIS → Silvae (= A4 senza file) |
 | **4. Conflitti e sync** — ✅ fatto (settembre 2026) | finestra di risoluzione: elenco degli alberi in conflitto, confronto campo per campo QGIS↔Silvae, scelta per ciascuno (tieni QGIS → reinvio con `force`; prendi Silvae → i valori del server scritti nel layer, geometria compresa; decidi più tardi = predefinito) e pulsanti «tutti». `updated_at`, `force` e il pull incrementale `since=` erano già nelle fasi 1-3. Corretti due difetti emersi nel ciclo completo: un albero disegnato dentro il layer di Silvae tornava dal pull come riga nuova (ora il push riempie la colonna `uuid` del layer invece di aggiungere `silvae_uuid`), e due invii senza pull in mezzo davano un conflitto falso (ora «visto fin qui» è il più recente fra `updated_at` e `silvae_synced_at`) | 2–3 giorni | Uso su dati veri con più persone |
@@ -424,12 +426,12 @@ utile già dopo la fase 1.
 ## 13. Sicurezza dei dati esistenti
 
 **Migrazione (fase 0)**: solo `ALTER TABLE … ADD COLUMN` nullable, come per
-le colonne aggiunte finora ([`app.py:290`](app.py#L290)); backfill di `uuid`
+le colonne aggiunte finora ([`app.py:290`](../app.py#L290)); backfill di `uuid`
 solo dove `NULL`, `updated_at = now`; indice unico su `uuid` creato **dopo**
 il backfill. `pg_dump` prima del deploy. Nessuna riga o colonna eliminata.
 
 **Push da QGIS** — i punti in cui la logica di import attuale
-([`app.py:2616`](app.py#L2616)) sarebbe pericolosa se riusata tale e quale,
+([`app.py:2616`](../app.py#L2616)) sarebbe pericolosa se riusata tale e quale,
 e la regola che `_upsert_tree` deve rispettare:
 
 | Rischio | Regola |
@@ -458,8 +460,8 @@ Prese:
   automatica del comune (una chiamata Nominatim per riga non regge su un
   push di migliaia di alberi); il plugin lo chiede prima dell'invio;
 - non esiste un `.qml` di riferimento dello studio: lo stile QGIS viene
-  **generato** da [`tools/palette.py`](tools/palette.py) (chiude il punto 1
-  di A1 in `next_steps.md`); se in futuro l'agronomo ne adotta uno, si
+  **generato** da [`tools/palette.py`](../tools/palette.py) ; se in futuro
+  l'agronomo ne adotta uno, si
   travasano i colori in `palette.py`, non viceversa;
 - ogni modifica da QGIS a un albero esistente salva una `Inspection` con lo
   snapshot precedente, anche per la sola posizione (sicurezza prima della

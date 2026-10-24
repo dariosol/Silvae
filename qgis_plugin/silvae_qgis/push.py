@@ -4,7 +4,7 @@ Il layer può essere qualsiasi cosa (shapefile, GPKG, memoria, PostGIS) e
 avere colonne proprie: la corrispondenza colonna → campo Silvae si decide
 una volta e resta salvata nel progetto (`mapping.py`).
 
-Regole (qgis.md §6.2), applicate dal server e riflesse qui:
+Regole (docs/qgis.md §6.2), applicate dal server e riflesse qui:
   - la geometria viene riproiettata in EPSG:4326 e vince sulle colonne
     latitude/longitude, che in un layer scaricato restano quelle del pull;
   - `uuid` è la chiave: al primo invio il server lo assegna e il plugin lo

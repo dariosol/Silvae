@@ -19,3 +19,9 @@ qgis_plugin/*.zip
 
 # Lock file di LibreOffice
 .~lock.*#
+
+# Generato da scripts/make_demo_gpkg.py
+demo.gpkg
+
+# Rilievi dei clienti: dati reali, non vanno in git
+file_da_importare/

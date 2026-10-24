@@ -4,7 +4,7 @@ Il file sta nella cartella del progetto (`silvae_<comune>.gpkg`, layer
 `alberi`): sopravvive alla chiusura, funziona offline e si apre in QField.
 Prima creazione dal GeoJSON del server; poi aggiornamenti incrementali per
 `uuid` (feature nuove aggiunte, esistenti aggiornate; quelle sparite dal
-server restano — nessuna cancellazione automatica, qgis.md §13).
+server restano — nessuna cancellazione automatica, docs/qgis.md §13).
 """
 import json
 import os

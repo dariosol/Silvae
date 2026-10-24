@@ -103,7 +103,11 @@ tree_project/
 │   ├── images/                 # Loghi (usati anche nella scheda ARETE)
 │   └── tests/                  # Verifiche del frontend su jsdom (run.sh, serve Docker)
 ├── qgis_plugin/
-│   └── silvae_qgis/            # Plugin QGIS «Silvae Pro» (vedi qgis_plugin/README.md e qgis.md)
+│   └── silvae_qgis/            # Plugin QGIS «Silvae Pro» (vedi qgis_plugin/README.md e docs/qgis.md)
+├── docs/                       # Documentazione: piano QGIS, prossimi passi, calcolo ARETE
+│   ├── qgis.md                 # Piano e stato del ponte con QGIS
+│   ├── next_steps.md           # Proposte di sviluppo ancora aperte
+│   └── calculus.md             # Calcolo ARETE in dettaglio (non in git: protocollo ARETE)
 ├── scripts/                    # Utilità da riga di comando (vedi scripts/README.md)
 │   ├── seed_comuni.py          # Riempie la tabella dei comuni italiani
 │   ├── create_admin.py         # Reimposta la password di admin
@@ -243,7 +247,7 @@ Gli utenti vengono creati da un `superuser` (qualsiasi ruolo) o da un `city` (so
 
 ### Token API (client esterni)
 
-Oltre al JWT di `/login` (che scade e congela ruolo e comune), un utente può creare da `POST /me/tokens` dei **token API** nel formato `slv_…`, pensati per client che restano collegati a lungo — in primo luogo il plugin QGIS (vedi [`qgis.md`](qgis.md)). Si usano nello stesso header `Authorization: Bearer slv_…`; in DB è salvato solo l'hash SHA-256, ruolo e comune vengono riletti dall'utente a ogni richiesta e la revoca (`DELETE /me/tokens/<id>`) è immediata. Un token API non può creare altri token; gli account demo non ne hanno. Il ruolo `city` può usarli in sola lettura come nella webapp.
+Oltre al JWT di `/login` (che scade e congela ruolo e comune), un utente può creare da `POST /me/tokens` dei **token API** nel formato `slv_…`, pensati per client che restano collegati a lungo — in primo luogo il plugin QGIS (vedi [`docs/qgis.md`](docs/qgis.md)). Si usano nello stesso header `Authorization: Bearer slv_…`; in DB è salvato solo l'hash SHA-256, ruolo e comune vengono riletti dall'utente a ogni richiesta e la revoca (`DELETE /me/tokens/<id>`) è immediata. Un token API non può creare altri token; gli account demo non ne hanno. Il ruolo `city` può usarli in sola lettura come nella webapp.
 
 ---
 
@@ -350,7 +354,7 @@ Il formato GPX (waypoint) è il ponte con i GPS da campo, gli smartphone e QGIS 
 
 ## Importazione: abbinamento e regole di scrittura
 
-Ogni albero ha un **`uuid`** stabile (generato alla creazione, presente nei GPKG e GPX esportati) e i campi **`updated_at` / `updated_by`** con data e utente dell'ultima modifica, restituiti da `/trees` e `/tree/<id>`. L'importazione da file (`/import/gpkg`, `/import/gpx`) passa per un'unica funzione, `_upsert_tree` in [`app.py`](app.py), che sarà usata anche dal plugin QGIS ([`qgis.md`](qgis.md)):
+Ogni albero ha un **`uuid`** stabile (generato alla creazione, presente nei GPKG e GPX esportati) e i campi **`updated_at` / `updated_by`** con data e utente dell'ultima modifica, restituiti da `/trees` e `/tree/<id>`. L'importazione da file (`/import/gpkg`, `/import/gpx`) passa per un'unica funzione, `_upsert_tree` in [`app.py`](app.py), che sarà usata anche dal plugin QGIS ([`docs/qgis.md`](docs/qgis.md)):
 
 - **Abbinamento** con un albero esistente, cercato **solo tra gli alberi visibili** a chi importa (i propri per l'agronomo): prima per `uuid`, poi per **coordinate** (entro ~10 cm), infine per `custom_id` + comune ma solo se la riga non ha coordinate. Con le coordinate non si abbina mai per `custom_id`, perché nei censimenti la numerazione riparte per località e alberi diversi condividono lo stesso numero. Un `uuid` sconosciuto (albero cancellato, o file esportato da un altro account) non è un errore: si prosegue con gli altri criteri e, se l'albero è nuovo, l'uuid viene riusato quando è libero.
 - **Un valore vuoto nel file non tocca il campo**: in modalità `update` si sovrascrivono solo i valori presenti, quindi un file con poche colonne non cancella ciò che il database ha già. L'owner dell'albero non cambia mai.
@@ -422,7 +426,7 @@ Le chiavi delle categorie (`accettabile`, `alarp`, `accordo`, `inaccettabile`, `
 
 ## Plugin QGIS
 
-In [`qgis_plugin/silvae_qgis/`](qgis_plugin/) c'è il plugin «Silvae Pro» per QGIS (≥ 3.28): si collega con un **token API** (creato da «Il mio account»), scarica gli alberi di un comune in un GeoPackage locale già colorato e li aggiorna in modo incrementale. Installazione e uso in [`qgis_plugin/README.md`](qgis_plugin/README.md); piano e stato in [`qgis.md`](qgis.md).
+In [`qgis_plugin/silvae_qgis/`](qgis_plugin/) c'è il plugin «Silvae Pro» per QGIS (≥ 3.28): si collega con un **token API** (creato da «Il mio account»), scarica gli alberi di un comune in un GeoPackage locale già colorato e li aggiorna in modo incrementale. Installazione e uso in [`qgis_plugin/README.md`](qgis_plugin/README.md); piano e stato in [`docs/qgis.md`](docs/qgis.md).
 
 ### Da QGIS a Silvae
 

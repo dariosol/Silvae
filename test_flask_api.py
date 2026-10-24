@@ -772,7 +772,7 @@ class TestExport:
 
 
 # ---------------------------------------------------------------------------
-# Fase 0 QGIS (qgis.md): token API, uuid/updated_*, _upsert_tree
+# Fase 0 QGIS (docs/qgis.md): token API, uuid/updated_*, _upsert_tree
 # ---------------------------------------------------------------------------
 
 import io, sqlite3, tempfile, os
@@ -1159,7 +1159,7 @@ class TestQgisDeliveries:
 
 
 class TestQgisPush:
-    """POST /qgis/features: scrittura da QGIS (qgis.md §6.2)."""
+    """POST /qgis/features: scrittura da QGIS (docs/qgis.md §6.2)."""
 
     def _pull(self, client, headers, tree_id):
         fc = client.get(f'/qgis/features?ids={tree_id}', headers=headers).get_json()
