@@ -3576,6 +3576,10 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') applyListFilter(); }));
     document.getElementById('pageSizeSelect').addEventListener('change', changePageSize);
     document.getElementById('addTreeForm').addEventListener('submit', submitTreeForm);
+    // Un campo obbligatorio in una sezione chiusa non si può evidenziare: la si riapre.
+    document.getElementById('addTreeForm').addEventListener('invalid', e => {
+        for (let d = e.target.closest('details'); d; d = d.parentElement.closest('details')) d.open = true;
+    }, true);
     document.getElementById('openFormBtn').addEventListener('click', () => { resetForm(); showTreeView('edit'); markFormClean(); });
     initComuneAutocomplete('city');
     initComuneAutocomplete('newCity');
