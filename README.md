@@ -291,7 +291,6 @@ Nel servizio dell'app, imposta le variabili:
 | `GROQ_API_KEY` | *(opzionale)* API key Groq per l'input vocale |
 | `REGISTRATION_ENABLED` | *(opzionale)* `true` per riabilitare la registrazione pubblica (default `false`) |
 | `DEMO_*` | *(opzionale)* Credenziali degli account demo (vedi sezione [Account demo](#account-demo)) |
-
 | `SCHEDA_WORK_DIR` | *(opzionale)* Cartella di lavoro temporanea per la generazione delle schede (default `.scheda_work/` nel progetto) |
 
 > Railway usa `postgres://` come prefisso — l'app lo converte automaticamente in `postgresql://`.
@@ -354,7 +353,7 @@ Il formato GPX (waypoint) è il ponte con i GPS da campo, gli smartphone e QGIS 
 
 ## Importazione: abbinamento e regole di scrittura
 
-Ogni albero ha un **`uuid`** stabile (generato alla creazione, presente nei GPKG e GPX esportati) e i campi **`updated_at` / `updated_by`** con data e utente dell'ultima modifica, restituiti da `/trees` e `/tree/<id>`. L'importazione da file (`/import/gpkg`, `/import/gpx`) passa per un'unica funzione, `_upsert_tree` in [`app.py`](app.py), che sarà usata anche dal plugin QGIS ([`docs/qgis.md`](docs/qgis.md)):
+Ogni albero ha un **`uuid`** stabile (generato alla creazione, presente nei GPKG e GPX esportati) e i campi **`updated_at` / `updated_by`** con data e utente dell'ultima modifica, restituiti da `/trees` e `/tree/<id>`. L'importazione da file (`/import/gpkg`, `/import/gpx`) passa per un'unica funzione, `_upsert_tree` in [`app.py`](app.py), la stessa usata dal plugin QGIS in `POST /qgis/features` ([`docs/qgis.md`](docs/qgis.md)):
 
 - **Abbinamento** con un albero esistente, cercato **solo tra gli alberi visibili** a chi importa (i propri per l'agronomo): prima per `uuid`, poi per **coordinate** (entro ~10 cm), infine per `custom_id` + comune ma solo se la riga non ha coordinate. Con le coordinate non si abbina mai per `custom_id`, perché nei censimenti la numerazione riparte per località e alberi diversi condividono lo stesso numero. Un `uuid` sconosciuto (albero cancellato, o file esportato da un altro account) non è un errore: si prosegue con gli altri criteri e, se l'albero è nuovo, l'uuid viene riusato quando è libero.
 - **Un valore vuoto nel file non tocca il campo**: in modalità `update` si sovrascrivono solo i valori presenti, quindi un file con poche colonne non cancella ciò che il database ha già. L'owner dell'albero non cambia mai.

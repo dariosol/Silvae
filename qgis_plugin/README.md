@@ -99,4 +99,5 @@ DATABASE_URL=sqlite:///prova.db SECRET_KEY=x python -c "import app; app.app.run(
 ```
 
 Le finestre si costruiscono anche offscreen (`QT_QPA_PLATFORM=offscreen`)
-con un `iface` finto: vedi lo storico dei test in `docs/qgis.md` §12.
+con un `iface` finto: le verifiche fatte per ciascuna fase sono descritte nella tabella di
+`docs/qgis.md` §11.
