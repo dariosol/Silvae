@@ -366,6 +366,7 @@ body {
   grid-template-columns: 1fr 1fr;
   gap: 16px;
   max-width: 960px;
+  margin: 0 auto;
 }
 .view-footer {
   display: flex; gap: 10px;
@@ -731,7 +732,8 @@ th.sort-active .sort-ico { opacity: 1; color: var(--g700); }
   flex-shrink: 0;
 }
 .mobile-sort-bar label { color: var(--text-muted); font-weight: 600; white-space: nowrap; }
-.mobile-sort-bar select { flex: 1; }
+.mobile-sort-bar select { flex: 1; min-width: 0; }  /* senza min-width il select non si stringe e la barra esce dallo schermo */
+.mobile-sort-bar #mobilePageSizeSelect { flex: none; }
 
 /* ── Mobile card list ── */
 #treeCardList { display: none; flex: 1; overflow-y: auto; }
@@ -748,11 +750,14 @@ th.sort-active .sort-ico { opacity: 1; color: var(--g700); }
 }
 .tree-card-main:active { background: var(--g50); }
 .tree-card-actions { display: flex; gap: 6px; flex-shrink: 0; }
+/* ID sopra, specie sotto: su telefono non c'è spazio per metterli in riga */
 .tree-card-info {
   flex: 1; min-width: 0;
-  display: flex; align-items: center; gap: 6px;
+  display: flex; flex-direction: column; gap: 3px;
   overflow: hidden;
 }
+.tree-card-id { display: flex; align-items: center; gap: 6px; }
+.tree-card-id .id-chip { white-space: nowrap; }
 .tree-card-info .species {
   font-size: 13px; color: var(--text-mid);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -1049,8 +1054,10 @@ textarea.fc { resize: vertical; min-height: 72px; }
   .nav-user .nav-wide-only { display: none !important; }
   .nav-user-btn { max-width: 170px; }
   #tab-trees { padding: 10px 12px; }
-  .tab-btn span { display: none; }
-  .tab-btn { padding: 12px 16px; }
+  /* schede: icona con il nome sotto, a tutta larghezza */
+  .tab-bar { padding: 0; }
+  .tab-btn { flex: 1; min-width: 0; flex-direction: column; gap: 3px; padding: 8px 2px; font-size: 10.5px; }
+  .tab-btn span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* export bar */
   #exportBar { flex-wrap: wrap; gap: 8px; }
   /* pagination bar */

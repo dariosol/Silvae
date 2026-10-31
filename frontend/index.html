@@ -4,10 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Silvae Pro</title>
+  <link rel="icon" type="image/png" href="images/favicon.png">
+  <link rel="apple-touch-icon" href="images/apple-touch-icon.png">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="palette.css">  <!-- generato da tools/palette.py -->
-  <link rel="stylesheet" href="style.css?v=20261024">
+  <link rel="stylesheet" href="style.css?v=20261031">
   <style>
     .diag-row{display:flex;gap:6px;align-items:center;margin-bottom:4px;}
     .diag-row select{flex:1;min-width:0;}
@@ -305,9 +307,6 @@
             <select id="pageSizeSelect" class="inp desktop-only" style="width:80px;" title="Righe per pagina">
               <option value="25">25</option><option value="50">50</option><option value="100">100</option>
             </select>
-            <button class="btn btn-outline btn-sm mobile-only" id="infoHintBtn" title="Seleziona un comune nella barra superiore, poi usa il filtro ID per trovare un albero specifico.">
-              <i class="fa-solid fa-circle-info"></i>
-            </button>
             <button class="btn btn-outline btn-sm" id="statsToggleBtn" onclick="toggleStatsBar()" title="Mostra/nascondi le statistiche della vista">
               <i class="fa-solid fa-chart-simple"></i><span class="btn-txt"> Statistiche</span><span id="statsFilterBadge" class="stats-filter-badge" style="display:none;"></span>
             </button>
@@ -335,12 +334,6 @@
           <button class="btn btn-outline btn-sm" onclick="toggleExportMode()" style="margin-left:auto;"><i class="fa-solid fa-xmark"></i> Annulla</button>
         </div>
         <div class="section-card">
-          <div class="card-head desktop-only" style="flex-shrink:0;">
-            <span class="card-title" style="font-size:12px;color:var(--text-muted);">
-              <i class="fa-solid fa-circle-info"></i>
-              Seleziona un comune nella barra superiore, poi usa il filtro ID per trovare un albero specifico.
-            </span>
-          </div>
           <!-- Mobile sort bar (hidden on desktop) -->
           <div class="mobile-sort-bar">
             <label>Ordina:</label>
@@ -355,7 +348,7 @@
               <i class="fa-solid fa-arrow-up-short-wide"></i>
             </button>
             <label>Per pag.:</label>
-            <select id="mobilePageSizeSelect" class="inp" onchange="changeMobilePageSize(this.value)" title="Alberi per pagina" style="width:58px;">
+            <select id="mobilePageSizeSelect" onchange="changeMobilePageSize(this.value)" title="Alberi per pagina">
               <option value="25">25</option><option value="50">50</option><option value="100">100</option>
             </select>
           </div>
@@ -433,7 +426,10 @@
                 <summary><i class="fa-solid fa-location-dot"></i> Localizzazione</summary>
                 <div class="fgrp">
                   <label class="flabel" for="address">Indirizzo</label>
-                  <input id="address" class="fc" type="text" placeholder="Auto-compilato da GPS o usato per geocoding">
+                  <input id="address" class="fc" type="text" placeholder="es. Corso Vittorio Emanuele II 10">
+                  <p style="font-size:12px;color:var(--text-muted);margin:5px 0 0;">
+                    Si compila da solo con «Usa posizione GPS». Se salvi un albero nuovo senza coordinate, vengono ricavate da questo indirizzo.
+                  </p>
                 </div>
                 <div class="fc-grid2" style="margin-bottom:10px;">
                   <div class="fgrp">
@@ -450,7 +446,7 @@
                     <i class="fa-solid fa-location-crosshairs"></i> Usa posizione GPS
                   </button>
                   <button type="button" class="btn btn-outline" style="flex:1;" onclick="openCoordCheck()">
-                    <i class="fa-solid fa-map-location-dot"></i> Controlla
+                    <i class="fa-solid fa-map-location-dot"></i> Verifica sulla mappa
                   </button>
                 </div>
                 <div id="gpsStatus" style="font-size:12px;color:var(--text-muted);margin-top:6px;text-align:center;"></div>
@@ -465,7 +461,7 @@
                   <div class="fgrp">
                     <label class="flabel" for="species">Specie *</label>
                     <input type="text" id="species" class="fc" list="species-datalist"
-                           placeholder="— seleziona o digita specie —" autocomplete="off" required>
+                           placeholder="Cerca specie…" autocomplete="off" required>
                     <datalist id="species-datalist"></datalist>
                   </div>
                   <div class="fgrp">
@@ -1394,7 +1390,7 @@ rischio_finale   = lookup_inverso(probabilità_n)    ← foglio A, colonne AR:AS
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="app.js?v=20261024"></script>
+<script src="app.js?v=20261031"></script>
 <script src="voice.js?v=20261024"></script>
 
 <!-- Modale: Mapping campi importazione -->
@@ -1607,11 +1603,11 @@ rischio_finale   = lookup_inverso(probabilità_n)    ← foglio A, colonne AR:AS
   </div>
 </div>
 
-<!-- Modale: Controlla coordinate -->
+<!-- Modale: Verifica posizione sulla mappa -->
 <div class="info-modal-overlay" id="coordCheckModal" onclick="if(event.target===this)closeCoordCheck()">
   <div class="info-modal" style="max-width:540px;padding:16px 16px 14px;">
     <button class="info-modal-close" onclick="closeCoordCheck()">&times;</button>
-    <h3 style="margin-bottom:6px;"><i class="fa-solid fa-map-location-dot" style="color:var(--g700);margin-right:6px;"></i>Controlla posizione</h3>
+    <h3 style="margin-bottom:6px;"><i class="fa-solid fa-map-location-dot" style="color:var(--g700);margin-right:6px;"></i>Verifica posizione</h3>
     <p style="font-size:12px;color:var(--text-muted);margin:0 0 10px;">Trascina il segnaposto rosso per correggere la posizione. I cerchi colorati sono gli alberi già censiti.</p>
     <div id="coordCheckMap" style="height:380px;border-radius:8px;overflow:hidden;border:1px solid var(--border);"></div>
     <div id="coordCheckInfo" style="font-size:12px;color:var(--text-muted);margin-top:8px;text-align:center;min-height:16px;"></div>

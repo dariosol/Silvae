@@ -537,7 +537,7 @@ function setupAuthUI() {
         // su telefono resta solo lo username: ruolo e comune sono nel menu
         document.getElementById('loggedInUser').textContent = state.user.username;
         document.getElementById('loggedInRole').textContent =
-            `  (${state.user.role}${state.user.city ? ' · ' + state.user.city : ''})`;
+            `  (${ROLE_LABELS[state.user.role] || state.user.role}${state.user.city ? ' · ' + state.user.city : ''})`;
         const info = document.getElementById('userMenuInfo');
         info.innerHTML = '<strong></strong><br><span></span>';
         info.querySelector('strong').textContent = state.user.username;
@@ -1695,14 +1695,13 @@ function renderTreeCards(trees) {
         div.className = `tree-card ${condClass(t.condition)}`;
         div.innerHTML = `
             <div class="tree-card-main" onclick="toggleCardDetail(this)">
+                <div class="tree-card-info">
+                    <div class="tree-card-id">${condDot(t.condition)}<span class="id-chip">${t.custom_id}</span></div>
+                    <span class="species">${t.species}</span>
+                </div>
                 <div class="tree-card-actions">
                     <button class="btn btn-edit btn-sm" onclick="event.stopPropagation();openHistory(${t.id},'${t.custom_id}')" title="Storico"><i class="fa-solid fa-clock-rotate-left"></i></button>
                     <button class="btn btn-edit btn-sm" onclick="event.stopPropagation();openEditForm(${t.id})" title="Modifica"><i class="fa-solid fa-pen-to-square"></i></button>
-                </div>
-                <div class="tree-card-info">
-                    ${condDot(t.condition)}
-                    <span class="id-chip">${t.custom_id}</span>
-                    <span class="species">${t.species}</span>
                 </div>
                 <i class="fa-solid fa-chevron-down tree-card-chevron"></i>
             </div>
